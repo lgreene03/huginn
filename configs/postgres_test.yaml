@@ -1,0 +1,25 @@
+kafka:
+  brokers:
+    - localhost:9092
+  topics:
+    - features.obi.v1
+  group_id: huginn-paper-trader
+
+strategy:
+  name: obi
+  threshold: 0.7
+  order_size: 0.01
+
+executor:
+  transaction_cost_bps: 5.0
+  slippage_bps: 2.0
+
+server:
+  port: 8081
+
+capital:
+  initial_cash: 100000.0
+
+database:
+  enabled: true
+  url: postgres://postgres:postgres@localhost:5436/huginn?sslmode=disable

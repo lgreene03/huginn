@@ -1,0 +1,25 @@
+kafka:
+  brokers:
+    - localhost:9092
+  topics:
+    - features.obi.v1
+  group_id: huginn-paper-trader
+
+strategy:
+  name: vwap_deviation
+  threshold: 0.0005 # 0.05% deviation from VWAP
+  order_size: 0.01
+
+executor:
+  transaction_cost_bps: 5.0
+  slippage_bps: 2.0
+
+server:
+  port: 8081
+
+capital:
+  initial_cash: 100000.0
+
+database:
+  enabled: false
+  url: postgres://postgres:postgres@localhost:5432/huginn?sslmode=disable

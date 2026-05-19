@@ -1,0 +1,32 @@
+# Compiled Go Binaries
+huginn
+bin/
+backtest
+fetcher
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Web Dependencies & Builds
+web/node_modules/
+web/dist/
+web/.svelte-kit/
+web/build/
+.env
+.env.local
+
+# Local Data and Logs
+data/trades.jsonl
+data/btc_test.jsonl
+data/pg_data/
+*.db
+*.log
+
+# OS Metadata
+.DS_Store
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db

@@ -1,0 +1,4 @@
+{"eventId":"1","eventTime":"2023-01-01T10:00:00Z","featureName":"obi","featureVersion":"v1","instrument":"BTC-USD","windowStart":"2023-01-01T09:59:00Z","windowEnd":"2023-01-01T10:00:00Z","values":{"obi":0.8,"microPrice":50000.0}}
+{"eventId":"2","eventTime":"2023-01-01T10:01:00Z","featureName":"obi","featureVersion":"v1","instrument":"BTC-USD","windowStart":"2023-01-01T10:00:00Z","windowEnd":"2023-01-01T10:01:00Z","values":{"obi":0.9,"microPrice":50050.0}}
+{"eventId":"3","eventTime":"2023-01-02T10:00:00Z","featureName":"obi","featureVersion":"v1","instrument":"BTC-USD","windowStart":"2023-01-02T09:59:00Z","windowEnd":"2023-01-02T10:00:00Z","values":{"obi":-0.8,"microPrice":51000.0}}
+{"eventId":"4","eventTime":"2023-01-03T10:00:00Z","featureName":"obi","featureVersion":"v1","instrument":"BTC-USD","windowStart":"2023-01-03T09:59:00Z","windowEnd":"2023-01-03T10:00:00Z","values":{"obi":-0.9,"microPrice":52000.0}}
