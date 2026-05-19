@@ -4,9 +4,9 @@ services:
   huginn:
     build: .
     ports:
-      - "8081:8081"
+      - "8083:8081"
     environment:
-      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_BROKERS=redpanda:29092
       - DATABASE_ENABLED=false
       - DATABASE_URL=postgres://postgres:postgres@db:5432/huginn?sslmode=disable
     volumes:
@@ -20,7 +20,7 @@ services:
     build:
       context: ./web
     ports:
-      - "8080:80"
+      - "8084:80"
     depends_on:
       - huginn
 
