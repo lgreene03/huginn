@@ -112,7 +112,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 1 — Restart correctness 🟢
+## Phase 1 — Restart correctness ✅
 
 **Goal.** Huginn restarts the same way it left, end-to-end.
 

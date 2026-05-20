@@ -71,30 +71,51 @@ func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, 
 // Safe to call concurrently; the strategy holds its own mutex internally and
 // the journal writer is itself thread-safe.
 func (e *Executor) PersistStrategyState() {
-	if e.strategyKey == "" || e.journalWriter == nil {
+	if e.journalWriter == nil {
 		return
 	}
-	sf, ok := e.strategy.(strategy.Stateful)
-	if !ok {
-		return
+	if e.strategyKey != "" {
+		if sf, ok := e.strategy.(strategy.Stateful); ok {
+			blob, err := sf.MarshalState()
+			if err != nil {
+				slog.Error("Failed to marshal strategy state",
+					"strategy", e.strategy.Name(), "error", err)
+			} else if err := e.journalWriter.AppendStrategyState(e.strategyKey, blob); err != nil {
+				slog.Error("Failed to persist strategy state",
+					"strategy_key", e.strategyKey, "error", err)
+			}
+		}
 	}
-	blob, err := sf.MarshalState()
-	if err != nil {
-		slog.Error("Failed to marshal strategy state",
-			"strategy", e.strategy.Name(), "error", err)
-		return
-	}
-	if err := e.journalWriter.AppendStrategyState(e.strategyKey, blob); err != nil {
-		slog.Error("Failed to persist strategy state",
-			"strategy_key", e.strategyKey, "error", err)
+	// Risk-manager state (peakValue, dayStart, lastFeatureEvent) rides on
+	// the same persist cycle under a fixed "_risk" key. Co-located so a
+	// single ticker covers both; co-resolved on boot in cmd/huginn/main.go.
+	if e.riskManager != nil {
+		blob, err := e.riskManager.MarshalState()
+		if err != nil {
+			slog.Error("Failed to marshal risk state", "error", err)
+		} else if err := e.journalWriter.AppendStrategyState(riskStateKey, blob); err != nil {
+			slog.Error("Failed to persist risk state", "error", err)
+		}
 	}
 }
+
+// riskStateKey is the fixed journal key for the risk manager's persisted
+// state. Reserved — strategies must not use a name starting with underscore.
+const riskStateKey = "_risk"
+
+// RiskStateKey is exported for the boot path to load risk state by the same
+// key the executor writes it under.
+func RiskStateKey() string { return riskStateKey }
 
 // RunStatePersister runs a coalescing ticker that calls PersistStrategyState
 // every interval. EMA-style strategies mutate continuously between fills and
 // would otherwise lose their accumulator on a crash. Cancel via ctx.
+//
+// Fires even with an empty strategyKey because the risk manager's state
+// (peakValue, lastFeatureEventTime) also needs the ticker — it changes on
+// every event, not only on fills.
 func (e *Executor) RunStatePersister(ctx context.Context, interval time.Duration) {
-	if e.strategyKey == "" {
+	if e.journalWriter == nil {
 		return
 	}
 	ticker := time.NewTicker(interval)
@@ -114,6 +135,12 @@ func (e *Executor) RunStatePersister(ctx context.Context, interval time.Duration
 // OnFeature is the main event handler. It is called by the Kafka consumer
 // for each deserialized FeatureEvent.
 func (e *Executor) OnFeature(event model.FeatureEvent) {
+	// Notify the risk manager that a fresh event arrived — feeds the
+	// staleness watchdog and the auto-resume-from-staleness path.
+	if e.riskManager != nil {
+		e.riskManager.OnFeatureSeen(event.EventTime)
+	}
+
 	orders := e.strategy.OnFeature(event)
 	for _, order := range orders {
 		metrics.OrdersGeneratedTotal.WithLabelValues(e.strategy.Name(), order.Side.String()).Inc()

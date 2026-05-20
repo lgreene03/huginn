@@ -142,6 +142,32 @@ func main() {
 	// Initialize risk manager
 	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
 
+	// Restore risk state (peakValue, dayStart baseline, last feature event)
+	// from the same backend the strategy state came from. Without this, every
+	// restart resets peakValue to initial cash and replays the daily-loss
+	// window from zero — both misfire on the first post-restart trade.
+	var priorRisk []byte
+	if cfg.Database.Enabled {
+		if pw, ok := jWriter.(*journal.PostgresWriter); ok {
+			priorRisk, err = pw.LoadStrategyState(executor.RiskStateKey())
+		}
+	} else {
+		priorRisk, err = journal.LoadStrategyStateFromJSONL("data/trades.jsonl", executor.RiskStateKey())
+	}
+	if err != nil {
+		slog.Error("Failed to load prior risk state", "error", err)
+		os.Exit(1)
+	}
+	if len(priorRisk) > 0 {
+		if err := riskManager.RestoreState(priorRisk); err != nil {
+			slog.Error("Failed to restore risk state — refusing to boot", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("Restored risk state from prior run", "bytes", len(priorRisk))
+	} else {
+		slog.Info("No prior risk state found — starting with fresh peakValue + daily-loss baseline")
+	}
+
 	// Initialize Kafka producer if live execution is enabled
 	var producer *kafka.Producer
 	if cfg.LiveExecution {
@@ -195,6 +221,11 @@ func main() {
 	// EMACrossover) that mutate continuously between fills. Stops cleanly on
 	// ctx cancel; the final tick fires on graceful shutdown.
 	go exec.RunStatePersister(ctx, 5*time.Second)
+
+	// Feature-staleness watchdog: auto-halts if no event arrives within
+	// cfg.Risk.StalenessTimeout. Zero timeout (default) disables it; configure
+	// in YAML when you want it.
+	go riskManager.RunStalenessWatchdog(ctx)
 
 	if fillsConsumer != nil {
 		go func() {
