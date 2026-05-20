@@ -129,7 +129,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 2 — Strategy quality and calibration 🟢
+## Phase 2 — Strategy quality and calibration ✅
 
 **Goal.** Every strategy has a documented failure mode, a calibration story, and dense unit tests.
 
