@@ -24,7 +24,10 @@ services:
     depends_on:
       - huginn
 
+  # Sleipnir lives in a sibling repo. Opt in with `--profile live`.
+  # Without the profile, plain clones come up cleanly without ../sleipnir.
   sleipnir:
+    profiles: ["live"]
     build:
       context: ../sleipnir
       dockerfile: Dockerfile

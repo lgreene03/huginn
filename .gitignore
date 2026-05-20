@@ -1,8 +1,10 @@
-# Compiled Go Binaries
-huginn
+# Compiled Go Binaries (anchored to repo root so cmd/{huginn,backtest,fetcher}/
+# source directories remain tracked — pre-2026-05 these patterns matched paths
+# anywhere and silently excluded every cmd/*.go file from version control).
+/huginn
+/backtest
+/fetcher
 bin/
-backtest
-fetcher
 *.exe
 *.exe~
 *.dll

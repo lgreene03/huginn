@@ -7,15 +7,18 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  go:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.25']
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version: ${{ matrix.go-version }}
 
     - name: Verify Dependencies
       run: go mod verify
@@ -26,5 +29,21 @@ jobs:
     - name: Vet
       run: go vet ./...
 
-    - name: Test
-      run: go test -v ./...
+    - name: Test (race + coverage)
+      run: go test -race -coverprofile=cover.out ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: web/package-lock.json
+    - run: npm ci
+    - run: npm run lint
+    - run: npm run build
