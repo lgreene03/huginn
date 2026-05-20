@@ -1,6 +1,6 @@
 package journal
 
-import "github.com/lgreene/huginn/internal/model"
+import "github.com/lgreene03/huginn/internal/model"
 
 // Writer is the pluggable interface for logging simulated order execution fills
 // and persisting strategy state across restarts.

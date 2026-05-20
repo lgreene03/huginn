@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // BinanceAggTrade represents a single aggregate trade record returned by Binance public API.

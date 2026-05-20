@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lgreene/huginn/internal/config"
-	"github.com/lgreene/huginn/internal/model"
-	"github.com/lgreene/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/config"
+	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/portfolio"
 )
 
 func baseCfg() config.RiskConfig {

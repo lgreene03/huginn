@@ -15,15 +15,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lgreene/huginn/internal/config"
-	"github.com/lgreene/huginn/internal/executor"
-	"github.com/lgreene/huginn/internal/journal"
-	"github.com/lgreene/huginn/internal/kafka"
-	"github.com/lgreene/huginn/internal/metrics"
-	"github.com/lgreene/huginn/internal/portfolio"
-	"github.com/lgreene/huginn/internal/risk"
-	"github.com/lgreene/huginn/internal/server"
-	"github.com/lgreene/huginn/internal/strategy"
+	"github.com/lgreene03/huginn/internal/config"
+	"github.com/lgreene03/huginn/internal/executor"
+	"github.com/lgreene03/huginn/internal/journal"
+	"github.com/lgreene03/huginn/internal/kafka"
+	"github.com/lgreene03/huginn/internal/metrics"
+	"github.com/lgreene03/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/risk"
+	"github.com/lgreene03/huginn/internal/server"
+	"github.com/lgreene03/huginn/internal/strategy"
 )
 
 func main() {

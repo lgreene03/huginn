@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // roundTrip drives the contract described in docs/STRATEGY_STATE_DESIGN.md §9:

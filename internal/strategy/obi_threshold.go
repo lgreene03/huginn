@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // OBIThreshold is a mean-reversion strategy driven by Order Book Imbalance.

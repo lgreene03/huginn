@@ -7,11 +7,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/lgreene/huginn/internal/executor"
-	"github.com/lgreene/huginn/internal/journal"
-	"github.com/lgreene/huginn/internal/model"
-	"github.com/lgreene/huginn/internal/portfolio"
-	"github.com/lgreene/huginn/internal/risk"
+	"github.com/lgreene03/huginn/internal/executor"
+	"github.com/lgreene03/huginn/internal/journal"
+	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/risk"
 )
 
 // Engine is a high-performance historical replayer.

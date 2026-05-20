@@ -1,4 +1,4 @@
-module github.com/lgreene/huginn
+module github.com/lgreene03/huginn
 
 go 1.25.7
 

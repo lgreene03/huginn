@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lgreene/huginn/internal/model"
-	"github.com/lgreene/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/portfolio"
 )
 
 // PostgresWriter logs simulated trade fills into a PostgreSQL database.

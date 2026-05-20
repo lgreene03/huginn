@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/lgreene/huginn/internal/metrics"
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/metrics"
+	"github.com/lgreene03/huginn/internal/model"
 	kgo "github.com/segmentio/kafka-go"
 )
 

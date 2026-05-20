@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // EMACrossover is a stateful trend-following momentum strategy.

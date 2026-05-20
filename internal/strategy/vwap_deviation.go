@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // VWAPDeviation is a mean-reversion strategy driven by price deviation from VWAP.

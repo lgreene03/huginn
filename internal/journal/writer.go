@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // JSONLWriter appends model.Fill records and strategy_state envelopes as

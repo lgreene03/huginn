@@ -228,7 +228,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - **Cross-link from Muninn's `companion-services` section** once published.
 - **Lint/format in CI.** `golangci-lint` config with the same rule set the Muninn server uses.
 
-**Exit criteria.** `docker pull ghcr.io/lgreene/huginn:v0.1.0` works. The docs site is published on GitHub Pages and linked from the README.
+**Exit criteria.** `docker pull ghcr.io/lgreene03/huginn:v0.1.0` works. The docs site is published on GitHub Pages and linked from the README.
 
 **Risks.** Doc maintenance — keep it co-located with the code that needs it.
 

@@ -7,8 +7,8 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/lgreene/huginn/internal/model"
-	"github.com/lgreene/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/portfolio"
 )
 
 // typeProbe sniffs the `type` discriminator. Records that omit it are

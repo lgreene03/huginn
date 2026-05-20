@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // Portfolio maintains the current state of a simulated trading account.

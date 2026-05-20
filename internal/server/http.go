@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lgreene/huginn/internal/metrics"
-	"github.com/lgreene/huginn/internal/model"
-	"github.com/lgreene/huginn/internal/portfolio"
-	"github.com/lgreene/huginn/internal/risk"
+	"github.com/lgreene03/huginn/internal/executor"
+	"github.com/lgreene03/huginn/internal/metrics"
+	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/portfolio"
+	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -20,16 +21,18 @@ type Server struct {
 	addr       string
 	portfolio  *portfolio.Portfolio
 	riskMgr    *risk.Manager
+	executor   *executor.Executor
 	isReady    bool
 	readyMutex sync.RWMutex
 	srv        *http.Server
 }
 
-func New(addr string, portf *portfolio.Portfolio, riskMgr *risk.Manager) *Server {
+func New(addr string, portf *portfolio.Portfolio, riskMgr *risk.Manager, exec *executor.Executor) *Server {
 	return &Server{
 		addr:      addr,
 		portfolio: portf,
 		riskMgr:   riskMgr,
+		executor:  exec,
 	}
 }
 

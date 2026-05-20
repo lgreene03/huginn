@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 func TestJournalRecovery(t *testing.T) {

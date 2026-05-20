@@ -2,7 +2,7 @@
 // concrete implementations for quantitative signal-driven paper trading.
 package strategy
 
-import "github.com/lgreene/huginn/internal/model"
+import "github.com/lgreene03/huginn/internal/model"
 
 // Strategy is the core abstraction for signal-driven order generation.
 //

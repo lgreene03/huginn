@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lgreene/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/model"
 	kgo "github.com/segmentio/kafka-go"
 )
 
