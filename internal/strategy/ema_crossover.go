@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -122,4 +123,54 @@ func (s *EMACrossover) OnFeature(event model.FeatureEvent) []model.Order {
 	}
 
 	return orders
+}
+
+// emaStateV1 is the persisted EMACrossover state shape, schema version 1.
+// All five accumulator fields are essential — losing any of them produces
+// a bogus crossover on the next event.
+type emaStateV1 struct {
+	NetPosition float64 `json:"net_position"`
+	FastEMA     float64 `json:"fast_ema"`
+	SlowEMA     float64 `json:"slow_ema"`
+	PrevFastEMA float64 `json:"prev_fast_ema"`
+	PrevSlowEMA float64 `json:"prev_slow_ema"`
+	Count       int     `json:"count"`
+}
+
+// MarshalState implements Stateful.
+func (s *EMACrossover) MarshalState() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return MarshalEnvelope(1, emaStateV1{
+		NetPosition: s.netPosition,
+		FastEMA:     s.fastEMA,
+		SlowEMA:     s.slowEMA,
+		PrevFastEMA: s.prevFastEMA,
+		PrevSlowEMA: s.prevSlowEMA,
+		Count:       s.count,
+	})
+}
+
+// RestoreState implements Stateful.
+func (s *EMACrossover) RestoreState(data []byte) error {
+	version, fields, err := ParseEnvelope(data)
+	if err != nil {
+		return err
+	}
+	if version != 1 {
+		return fmt.Errorf("%w: EMACrossover got v%d", ErrStateVersionMismatch, version)
+	}
+	var f emaStateV1
+	if err := json.Unmarshal(fields, &f); err != nil {
+		return fmt.Errorf("EMACrossover: failed to unmarshal v1 fields: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.netPosition = f.NetPosition
+	s.fastEMA = f.FastEMA
+	s.slowEMA = f.SlowEMA
+	s.prevFastEMA = f.PrevFastEMA
+	s.prevSlowEMA = f.PrevSlowEMA
+	s.count = f.Count
+	return nil
 }

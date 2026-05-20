@@ -1,8 +1,10 @@
 package strategy
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/lgreene/huginn/internal/model"
 )
@@ -12,7 +14,11 @@ import (
 // When price rises above VWAP by more than a threshold percentage, it assumes a
 // short-term overvaluation and sells. When price falls below VWAP by more than
 // a threshold percentage, it buys.
+//
+// State persisted across restarts: netPosition (so the throttle gate survives
+// process recovery).
 type VWAPDeviation struct {
+	mu           sync.Mutex
 	ThresholdPct float64 // e.g. 0.001 for 0.1% deviation
 	OrderSize    float64 // e.g. 0.01 BTC
 	maxPosition  float64 // maximum net position before throttling
@@ -43,6 +49,9 @@ func (s *VWAPDeviation) OnFeature(event model.FeatureEvent) []model.Order {
 	}
 
 	deviation := (price - vwap) / vwap
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	var orders []model.Order
 
@@ -86,4 +95,35 @@ func (s *VWAPDeviation) OnFeature(event model.FeatureEvent) []model.Order {
 	}
 
 	return orders
+}
+
+// vwapStateV1 is the persisted VWAPDeviation state shape, schema version 1.
+type vwapStateV1 struct {
+	NetPosition float64 `json:"net_position"`
+}
+
+// MarshalState implements Stateful.
+func (s *VWAPDeviation) MarshalState() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return MarshalEnvelope(1, vwapStateV1{NetPosition: s.netPosition})
+}
+
+// RestoreState implements Stateful.
+func (s *VWAPDeviation) RestoreState(data []byte) error {
+	version, fields, err := ParseEnvelope(data)
+	if err != nil {
+		return err
+	}
+	if version != 1 {
+		return fmt.Errorf("%w: VWAPDeviation got v%d", ErrStateVersionMismatch, version)
+	}
+	var f vwapStateV1
+	if err := json.Unmarshal(fields, &f); err != nil {
+		return fmt.Errorf("VWAPDeviation: failed to unmarshal v1 fields: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.netPosition = f.NetPosition
+	return nil
 }

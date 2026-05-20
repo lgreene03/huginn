@@ -34,6 +34,7 @@ type Config struct {
 // and applies them to the portfolio.
 type Executor struct {
 	strategy      strategy.Strategy
+	strategyKey   string // stable identifier for state persistence (e.g. "obi")
 	portfolio     *portfolio.Portfolio
 	journalWriter journal.Writer
 	riskManager   *risk.Manager
@@ -45,9 +46,14 @@ type Executor struct {
 }
 
 // New creates an executor wiring a strategy to a portfolio.
-func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config, liveMode bool, pub IntentPublisher) *Executor {
+//
+// strategyKey is a stable identifier (typically the config strategy name like
+// "obi" / "vpin") used to key state persistence. Pass an empty string to
+// disable state persistence — useful in tests.
+func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config, liveMode bool, pub IntentPublisher, strategyKey string) *Executor {
 	return &Executor{
 		strategy:      strat,
+		strategyKey:   strategyKey,
 		portfolio:     port,
 		journalWriter: jw,
 		riskManager:   rm,
@@ -55,6 +61,53 @@ func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, 
 		liveMode:      liveMode,
 		publisher:     pub,
 		dedup:         newDedupCache(10_000),
+	}
+}
+
+// PersistStrategyState marshals the strategy's current state (if Stateful) and
+// writes it via the journal. Errors are logged and counted but do not
+// propagate — a journal hiccup must not crash the engine.
+//
+// Safe to call concurrently; the strategy holds its own mutex internally and
+// the journal writer is itself thread-safe.
+func (e *Executor) PersistStrategyState() {
+	if e.strategyKey == "" || e.journalWriter == nil {
+		return
+	}
+	sf, ok := e.strategy.(strategy.Stateful)
+	if !ok {
+		return
+	}
+	blob, err := sf.MarshalState()
+	if err != nil {
+		slog.Error("Failed to marshal strategy state",
+			"strategy", e.strategy.Name(), "error", err)
+		return
+	}
+	if err := e.journalWriter.AppendStrategyState(e.strategyKey, blob); err != nil {
+		slog.Error("Failed to persist strategy state",
+			"strategy_key", e.strategyKey, "error", err)
+	}
+}
+
+// RunStatePersister runs a coalescing ticker that calls PersistStrategyState
+// every interval. EMA-style strategies mutate continuously between fills and
+// would otherwise lose their accumulator on a crash. Cancel via ctx.
+func (e *Executor) RunStatePersister(ctx context.Context, interval time.Duration) {
+	if e.strategyKey == "" {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			// One last persist on graceful shutdown — best effort.
+			e.PersistStrategyState()
+			return
+		case <-ticker.C:
+			e.PersistStrategyState()
+		}
 	}
 }
 
@@ -117,6 +170,10 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			e.portfolio.ApplyFill(fill)
 			metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
 
+			// Persist strategy state alongside the fill: position-bearing state
+			// (OBI/VPIN/VWAP.netPosition, VPIN.lastTrade) only changes on fills.
+			e.PersistStrategyState()
+
 			// Update portfolio gauges
 			snap := e.portfolio.Snapshot()
 			metrics.PortfolioCash.Set(snap.Cash)
@@ -169,6 +226,9 @@ func (e *Executor) OnExecutionFill(fill model.Fill) {
 
 	e.portfolio.ApplyFill(fill)
 	metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+
+	// Persist strategy state on every live fill, same as in paper mode.
+	e.PersistStrategyState()
 
 	slog.Info("Live execution fill applied to portfolio",
 		"order_id", fill.OrderID,

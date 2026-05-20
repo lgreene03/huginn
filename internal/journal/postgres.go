@@ -61,9 +61,57 @@ func (w *PostgresWriter) initSchema(ctx context.Context) error {
 		timestamp TIMESTAMPTZ NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_trade_fills_timestamp ON trade_fills(timestamp);
+
+	CREATE TABLE IF NOT EXISTS strategy_state (
+		strategy_key VARCHAR(64) PRIMARY KEY,
+		state_blob JSONB NOT NULL,
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_strategy_state_updated ON strategy_state(updated_at);
 	`
 	_, err := w.pool.Exec(ctx, query)
 	return err
+}
+
+// AppendStrategyState upserts the latest state blob for the given strategy
+// key. The PRIMARY KEY constraint guarantees latest-wins semantics; we don't
+// keep history.
+func (w *PostgresWriter) AppendStrategyState(key string, blob []byte) error {
+	if len(blob) == 0 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+	INSERT INTO strategy_state (strategy_key, state_blob, updated_at)
+	VALUES ($1, $2, NOW())
+	ON CONFLICT (strategy_key) DO UPDATE
+	SET state_blob = EXCLUDED.state_blob, updated_at = NOW();
+	`
+	_, err := w.pool.Exec(ctx, query, key, blob)
+	return err
+}
+
+// LoadStrategyState returns the most recent state blob for the given key, or
+// (nil, nil) if there is none. Used by the boot path to seed the strategy.
+func (w *PostgresWriter) LoadStrategyState(key string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var blob []byte
+	err := w.pool.QueryRow(ctx,
+		`SELECT state_blob FROM strategy_state WHERE strategy_key = $1`, key,
+	).Scan(&blob)
+	if err != nil {
+		// pgx returns ErrNoRows from the database/sql import path; tolerate
+		// both that and the literal "no rows" string for cross-version safety.
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to load strategy state: %w", err)
+	}
+	return blob, nil
 }
 
 // Append inserts a trade fill into the trade_fills table.

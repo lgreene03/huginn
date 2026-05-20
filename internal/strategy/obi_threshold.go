@@ -1,8 +1,10 @@
 package strategy
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/lgreene/huginn/internal/model"
@@ -14,11 +16,16 @@ import (
 // short-term reversion is likely and sells. When OBI drops below -threshold
 // (extreme sell pressure), it buys. This is a classic market-making signal
 // used by HFT desks to capture adverse-selection-aware spreads.
+//
+// State persisted across restarts: netPosition (so the throttle gate survives
+// process recovery). Threshold/OrderSize/maxPosition come from config on each
+// boot — see docs/STRATEGY_STATE_DESIGN.md.
 type OBIThreshold struct {
-	Threshold    float64 // e.g. 0.7
-	OrderSize    float64 // e.g. 0.01 BTC
-	maxPosition  float64 // maximum net position before throttling
-	netPosition  float64 // tracks current net exposure
+	mu          sync.Mutex
+	Threshold   float64 // e.g. 0.7
+	OrderSize   float64 // e.g. 0.01 BTC
+	maxPosition float64 // maximum net position before throttling
+	netPosition float64 // tracks current net exposure
 }
 
 // NewOBIThreshold creates a threshold-based OBI strategy.
@@ -39,6 +46,9 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 	if !ok {
 		return nil
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	var orders []model.Order
 
@@ -84,12 +94,47 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 	return orders
 }
 
+// obiStateV1 is the persisted OBIThreshold state shape, schema version 1.
+type obiStateV1 struct {
+	NetPosition float64 `json:"net_position"`
+}
+
+// MarshalState implements Stateful.
+func (s *OBIThreshold) MarshalState() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return MarshalEnvelope(1, obiStateV1{NetPosition: s.netPosition})
+}
+
+// RestoreState implements Stateful.
+func (s *OBIThreshold) RestoreState(data []byte) error {
+	version, fields, err := ParseEnvelope(data)
+	if err != nil {
+		return err
+	}
+	if version != 1 {
+		return fmt.Errorf("%w: OBIThreshold got v%d", ErrStateVersionMismatch, version)
+	}
+	var f obiStateV1
+	if err := json.Unmarshal(fields, &f); err != nil {
+		return fmt.Errorf("OBIThreshold: failed to unmarshal v1 fields: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.netPosition = f.NetPosition
+	return nil
+}
+
 // VPINBreakout is a momentum strategy driven by VPIN (order flow toxicity).
 //
 // When VPIN exceeds a threshold, it signals that informed traders are active
 // and a directional move is likely. The strategy enters in the direction of
 // the dominant flow.
+//
+// State persisted across restarts: lastTrade (the cooldown gate). Without it,
+// a restart in the middle of a cooldown window will fire a duplicate entry.
 type VPINBreakout struct {
+	mu        sync.Mutex
 	Threshold float64
 	OrderSize float64
 	cooldown  time.Duration
@@ -115,7 +160,10 @@ func (s *VPINBreakout) OnFeature(event model.FeatureEvent) []model.Order {
 		return nil
 	}
 
-	// Cooldown check
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Cooldown check (event-time, not wall-clock — intentional, see design doc §10.5)
 	if !s.lastTrade.IsZero() && event.EventTime.Sub(s.lastTrade) < s.cooldown {
 		return nil
 	}
@@ -139,5 +187,36 @@ func (s *VPINBreakout) OnFeature(event model.FeatureEvent) []model.Order {
 		}}
 	}
 
+	return nil
+}
+
+// vpinStateV1 is the persisted VPINBreakout state shape, schema version 1.
+type vpinStateV1 struct {
+	LastTrade time.Time `json:"last_trade"`
+}
+
+// MarshalState implements Stateful.
+func (s *VPINBreakout) MarshalState() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return MarshalEnvelope(1, vpinStateV1{LastTrade: s.lastTrade})
+}
+
+// RestoreState implements Stateful.
+func (s *VPINBreakout) RestoreState(data []byte) error {
+	version, fields, err := ParseEnvelope(data)
+	if err != nil {
+		return err
+	}
+	if version != 1 {
+		return fmt.Errorf("%w: VPINBreakout got v%d", ErrStateVersionMismatch, version)
+	}
+	var f vpinStateV1
+	if err := json.Unmarshal(fields, &f); err != nil {
+		return fmt.Errorf("VPINBreakout: failed to unmarshal v1 fields: %w", err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastTrade = f.LastTrade
 	return nil
 }

@@ -70,7 +70,7 @@ func main() {
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
 		TransactionCostBps: cfg.Executor.TransactionCostBps,
 		SlippageBps:        cfg.Executor.SlippageBps,
-	}, false, nil)
+	}, false, nil, "") // empty key — backtest doesn't persist strategy state
 
 	// Initialize and run backtest engine
 	engine := backtest.NewEngine(exec, port, jWriter, riskManager)

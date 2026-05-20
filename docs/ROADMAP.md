@@ -95,7 +95,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 0 — Unbreak `main` 🔴
+## Phase 0 — Unbreak `main` ✅
 
 **Goal.** Get `go build ./...` and `npm ci && npm run build` green on a fresh clone.
 
@@ -112,7 +112,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 1 — Restart correctness
+## Phase 1 — Restart correctness 🟢
 
 **Goal.** Huginn restarts the same way it left, end-to-end.
 

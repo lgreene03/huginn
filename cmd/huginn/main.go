@@ -112,6 +112,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Restore strategy state from prior run, if any. The key is the config
+	// strategy name (stable across threshold tweaks). Loader backend matches
+	// the persistence backend selected above.
+	strategyKey := cfg.Strategy.Name
+	var priorState []byte
+	if cfg.Database.Enabled {
+		if pw, ok := jWriter.(*journal.PostgresWriter); ok {
+			priorState, err = pw.LoadStrategyState(strategyKey)
+		}
+	} else {
+		priorState, err = journal.LoadStrategyStateFromJSONL("data/trades.jsonl", strategyKey)
+	}
+	if err != nil {
+		slog.Error("Failed to load prior strategy state", "error", err, "strategy_key", strategyKey)
+		os.Exit(1)
+	}
+	if sf, ok := activeStrategy.(strategy.Stateful); ok && len(priorState) > 0 {
+		if err := sf.RestoreState(priorState); err != nil {
+			slog.Error("Failed to restore strategy state — refusing to boot (delete the strategy_state row to start fresh)",
+				"error", err, "strategy_key", strategyKey)
+			os.Exit(1)
+		}
+		slog.Info("Restored strategy state from prior run", "strategy_key", strategyKey, "bytes", len(priorState))
+	} else if len(priorState) == 0 {
+		slog.Info("No prior strategy state found — starting fresh", "strategy_key", strategyKey)
+	}
+
 	// Initialize risk manager
 	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
 
@@ -126,7 +153,7 @@ func main() {
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
 		TransactionCostBps: cfg.Executor.TransactionCostBps,
 		SlippageBps:        cfg.Executor.SlippageBps,
-	}, cfg.LiveExecution, producer)
+	}, cfg.LiveExecution, producer, strategyKey)
 
 	// Initialize Kafka consumer for incoming feature events
 	consumer := kafka.NewConsumer(kafka.Config{
@@ -163,6 +190,11 @@ func main() {
 
 	// Run
 	srv.SetReady(true)
+
+	// Persist strategy state on a 5s ticker to bound RPO for strategies (like
+	// EMACrossover) that mutate continuously between fills. Stops cleanly on
+	// ctx cancel; the final tick fires on graceful shutdown.
+	go exec.RunStatePersister(ctx, 5*time.Second)
 
 	if fillsConsumer != nil {
 		go func() {
