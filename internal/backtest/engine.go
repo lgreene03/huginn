@@ -60,8 +60,11 @@ func (e *Engine) Run(dataPath string) error {
 		e.exec.OnFeature(event)
 		eventsProcessed++
 
-		// Track daily equity curve for advanced metrics (Sharpe/Sortino)
-		day := event.EventTime.YearDay()
+		// Track daily equity curve for advanced metrics (Sharpe/Sortino).
+		// Use year*1000+YearDay rather than YearDay alone: YearDay wraps
+		// at year boundaries (Jan 1 2024 and Jan 1 2025 both return 1),
+		// collapsing multi-year backtests into a single equity bucket.
+		day := event.EventTime.Year()*1000 + event.EventTime.YearDay()
 		if day != lastDay {
 			if lastDay != -1 {
 				snap := e.port.Snapshot()
