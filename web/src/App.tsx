@@ -197,7 +197,7 @@ function App() {
           message: `Execution failed: ${data.message || 'Unknown risk or engine error.'}`,
         });
       }
-    } catch (err) {
+    } catch {
       setSubmitStatus({
         type: 'error',
         message: 'Network error. Failed to reach the strategy engine api.',
