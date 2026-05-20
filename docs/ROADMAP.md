@@ -148,13 +148,13 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 3 — Observability that doesn't lie 🟢
+## Phase 3 — Observability that doesn't lie ✅
 
 **Goal.** A human looking at Grafana can tell whether Huginn is healthy without reading logs.
 
 **Deliverables.**
 - **New metrics.** `huginn_orders_rejected_total{reason=...}`, `huginn_feature_event_age_seconds` (histogram, computed `now - event.EventTime` at dispatch), `huginn_signal_to_fill_latency_seconds`, `huginn_kafka_consumer_lag{topic=...}`, `huginn_strategy_state_persisted_total`, `huginn_risk_halt_active` (gauge 0/1).
-- **OpenTelemetry traces.** Span per `OnFeature` covering strategy → risk → executor → journal → portfolio. Optional OTLP exporter behind `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **OpenTelemetry traces.** Span per `OnFeature` covering strategy → risk → executor → journal → portfolio. Optional OTLP exporter behind `OTEL_EXPORTER_OTLP_ENDPOINT`. _Deferred: OTel adds substantial dependency weight; the no-op path satisfies the risk note. Will be revisited in Phase 7 (release engineering) where a full dep audit is planned._
 - **Log volume control.** Demote inner-loop `slog.Info` in `portfolio.ApplyFill`, `executor.OnFeature`, and strategy "Strategy signal" lines to `slog.Debug`; gate `Info`-level on a sampling counter or every-Nth-event flag.
 - **A bundled Grafana dashboard JSON** in `deploy/grafana/huginn.json`: equity curve, realized vs unrealized PnL, fills/min, orders rejected by reason, feature age, halt status.
 - **`/api/snapshot` endpoint** returning the current snapshot as plain JSON (the SSE stream's per-tick payload sans streaming) — needed for the dashboard and easier to scrape than SSE.
@@ -172,7 +172,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - ✅ **Fix the year-boundary bug** in `engine.go:64`: encode the daily key as `year*1000 + YearDay()` so Jan 1 of different years produces distinct equity samples. Regression tests in `internal/backtest/engine_test.go`.
 - **Order-book-aware fill model.** Currently buys fill at `microPrice * (1 + slippage_bps)`. Optionally consume `bidPrice`/`askPrice`/`spread` from feature events when present (Muninn already publishes these in `features.book.v1`) and fill at the touch + slippage.
 - **Latency model.** Optional `executor.fill_latency_ms` config that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking.
-- **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
+- ✅ **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
 - **Backtest report HTML.** Optional `--report report.html` flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
 - **Multi-strategy backtest.** Run two strategies concurrently in one backtest, with shared portfolio + risk. Today the engine takes one executor; this requires a small refactor to a slice of executors and a shared portfolio.
 
