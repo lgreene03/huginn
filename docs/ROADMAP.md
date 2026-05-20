@@ -169,7 +169,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 **Goal.** Backtest results predict live paper-trading results within a documented tolerance.
 
 **Deliverables.**
-- **Fix the year-boundary bug** in `engine.go:64`: use full `year-month-day` tuple, not `YearDay()`.
+- ✅ **Fix the year-boundary bug** in `engine.go:64`: encode the daily key as `year*1000 + YearDay()` so Jan 1 of different years produces distinct equity samples. Regression tests in `internal/backtest/engine_test.go`.
 - **Order-book-aware fill model.** Currently buys fill at `microPrice * (1 + slippage_bps)`. Optionally consume `bidPrice`/`askPrice`/`spread` from feature events when present (Muninn already publishes these in `features.book.v1`) and fill at the touch + slippage.
 - **Latency model.** Optional `executor.fill_latency_ms` config that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking.
 - **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
