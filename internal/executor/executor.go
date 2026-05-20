@@ -80,9 +80,13 @@ func (e *Executor) PersistStrategyState() {
 			if err != nil {
 				slog.Error("Failed to marshal strategy state",
 					"strategy", e.strategy.Name(), "error", err)
+				metrics.StrategyStatePersistErrorsTotal.WithLabelValues("marshal").Inc()
 			} else if err := e.journalWriter.AppendStrategyState(e.strategyKey, blob); err != nil {
 				slog.Error("Failed to persist strategy state",
 					"strategy_key", e.strategyKey, "error", err)
+				metrics.StrategyStatePersistErrorsTotal.WithLabelValues("write").Inc()
+			} else {
+				metrics.StrategyStatePersistedTotal.Inc()
 			}
 		}
 	}
@@ -93,8 +97,12 @@ func (e *Executor) PersistStrategyState() {
 		blob, err := e.riskManager.MarshalState()
 		if err != nil {
 			slog.Error("Failed to marshal risk state", "error", err)
+			metrics.StrategyStatePersistErrorsTotal.WithLabelValues("marshal").Inc()
 		} else if err := e.journalWriter.AppendStrategyState(riskStateKey, blob); err != nil {
 			slog.Error("Failed to persist risk state", "error", err)
+			metrics.StrategyStatePersistErrorsTotal.WithLabelValues("write").Inc()
+		} else {
+			metrics.StrategyStatePersistedTotal.Inc()
 		}
 	}
 }
@@ -135,6 +143,12 @@ func (e *Executor) RunStatePersister(ctx context.Context, interval time.Duration
 // OnFeature is the main event handler. It is called by the Kafka consumer
 // for each deserialized FeatureEvent.
 func (e *Executor) OnFeature(event model.FeatureEvent) {
+	// Observability: wall-clock age of this feature event at the moment it
+	// reaches huginn. Histogram in `huginn_feature_event_age_seconds`.
+	if !event.EventTime.IsZero() {
+		metrics.FeatureEventAgeSeconds.Observe(time.Since(event.EventTime).Seconds())
+	}
+
 	// Notify the risk manager that a fresh event arrived — feeds the
 	// staleness watchdog and the auto-resume-from-staleness path.
 	if e.riskManager != nil {
@@ -145,6 +159,10 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 	for _, order := range orders {
 		metrics.OrdersGeneratedTotal.WithLabelValues(e.strategy.Name(), order.Side.String()).Inc()
 	}
+
+	// Signal arrived at this point. We record fill latency where each branch
+	// applies the fill (paper) / publishes the intent (live).
+	signalTime := time.Now()
 
 	for _, order := range orders {
 		if e.liveMode {
@@ -175,6 +193,10 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 					slog.Error("Failed to publish live order intent to gateway", "error", err, "order_id", orderID)
 				}
 				cancel()
+				// Latency for live mode covers the signal → intent-publish leg.
+				// The signal → fill leg is observed separately on the inbound
+				// path via OnExecutionFill.
+				metrics.SignalToFillLatencySeconds.WithLabelValues("live").Observe(time.Since(signalTime).Seconds())
 			} else {
 				slog.Warn("Live mode enabled but no intent publisher is configured", "order_id", orderID)
 			}
@@ -196,6 +218,7 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 
 			e.portfolio.ApplyFill(fill)
 			metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+			metrics.SignalToFillLatencySeconds.WithLabelValues("paper").Observe(time.Since(signalTime).Seconds())
 
 			// Persist strategy state alongside the fill: position-bearing state
 			// (OBI/VPIN/VWAP.netPosition, VPIN.lastTrade) only changes on fills.
@@ -208,7 +231,7 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			metrics.PortfolioUnrealizedPnL.Set(snap.UnrealizedPnL)
 			metrics.PortfolioTotalValue.Set(snap.TotalValue)
 
-			slog.Info("Paper trade executed",
+			slog.Debug("Paper trade executed",
 				"strategy", e.strategy.Name(),
 				"order_side", order.Side.String(),
 				"order_qty", fmt.Sprintf("%.8f", order.Quantity),

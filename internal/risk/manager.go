@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lgreene03/huginn/internal/config"
+	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 )
@@ -76,6 +77,7 @@ func (m *Manager) Halt() {
 	defer m.mu.Unlock()
 	m.halted = true
 	m.haltReason = HaltManual
+	m.updateHaltGauges()
 	slog.Warn("Manual Circuit Breaker Activated")
 }
 
@@ -85,6 +87,7 @@ func (m *Manager) Resume() {
 	defer m.mu.Unlock()
 	m.halted = false
 	m.haltReason = HaltNone
+	m.updateHaltGauges()
 	slog.Info("Manual Circuit Breaker Reset")
 }
 
@@ -121,6 +124,7 @@ func (m *Manager) OnFeatureSeen(eventTime time.Time) {
 	if m.halted && m.haltReason == HaltStaleness && m.config.AutoResumeAfterStaleness {
 		m.halted = false
 		m.haltReason = HaltNone
+		m.updateHaltGauges()
 		slog.Info("Staleness halt auto-cleared by fresh feature event", "event_time", eventTime)
 	}
 }
@@ -156,6 +160,8 @@ func (m *Manager) RunStalenessWatchdog(ctx context.Context) {
 			if gap > m.config.StalenessTimeout && (!m.halted || m.haltReason != HaltStaleness) {
 				m.halted = true
 				m.haltReason = HaltStaleness
+				m.updateHaltGauges()
+				metrics.OrdersRejectedTotal.WithLabelValues("feature_staleness").Inc()
 				slog.Warn("Risk auto-halt: feature event staleness",
 					"last_event", m.lastFeatureEventTime,
 					"gap", gap.String(),
@@ -179,6 +185,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 			"reason", string(m.haltReason),
 			"order_id", fill.OrderID,
 		)
+		metrics.OrdersRejectedTotal.WithLabelValues(string(m.haltReason)).Inc()
 		return false
 	}
 
@@ -191,6 +198,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 	if snap.TotalValue < trailingStopThreshold {
 		m.halted = true
 		m.haltReason = HaltDrawdown
+		m.updateHaltGauges()
 		slog.Warn("Risk limit triggered: Trailing Stop Loss Circuit Breaker Activated",
 			"total_value", snap.TotalValue,
 			"peak_value", m.peakValue,
@@ -198,6 +206,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 			"drawdown_pct", fmt.Sprintf("%.2f%%", (m.peakValue-snap.TotalValue)/m.peakValue*100.0),
 			"order_id", fill.OrderID,
 		)
+		metrics.OrdersRejectedTotal.WithLabelValues("drawdown").Inc()
 		return false
 	}
 
@@ -220,6 +229,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 			"limit", -m.config.DailyLossLimit,
 			"order_id", fill.OrderID,
 		)
+		metrics.OrdersRejectedTotal.WithLabelValues("daily_loss").Inc()
 		return false
 	}
 
@@ -275,6 +285,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 				"limit", perInstrument,
 				"order_id", fill.OrderID,
 			)
+			metrics.OrdersRejectedTotal.WithLabelValues("position_limit").Inc()
 			return false
 		}
 	} else {
@@ -289,11 +300,29 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 				"volPct", fmt.Sprintf("%.4f%%", volPct*100.0),
 				"order_id", fill.OrderID,
 			)
+			metrics.OrdersRejectedTotal.WithLabelValues("position_limit").Inc()
 			return false
 		}
 	}
 
 	return true
+}
+
+// updateHaltGauges syncs the Prometheus halt gauges to the current state.
+// Must be called with m.mu held (write or read — see callers).
+func (m *Manager) updateHaltGauges() {
+	if m.halted {
+		metrics.RiskHaltActive.Set(1)
+	} else {
+		metrics.RiskHaltActive.Set(0)
+	}
+	// Zero out every reason then set the active one (if any).
+	for _, r := range []HaltReason{HaltManual, HaltDrawdown, HaltStaleness} {
+		metrics.RiskHaltReason.WithLabelValues(string(r)).Set(0)
+	}
+	if m.halted && m.haltReason != HaltNone {
+		metrics.RiskHaltReason.WithLabelValues(string(m.haltReason)).Set(1)
+	}
 }
 
 // GetPositionLimitHard returns the current configured hard position limit in a thread-safe manner.

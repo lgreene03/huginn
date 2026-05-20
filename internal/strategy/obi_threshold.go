@@ -90,7 +90,7 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 		})
 		s.netPosition -= s.OrderSize
 
-		slog.Info("Strategy signal",
+		slog.Debug("Strategy signal",
 			"strategy", s.Name(),
 			"action", "SELL",
 			"obi", fmt.Sprintf("%.4f", obi),
@@ -109,7 +109,7 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 		})
 		s.netPosition += s.OrderSize
 
-		slog.Info("Strategy signal",
+		slog.Debug("Strategy signal",
 			"strategy", s.Name(),
 			"action", "BUY",
 			"obi", fmt.Sprintf("%.4f", obi),

@@ -92,7 +92,7 @@ func (s *VWAPDeviation) OnFeature(event model.FeatureEvent) []model.Order {
 		})
 		s.netPosition -= s.OrderSize
 
-		slog.Info("Strategy signal",
+		slog.Debug("Strategy signal",
 			"strategy", s.Name(),
 			"action", "SELL",
 			"deviation", fmt.Sprintf("%.4f", deviation),
@@ -111,7 +111,7 @@ func (s *VWAPDeviation) OnFeature(event model.FeatureEvent) []model.Order {
 		})
 		s.netPosition += s.OrderSize
 
-		slog.Info("Strategy signal",
+		slog.Debug("Strategy signal",
 			"strategy", s.Name(),
 			"action", "BUY",
 			"deviation", fmt.Sprintf("%.4f", deviation),

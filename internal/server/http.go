@@ -67,6 +67,25 @@ func (s *Server) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// snapshotHandler returns the same per-tick payload the SSE /api/stream
+// emits, but as a plain JSON response. Easier to scrape from cron-style
+// monitors and load-testers than parsing an SSE stream. Phase 3 deliverable.
+func (s *Server) snapshotHandler(w http.ResponseWriter, r *http.Request) {
+	snap := s.portfolio.Snapshot()
+	payload := map[string]interface{}{
+		"portfolio":   snap,
+		"halted":      s.riskMgr.IsHalted(),
+		"halt_reason": string(s.riskMgr.HaltReason()),
+		"fills":       s.portfolio.Fills(),
+		"timestamp":   time.Now().Format(time.RFC3339),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (s *Server) readyzHandler(w http.ResponseWriter, r *http.Request) {
 	s.readyMutex.RLock()
 	ready := s.isReady
@@ -220,6 +239,7 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", corsMiddleware(s.healthzHandler))
 	mux.HandleFunc("/readyz", corsMiddleware(s.readyzHandler))
+	mux.HandleFunc("/api/snapshot", corsMiddleware(s.snapshotHandler))
 	mux.HandleFunc("/api/stream", s.streamHandler)
 	mux.HandleFunc("/api/breaker/trigger", corsMiddleware(s.breakerTriggerHandler))
 	mux.HandleFunc("/api/breaker/reset", corsMiddleware(s.breakerResetHandler))

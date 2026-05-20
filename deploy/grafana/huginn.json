@@ -1,0 +1,176 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "enable": true,
+        "expr": "huginn_risk_halt_active",
+        "iconColor": "red",
+        "name": "Halts",
+        "step": "30s",
+        "titleFormat": "Risk halt"
+      }
+    ]
+  },
+  "description": "Phase 3 baseline dashboard for huginn — equity, fills, risk halt state, feature freshness, rejection breakdown. See docs/ROADMAP.md.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"options": {"0": {"color": "green", "text": "RUNNING"}}, "type": "value"},
+            {"options": {"1": {"color": "red",   "text": "HALTED"}},  "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center"},
+      "pluginVersion": "10.4.0",
+      "targets": [
+        {"expr": "huginn_risk_halt_active", "refId": "A"}
+      ],
+      "title": "Risk halt",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "targets": [{"expr": "huginn_portfolio_total_value", "refId": "A"}],
+      "title": "Portfolio total value",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "targets": [{"expr": "huginn_portfolio_realized_pnl", "refId": "A"}],
+      "title": "Realized PnL",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "targets": [{"expr": "huginn_portfolio_unrealized_pnl", "refId": "A"}],
+      "title": "Unrealized PnL",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "targets": [{"expr": "sum(rate(huginn_fills_executed_total[5m])) * 60", "refId": "A"}],
+      "title": "Fills / min",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area"},
+      "targets": [{"expr": "sum(rate(huginn_orders_rejected_total[5m])) * 60", "refId": "A"}],
+      "title": "Rejections / min",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 10,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "huginn_portfolio_total_value", "refId": "A", "legendFormat": "total"},
+        {"expr": "huginn_portfolio_cash",         "refId": "B", "legendFormat": "cash"},
+        {"expr": "huginn_portfolio_realized_pnl + huginn_portfolio_cash + huginn_portfolio_unrealized_pnl", "refId": "C", "legendFormat": "all-in"}
+      ],
+      "title": "Equity curve",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "id": 11,
+      "options": {"legend": {"displayMode": "table"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.5,  sum(rate(huginn_feature_event_age_seconds_bucket[5m])) by (le))", "refId": "A", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum(rate(huginn_feature_event_age_seconds_bucket[5m])) by (le))", "refId": "B", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum(rate(huginn_feature_event_age_seconds_bucket[5m])) by (le))", "refId": "C", "legendFormat": "p99"}
+      ],
+      "title": "Feature event age (Muninn → huginn latency)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 30, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "id": 12,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (reason) (rate(huginn_orders_rejected_total[5m]))", "refId": "A", "legendFormat": "{{reason}}"}
+      ],
+      "title": "Orders rejected by reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}}},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "id": 13,
+      "options": {"legend": {"displayMode": "table"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.5,  sum by (le, mode) (rate(huginn_signal_to_fill_latency_seconds_bucket[5m])))", "refId": "A", "legendFormat": "{{mode}} p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le, mode) (rate(huginn_signal_to_fill_latency_seconds_bucket[5m])))", "refId": "B", "legendFormat": "{{mode}} p95"}
+      ],
+      "title": "Signal → fill latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"drawStyle": "bars", "fillOpacity": 30, "stacking": {"mode": "normal"}}}},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
+      "id": 14,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (strategy, side) (rate(huginn_orders_generated_total[5m]))", "refId": "A", "legendFormat": "{{strategy}} {{side}}"}
+      ],
+      "title": "Orders generated by strategy & side",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["huginn", "trading"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Huginn — Strategy Engine",
+  "uid": "huginn-phase3",
+  "version": 1,
+  "weekStart": ""
+}

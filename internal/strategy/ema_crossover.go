@@ -125,7 +125,7 @@ func (s *EMACrossover) OnFeature(event model.FeatureEvent) []model.Order {
 			})
 			s.netPosition += s.OrderSize
 
-			slog.Info("Strategy signal",
+			slog.Debug("Strategy signal",
 				"strategy", s.Name(),
 				"action", "BUY",
 				"fast_ema", fmt.Sprintf("%.2f", s.fastEMA),
@@ -148,7 +148,7 @@ func (s *EMACrossover) OnFeature(event model.FeatureEvent) []model.Order {
 			})
 			s.netPosition -= s.OrderSize
 
-			slog.Info("Strategy signal",
+			slog.Debug("Strategy signal",
 				"strategy", s.Name(),
 				"action", "SELL",
 				"fast_ema", fmt.Sprintf("%.2f", s.fastEMA),

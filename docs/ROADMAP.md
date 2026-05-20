@@ -148,7 +148,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 3 — Observability that doesn't lie
+## Phase 3 — Observability that doesn't lie 🟢
 
 **Goal.** A human looking at Grafana can tell whether Huginn is healthy without reading logs.
 

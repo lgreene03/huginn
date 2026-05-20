@@ -97,7 +97,11 @@ func (p *Portfolio) ApplyFill(fill model.Fill) {
 	p.totalSlippage += fill.SlippageBps
 	p.fills = append(p.fills, fill)
 
-	slog.Info("Fill applied",
+	// Demoted from Info → Debug in Phase 3: at production event rates this
+	// line fires hundreds of times per minute and drowns the log. The fill
+	// is already durably journaled and surfaced via metrics + the SSE
+	// stream; LOG_LEVEL=debug brings it back when an operator wants it.
+	slog.Debug("Fill applied",
 		"instrument", fill.Instrument,
 		"side", fill.Side.String(),
 		"quantity", fmt.Sprintf("%.8f", fill.Quantity),

@@ -90,7 +90,7 @@ func (s *VPINBreakout) OnFeature(event model.FeatureEvent) []model.Order {
 	if vpin > s.Threshold {
 		s.lastTrade = event.EventTime
 
-		slog.Info("Strategy signal",
+		slog.Debug("Strategy signal",
 			"strategy", s.Name(),
 			"action", "BUY",
 			"vpin", fmt.Sprintf("%.4f", vpin),

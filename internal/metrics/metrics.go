@@ -1,3 +1,9 @@
+// Package metrics defines the Prometheus instrumentation huginn exposes
+// on /metrics. The Phase 3 of docs/ROADMAP.md added the operational
+// gauges/histograms below (orders rejected by reason, feature event age,
+// signal-to-fill latency, halt status). Counter/gauge nomenclature
+// follows Prometheus convention: *_total for counters, no suffix for
+// gauges, *_seconds for histograms with time units.
 package metrics
 
 import (
@@ -63,5 +69,81 @@ var (
 			Name: "huginn_portfolio_total_value",
 			Help: "Total portfolio value (cash + unrealized PnL)",
 		},
+	)
+
+	// ─── Phase 3 additions ──────────────────────────────────────────────
+
+	// OrdersRejectedTotal counts prospective fills rejected by the risk
+	// manager, labeled by the typed reason. Use this to spot a runaway
+	// strategy: a spike in `position_limit` rejections is the canary
+	// before the trailing stop trips.
+	OrdersRejectedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_orders_rejected_total",
+			Help: "Total prospective fills rejected by the risk manager",
+		},
+		[]string{"reason"}, // halted / drawdown / daily_loss / position_limit / staleness
+	)
+
+	// FeatureEventAgeSeconds is the wall-clock delay between the feature
+	// event's EventTime and when huginn dispatched it. A creeping p95 here
+	// means Muninn → Kafka → huginn is falling behind; a step change means
+	// the feed broke or huginn is throttled.
+	FeatureEventAgeSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "huginn_feature_event_age_seconds",
+			Help:    "Wall-clock delay between feature event time and dispatch",
+			Buckets: prometheus.ExponentialBuckets(0.001, 4, 9), // 1ms … 65s
+		},
+	)
+
+	// SignalToFillLatencySeconds is the wall-clock delay between strategy
+	// signal and fill application. For paper mode this is small (in-process);
+	// for live mode it captures the round-trip to sleipnir.
+	SignalToFillLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "huginn_signal_to_fill_latency_seconds",
+			Help:    "Wall-clock delay from strategy signal to fill application",
+			Buckets: prometheus.ExponentialBuckets(0.0001, 4, 9), // 100µs … 6.5s
+		},
+		[]string{"mode"}, // paper | live
+	)
+
+	// StrategyStatePersistedTotal counts successful state-journal writes.
+	// Pair with StrategyStatePersistErrorsTotal to compute the success ratio.
+	StrategyStatePersistedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "huginn_strategy_state_persisted_total",
+			Help: "Successful strategy/risk state persists via the journal",
+		},
+	)
+
+	// StrategyStatePersistErrorsTotal counts failed state-journal writes.
+	StrategyStatePersistErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_strategy_state_persist_errors_total",
+			Help: "Failed strategy/risk state persists via the journal",
+		},
+		[]string{"kind"}, // marshal | write
+	)
+
+	// RiskHaltActive is 1 when the risk manager has trading halted (any
+	// reason), 0 otherwise. Combine with RiskHaltReason via PromQL `info`
+	// joins to render the reason on dashboards.
+	RiskHaltActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "huginn_risk_halt_active",
+			Help: "1 when trading is halted by the risk manager, else 0",
+		},
+	)
+
+	// RiskHaltReason emits an info-style gauge with the reason label.
+	// Always exactly one series is non-zero (or none, if not halted).
+	RiskHaltReason = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "huginn_risk_halt_reason",
+			Help: "Info-style: which halt reason is currently active (manual|drawdown|feature_staleness)",
+		},
+		[]string{"reason"},
 	)
 )
