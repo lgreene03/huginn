@@ -5,21 +5,48 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/lgreene03/huginn/internal/model"
 )
 
 // OBIThreshold is a mean-reversion strategy driven by Order Book Imbalance.
 //
-// When OBI exceeds +threshold (extreme buy pressure), the strategy assumes a
-// short-term reversion is likely and sells. When OBI drops below -threshold
-// (extreme sell pressure), it buys. This is a classic market-making signal
-// used by HFT desks to capture adverse-selection-aware spreads.
+// # Signal hypothesis
 //
-// State persisted across restarts: netPosition (so the throttle gate survives
-// process recovery). Threshold/OrderSize/maxPosition come from config on each
-// boot — see docs/STRATEGY_STATE_DESIGN.md.
+// OBI = (bid_qty − ask_qty) / (bid_qty + ask_qty), bounded in [−1, +1].
+// When the book is heavily lopsided to the buy side (OBI > +threshold), the
+// strategy interprets this as transient adverse selection pressure that will
+// revert as the displayed quote is consumed and replenished. The mirror logic
+// fires on the sell side.
+//
+// # Expected regime
+//
+// Best in liquid order-book regimes with stable depth where short-term
+// imbalances genuinely mean-revert. Classic HFT market-making signal.
+//
+// # Known failure modes
+//
+//   - Regime change. In a sustained directional move, OBI stays pegged at
+//     the threshold and the strategy keeps fading into it — accumulating
+//     a position that the throttle eventually clamps but at growing MTM
+//     loss. The risk manager's drawdown trip is the eventual stop.
+//   - Spoofed depth. Adversarial flickers in displayed liquidity bias OBI
+//     without representing real interest; the strategy reacts to noise.
+//   - Throttle saturation. Once `netPosition` hits `±maxPosition`, the
+//     strategy stops trading the direction it's loaded in. Subsequent
+//     reversion moves leave money on the table until the throttle releases.
+//
+// # Parameter sensitivity
+//
+//   - Threshold: the dominant parameter. Realistic range 0.5–0.8. Lower
+//     values trade more often; higher values are more selective but suffer
+//     when extreme imbalances are themselves rare.
+//   - maxPosition (derived from `OrderSize × 10` at boot): the throttle ceiling.
+//
+// # State persisted across restarts
+//
+// `netPosition`. Without it, the throttle gate resets on every restart and
+// the strategy can rebuild position past the configured ceiling.
 type OBIThreshold struct {
 	mu          sync.Mutex
 	Threshold   float64 // e.g. 0.7
@@ -122,101 +149,5 @@ func (s *OBIThreshold) RestoreState(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.netPosition = f.NetPosition
-	return nil
-}
-
-// VPINBreakout is a momentum strategy driven by VPIN (order flow toxicity).
-//
-// When VPIN exceeds a threshold, it signals that informed traders are active
-// and a directional move is likely. The strategy enters in the direction of
-// the dominant flow.
-//
-// State persisted across restarts: lastTrade (the cooldown gate). Without it,
-// a restart in the middle of a cooldown window will fire a duplicate entry.
-type VPINBreakout struct {
-	mu        sync.Mutex
-	Threshold float64
-	OrderSize float64
-	cooldown  time.Duration
-	lastTrade time.Time
-}
-
-// NewVPINBreakout creates a VPIN breakout strategy with a cooldown period.
-func NewVPINBreakout(threshold, orderSize float64, cooldown time.Duration) *VPINBreakout {
-	return &VPINBreakout{
-		Threshold: threshold,
-		OrderSize: orderSize,
-		cooldown:  cooldown,
-	}
-}
-
-func (s *VPINBreakout) Name() string {
-	return fmt.Sprintf("VPINBreakout(%.2f)", s.Threshold)
-}
-
-func (s *VPINBreakout) OnFeature(event model.FeatureEvent) []model.Order {
-	vpin, ok := event.Values["vpin"]
-	if !ok {
-		return nil
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Cooldown check (event-time, not wall-clock — intentional, see design doc §10.5)
-	if !s.lastTrade.IsZero() && event.EventTime.Sub(s.lastTrade) < s.cooldown {
-		return nil
-	}
-
-	if vpin > s.Threshold {
-		s.lastTrade = event.EventTime
-
-		slog.Info("Strategy signal",
-			"strategy", s.Name(),
-			"action", "BUY",
-			"vpin", fmt.Sprintf("%.4f", vpin),
-			"instrument", event.Instrument,
-		)
-
-		return []model.Order{{
-			Instrument: event.Instrument,
-			Side:       model.Buy,
-			Quantity:   s.OrderSize,
-			Reason:     fmt.Sprintf("VPIN=%.4f > threshold=%.2f, informed flow breakout", vpin, s.Threshold),
-			Timestamp:  event.EventTime,
-		}}
-	}
-
-	return nil
-}
-
-// vpinStateV1 is the persisted VPINBreakout state shape, schema version 1.
-type vpinStateV1 struct {
-	LastTrade time.Time `json:"last_trade"`
-}
-
-// MarshalState implements Stateful.
-func (s *VPINBreakout) MarshalState() ([]byte, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return MarshalEnvelope(1, vpinStateV1{LastTrade: s.lastTrade})
-}
-
-// RestoreState implements Stateful.
-func (s *VPINBreakout) RestoreState(data []byte) error {
-	version, fields, err := ParseEnvelope(data)
-	if err != nil {
-		return err
-	}
-	if version != 1 {
-		return fmt.Errorf("%w: VPINBreakout got v%d", ErrStateVersionMismatch, version)
-	}
-	var f vpinStateV1
-	if err := json.Unmarshal(fields, &f); err != nil {
-		return fmt.Errorf("VPINBreakout: failed to unmarshal v1 fields: %w", err)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastTrade = f.LastTrade
 	return nil
 }

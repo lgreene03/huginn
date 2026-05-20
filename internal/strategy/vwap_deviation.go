@@ -11,12 +11,38 @@ import (
 
 // VWAPDeviation is a mean-reversion strategy driven by price deviation from VWAP.
 //
-// When price rises above VWAP by more than a threshold percentage, it assumes a
-// short-term overvaluation and sells. When price falls below VWAP by more than
-// a threshold percentage, it buys.
+// # Signal hypothesis
 //
-// State persisted across restarts: netPosition (so the throttle gate survives
-// process recovery).
+// VWAP (volume-weighted average price) is treated as a soft fair-value
+// anchor. When the current micro-price diverges by more than `ThresholdPct`,
+// the strategy takes the contrarian side expecting reversion to the anchor.
+//
+// # Expected regime
+//
+// Best in range-bound markets where intraday price action genuinely
+// oscillates around VWAP. Common workhorse for execution algorithms and
+// short-horizon stat-arb.
+//
+// # Known failure modes
+//
+//   - Trending regimes. A sustained directional move drags VWAP along behind
+//     price; deviation never closes and the strategy keeps fading. The risk
+//     manager's drawdown trip is the eventual stop.
+//   - Open vs. session VWAP. Muninn currently emits a rolling VWAP; if it
+//     ever switches to session-VWAP semantics the threshold needs retuning
+//     because the deviation distribution changes.
+//   - Threshold floor. ThresholdPct below ~5 bps is below typical spread +
+//     transaction cost in liquid crypto — every trade is a guaranteed loser.
+//
+// # Parameter sensitivity
+//
+//   - ThresholdPct: realistic range 0.05% – 0.5% in liquid crypto. Below
+//     this, costs dominate. Above this, the strategy almost never fires.
+//   - maxPosition: throttle ceiling (typically `OrderSize × 10` at boot).
+//
+// # State persisted across restarts
+//
+// `netPosition`. Without it the throttle gate resets on every restart.
 type VWAPDeviation struct {
 	mu           sync.Mutex
 	ThresholdPct float64 // e.g. 0.001 for 0.1% deviation

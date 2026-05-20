@@ -11,9 +11,46 @@ import (
 
 // EMACrossover is a stateful trend-following momentum strategy.
 //
-// It tracks Fast and Slow Exponential Moving Averages. When the Fast EMA crosses
-// above the Slow EMA, it signals a bullish momentum trend and buys. When the Fast
-// EMA crosses below the Slow EMA, it signals a bearish momentum trend and sells.
+// # Signal hypothesis
+//
+// Two exponential moving averages on the micro-price. A bullish crossover
+// (FastEMA crossing above SlowEMA) is interpreted as the onset of an
+// upward trend; the strategy buys. The mirror move signals a downward
+// trend and sells.
+//
+// # Expected regime
+//
+// Best in sustained directional moves where price persistence dominates.
+// Worst in whipsaw chop where the two EMAs criss-cross repeatedly — every
+// crossover triggers a round-trip whose realized cost (slippage + fees +
+// adverse selection) exceeds the captured edge.
+//
+// # Known failure modes
+//
+//   - Whipsaw / chop. Tight `FastPeriod` with a market that's range-bound
+//     produces a stream of false signals. The risk manager's daily-loss
+//     limit is the eventual stop; the trade-by-trade hit rate is the
+//     diagnostic.
+//   - Period asymmetry. Setting `FastPeriod >= SlowPeriod` is nonsensical
+//     and currently not validated — would produce crossovers as numerical
+//     noise. New strategies should add config-time assertions.
+//   - Warmup discontinuity. During the first `SlowPeriod` events the
+//     strategy returns nil. A restart that loses the persisted EMA
+//     accumulators (Stateful) re-enters warmup. The Phase 1 state journal
+//     fixes this; ensure the journal is configured.
+//
+// # Parameter sensitivity
+//
+//   - FastPeriod / SlowPeriod: the dominant pair. Typical ratios 1:3 or
+//     1:5 (e.g. 12/26 from the MACD literature). Set both too short →
+//     whipsaw; both too long → lag.
+//   - maxPosition: throttle ceiling.
+//
+// # State persisted across restarts
+//
+// All five accumulators (FastEMA, SlowEMA, PrevFastEMA, PrevSlowEMA, count)
+// plus NetPosition. Losing any one fabricates a bogus crossover on the
+// next event.
 type EMACrossover struct {
 	mu           sync.Mutex
 	FastPeriod   int
