@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lgreene/huginn/internal/metrics"
 	"github.com/lgreene/huginn/internal/model"
 	"github.com/lgreene/huginn/internal/portfolio"
 	"github.com/lgreene/huginn/internal/risk"
@@ -194,6 +195,14 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.portfolio.ApplyFill(fill)
+
+	// Update portfolio metrics gauges
+	metricsSnap := s.portfolio.Snapshot()
+	metrics.PortfolioCash.Set(metricsSnap.Cash)
+	metrics.PortfolioRealizedPnL.Set(metricsSnap.RealizedPnL)
+	metrics.PortfolioUnrealizedPnL.Set(metricsSnap.UnrealizedPnL)
+	metrics.PortfolioTotalValue.Set(metricsSnap.TotalValue)
+	metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

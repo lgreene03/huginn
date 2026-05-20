@@ -8,19 +8,22 @@ import (
 )
 
 type Config struct {
-	Kafka    KafkaConfig    `yaml:"kafka"`
-	Strategy StrategyConfig `yaml:"strategy"`
-	Executor ExecutorConfig `yaml:"executor"`
-	Server   ServerConfig   `yaml:"server"`
-	Capital  CapitalConfig  `yaml:"capital"`
-	Risk     RiskConfig     `yaml:"risk"`
-	Database DatabaseConfig `yaml:"database"`
+	LiveExecution bool           `yaml:"live_execution" envconfig:"LIVE_EXECUTION"`
+	Kafka         KafkaConfig    `yaml:"kafka"`
+	Strategy      StrategyConfig `yaml:"strategy"`
+	Executor      ExecutorConfig `yaml:"executor"`
+	Server        ServerConfig   `yaml:"server"`
+	Capital       CapitalConfig  `yaml:"capital"`
+	Risk          RiskConfig     `yaml:"risk"`
+	Database      DatabaseConfig `yaml:"database"`
 }
 
 type KafkaConfig struct {
-	Brokers []string `yaml:"brokers" envconfig:"KAFKA_BROKERS"`
-	Topics  []string `yaml:"topics" envconfig:"KAFKA_TOPICS"`
-	GroupID string   `yaml:"group_id" envconfig:"KAFKA_GROUP_ID"`
+	Brokers      []string `yaml:"brokers" envconfig:"KAFKA_BROKERS"`
+	Topics       []string `yaml:"topics" envconfig:"KAFKA_TOPICS"`
+	GroupID      string   `yaml:"group_id" envconfig:"KAFKA_GROUP_ID"`
+	IntentsTopic string   `yaml:"intents_topic" envconfig:"KAFKA_INTENTS_TOPIC"`
+	FillsTopic   string   `yaml:"fills_topic" envconfig:"KAFKA_FILLS_TOPIC"`
 }
 
 type StrategyConfig struct {
@@ -75,6 +78,12 @@ func Load(path string) (*Config, error) {
 	// Set defaults if not provided
 	if cfg.Server.Port == "" {
 		cfg.Server.Port = "8081"
+	}
+	if cfg.Kafka.IntentsTopic == "" {
+		cfg.Kafka.IntentsTopic = "executions.intents.v1"
+	}
+	if cfg.Kafka.FillsTopic == "" {
+		cfg.Kafka.FillsTopic = "executions.fills.v1"
 	}
 	if cfg.Capital.InitialCash == 0 {
 		cfg.Capital.InitialCash = 100_000.0

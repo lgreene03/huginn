@@ -95,7 +95,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 		for {
 			select {
 			case event := <-eventCh:
-				metrics.FeaturesConsumedTotal.Inc()
+				metrics.FeaturesConsumedTotal.WithLabelValues(event.FeatureName).Inc()
 				c.handler(event)
 			case <-ctx.Done():
 				return

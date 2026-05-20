@@ -3,8 +3,10 @@
 package executor
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/lgreene/huginn/internal/journal"
 	"github.com/lgreene/huginn/internal/metrics"
@@ -13,6 +15,11 @@ import (
 	"github.com/lgreene/huginn/internal/risk"
 	"github.com/lgreene/huginn/internal/strategy"
 )
+
+// IntentPublisher defines a gateway client capable of transmitting order requests.
+type IntentPublisher interface {
+	PublishIntent(ctx context.Context, order model.Order, orderID string) error
+}
 
 // Config holds execution simulation parameters.
 type Config struct {
@@ -32,16 +39,20 @@ type Executor struct {
 	riskManager   *risk.Manager
 	config        Config
 	fillCount     int
+	liveMode      bool
+	publisher     IntentPublisher
 }
 
 // New creates an executor wiring a strategy to a portfolio.
-func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config) *Executor {
+func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config, liveMode bool, pub IntentPublisher) *Executor {
 	return &Executor{
 		strategy:      strat,
 		portfolio:     port,
 		journalWriter: jw,
 		riskManager:   rm,
 		config:        cfg,
+		liveMode:      liveMode,
+		publisher:     pub,
 	}
 }
 
@@ -49,44 +60,112 @@ func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, 
 // for each deserialized FeatureEvent.
 func (e *Executor) OnFeature(event model.FeatureEvent) {
 	orders := e.strategy.OnFeature(event)
-	if len(orders) > 0 {
-		metrics.OrdersGeneratedTotal.Add(float64(len(orders)))
+	for _, order := range orders {
+		metrics.OrdersGeneratedTotal.WithLabelValues(e.strategy.Name(), order.Side.String()).Inc()
 	}
 
 	for _, order := range orders {
-		fill := e.simulateFill(order, event)
+		if e.liveMode {
+			e.fillCount++
+			orderID := fmt.Sprintf("huginn-live-order-%d-%d", time.Now().UnixNano(), e.fillCount)
 
-		if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
-			slog.Warn("Fill rejected by risk manager", "order_id", fill.OrderID)
-			continue
-		}
-		
-		if e.journalWriter != nil {
-			if err := e.journalWriter.Append(fill); err != nil {
-				slog.Error("Failed to journal fill", "error", err, "order_id", fill.OrderID)
+			// Risk check: evaluate risk limits using a prospective fill
+			prospectiveFill := model.Fill{
+				OrderID:         orderID,
+				Instrument:      order.Instrument,
+				Side:            order.Side,
+				Quantity:        order.Quantity,
+				FillPrice:       e.estimatePrice(event),
+				TransactionCost: 0.0,
+				SlippageBps:     0.0,
+				Timestamp:       event.EventTime,
 			}
+
+			if e.riskManager != nil && !e.riskManager.Evaluate(prospectiveFill, e.portfolio.Snapshot()) {
+				slog.Warn("Outbound live order intent rejected by pre-trade risk manager", "order_id", orderID, "instrument", order.Instrument)
+				continue
+			}
+
+			if e.publisher != nil {
+				// Publish order intent to Kafka for Sleipnir
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := e.publisher.PublishIntent(ctx, order, orderID); err != nil {
+					slog.Error("Failed to publish live order intent to gateway", "error", err, "order_id", orderID)
+				}
+				cancel()
+			} else {
+				slog.Warn("Live mode enabled but no intent publisher is configured", "order_id", orderID)
+			}
+
+		} else {
+			// Simulated paper-trading mode
+			fill := e.simulateFill(order, event)
+
+			if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
+				slog.Warn("Fill rejected by risk manager", "order_id", fill.OrderID)
+				continue
+			}
+			
+			if e.journalWriter != nil {
+				if err := e.journalWriter.Append(fill); err != nil {
+					slog.Error("Failed to journal fill", "error", err, "order_id", fill.OrderID)
+				}
+			}
+
+			e.portfolio.ApplyFill(fill)
+			metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+
+			// Update portfolio gauges
+			snap := e.portfolio.Snapshot()
+			metrics.PortfolioCash.Set(snap.Cash)
+			metrics.PortfolioRealizedPnL.Set(snap.RealizedPnL)
+			metrics.PortfolioUnrealizedPnL.Set(snap.UnrealizedPnL)
+			metrics.PortfolioTotalValue.Set(snap.TotalValue)
+
+			slog.Info("Paper trade executed",
+				"strategy", e.strategy.Name(),
+				"order_side", order.Side.String(),
+				"order_qty", fmt.Sprintf("%.8f", order.Quantity),
+				"fill_price", fmt.Sprintf("%.2f", fill.FillPrice),
+				"slippage_bps", fmt.Sprintf("%.2f", fill.SlippageBps),
+				"tx_cost", fmt.Sprintf("%.4f", fill.TransactionCost),
+				"reason", order.Reason,
+			)
 		}
-
-		e.portfolio.ApplyFill(fill)
-		metrics.FillsExecutedTotal.Inc()
-
-		slog.Info("Paper trade executed",
-			"strategy", e.strategy.Name(),
-			"order_side", order.Side.String(),
-			"order_qty", fmt.Sprintf("%.8f", order.Quantity),
-			"fill_price", fmt.Sprintf("%.2f", fill.FillPrice),
-			"slippage_bps", fmt.Sprintf("%.2f", fill.SlippageBps),
-			"tx_cost", fmt.Sprintf("%.4f", fill.TransactionCost),
-			"reason", order.Reason,
-		)
 	}
 
-	if len(orders) > 0 {
+	if len(orders) > 0 && !e.liveMode {
 		snap := e.portfolio.Snapshot()
 		metrics.PortfolioCash.Set(snap.Cash)
 		metrics.PortfolioRealizedPnL.Set(snap.RealizedPnL)
 		metrics.PortfolioTotalValue.Set(snap.TotalValue)
 	}
+}
+
+// OnExecutionFill handles live fills received asynchronously from Sleipnir.
+func (e *Executor) OnExecutionFill(fill model.Fill) {
+	if e.journalWriter != nil {
+		if err := e.journalWriter.Append(fill); err != nil {
+			slog.Error("Failed to journal execution fill", "error", err, "order_id", fill.OrderID)
+		}
+	}
+
+	e.portfolio.ApplyFill(fill)
+	metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+
+	slog.Info("Live execution fill applied to portfolio",
+		"order_id", fill.OrderID,
+		"instrument", fill.Instrument,
+		"side", fill.Side.String(),
+		"qty", fmt.Sprintf("%.8f", fill.Quantity),
+		"price", fmt.Sprintf("%.2f", fill.FillPrice),
+		"tx_cost", fmt.Sprintf("%.4f", fill.TransactionCost),
+	)
+
+	snap := e.portfolio.Snapshot()
+	metrics.PortfolioCash.Set(snap.Cash)
+	metrics.PortfolioRealizedPnL.Set(snap.RealizedPnL)
+	metrics.PortfolioTotalValue.Set(snap.TotalValue)
 }
 
 // simulateFill models execution with configurable slippage and transaction costs.

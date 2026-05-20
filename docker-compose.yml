@@ -24,6 +24,30 @@ services:
     depends_on:
       - huginn
 
+  sleipnir:
+    build:
+      context: ../sleipnir
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8080"
+    depends_on:
+      - redpanda
+    environment:
+      - KAFKA_BROKERS=redpanda:29092
+      - KAFKA_INTENTS_TOPIC=executions.intents.v1
+      - KAFKA_FILLS_TOPIC=executions.fills.v1
+      - KAFKA_CONSUMER_GROUP=sleipnir-gateway
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_REST_URL=https://testnet.binance.vision
+      - BINANCE_WS_URL=wss://ws-api.testnet.binance.vision/ws-api/v3
+      - RATE_LIMIT_RPS=10.0
+      - PORT=8080
+      - DB_PATH=/app/data/sleipnir.db
+    volumes:
+      - sleipnir-data:/app/data
+    restart: on-failure
+
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
     ports:
@@ -52,3 +76,4 @@ services:
 
 volumes:
   pg_data:
+  sleipnir-data:
