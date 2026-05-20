@@ -41,6 +41,7 @@ type Executor struct {
 	fillCount     int
 	liveMode      bool
 	publisher     IntentPublisher
+	dedup         *dedupCache // drops duplicate Sleipnir fills by ExecutionID
 }
 
 // New creates an executor wiring a strategy to a portfolio.
@@ -53,6 +54,7 @@ func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, 
 		config:        cfg,
 		liveMode:      liveMode,
 		publisher:     pub,
+		dedup:         newDedupCache(10_000),
 	}
 }
 
@@ -143,7 +145,22 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 }
 
 // OnExecutionFill handles live fills received asynchronously from Sleipnir.
+//
+// Sleipnir's boot reconciliation can re-emit a fill the live WebSocket path
+// already delivered; without dedup we would double-count quantity, cash, and
+// realized PnL. The bounded LRU keyed on Fill.ExecutionID drops those repeats.
+// Empty ExecutionID (paper mode, or pre-Phase-5 fills) is never deduplicated.
 func (e *Executor) OnExecutionFill(fill model.Fill) {
+	if e.dedup.Seen(fill.ExecutionID) {
+		slog.Warn("Dropping duplicate execution fill",
+			"order_id", fill.OrderID,
+			"execution_id", fill.ExecutionID,
+			"qty", fill.Quantity,
+		)
+		return
+	}
+	e.dedup.Mark(fill.ExecutionID)
+
 	if e.journalWriter != nil {
 		if err := e.journalWriter.Append(fill); err != nil {
 			slog.Error("Failed to journal execution fill", "error", err, "order_id", fill.OrderID)
@@ -233,4 +250,94 @@ func (e *Executor) PrintSummary() {
 			"unrealized_pnl", fmt.Sprintf("%.4f", pos.UnrealizedPnL),
 		)
 	}
+}
+
+// SystemConfig represents the parameters of the active strategy and risk manager.
+type SystemConfig struct {
+	StrategyName      string  `json:"strategy_name"`
+	Threshold         float64 `json:"threshold"`
+	OrderSize         float64 `json:"order_size"`
+	FastPeriod        int     `json:"fast_period"`
+	SlowPeriod        int     `json:"slow_period"`
+	PositionLimitHard float64 `json:"position_limit_hard"`
+}
+
+// GetConfig retrieves the current active parameter configuration.
+func (e *Executor) GetConfig() SystemConfig {
+	sc := SystemConfig{
+		StrategyName: e.strategy.Name(),
+	}
+
+	// Dynamic strategy casting to read values
+	switch s := e.strategy.(type) {
+	case *strategy.OBIThreshold:
+		sc.Threshold = s.Threshold
+		sc.OrderSize = s.OrderSize
+	case *strategy.VPINBreakout:
+		sc.Threshold = s.Threshold
+		sc.OrderSize = s.OrderSize
+	case *strategy.VWAPDeviation:
+		sc.Threshold = s.ThresholdPct
+		sc.OrderSize = s.OrderSize
+	case *strategy.EMACrossover:
+		sc.OrderSize = s.OrderSize
+		sc.FastPeriod = s.FastPeriod
+		sc.SlowPeriod = s.SlowPeriod
+	}
+
+	if e.riskManager != nil {
+		sc.PositionLimitHard = e.riskManager.GetPositionLimitHard()
+	}
+
+	return sc
+}
+
+// UpdateConfig updates the strategy and risk parameters on the fly.
+func (e *Executor) UpdateConfig(sc SystemConfig) {
+	switch s := e.strategy.(type) {
+	case *strategy.OBIThreshold:
+		if sc.Threshold > 0 {
+			s.Threshold = sc.Threshold
+		}
+		if sc.OrderSize > 0 {
+			s.OrderSize = sc.OrderSize
+		}
+	case *strategy.VPINBreakout:
+		if sc.Threshold > 0 {
+			s.Threshold = sc.Threshold
+		}
+		if sc.OrderSize > 0 {
+			s.OrderSize = sc.OrderSize
+		}
+	case *strategy.VWAPDeviation:
+		if sc.Threshold > 0 {
+			s.ThresholdPct = sc.Threshold
+		}
+		if sc.OrderSize > 0 {
+			s.OrderSize = sc.OrderSize
+		}
+	case *strategy.EMACrossover:
+		if sc.OrderSize > 0 {
+			s.OrderSize = sc.OrderSize
+		}
+		if sc.FastPeriod > 0 {
+			s.FastPeriod = sc.FastPeriod
+		}
+		if sc.SlowPeriod > 0 {
+			s.SlowPeriod = sc.SlowPeriod
+		}
+	}
+
+	if e.riskManager != nil && sc.PositionLimitHard > 0 {
+		e.riskManager.UpdateLimits(sc.PositionLimitHard)
+	}
+
+	slog.Info("System parameters updated dynamically",
+		"strategy", e.strategy.Name(),
+		"threshold", sc.Threshold,
+		"order_size", sc.OrderSize,
+		"fast_period", sc.FastPeriod,
+		"slow_period", sc.SlowPeriod,
+		"position_limit", sc.PositionLimitHard,
+	)
 }

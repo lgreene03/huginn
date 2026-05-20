@@ -11,8 +11,11 @@ import (
 )
 
 // GatewayFill represents the verified trade execution layout published by Sleipnir.
+// See sleipnir/docs/CONTRACTS.md for the wire spec. ExecutionID is the per-fill
+// idempotency key — the executor drops duplicates by this field.
 type GatewayFill struct {
 	OrderID         string    `json:"order_id"`
+	ExecutionID     string    `json:"execution_id"`
 	Instrument      string    `json:"instrument"`
 	Side            string    `json:"side"` // "BUY" or "SELL"
 	Quantity        float64   `json:"quantity"`
@@ -84,6 +87,7 @@ func (c *FillsConsumer) Run(ctx context.Context) error {
 
 		fill := model.Fill{
 			OrderID:         gatewayFill.OrderID,
+			ExecutionID:     gatewayFill.ExecutionID,
 			Instrument:      gatewayFill.Instrument,
 			Side:            fillSide,
 			Quantity:        gatewayFill.Quantity,

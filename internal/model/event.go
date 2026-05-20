@@ -47,9 +47,17 @@ type Order struct {
 	Timestamp  time.Time
 }
 
-// Fill represents a simulated execution of an order.
+// Fill represents an execution of an order — either simulated by the paper
+// executor or relayed from Sleipnir over the live fills topic.
+//
+// ExecutionID is a deterministic per-fill identity supplied by Sleipnir
+// (REST submit / WS executionReport / boot reconciliation). The executor's
+// dedup cache uses it to drop duplicate fills that arrive when the gateway
+// reconciles a missed event on restart. Empty for paper-mode fills, which
+// are produced exactly once per simulateFill call.
 type Fill struct {
 	OrderID         string
+	ExecutionID     string
 	Instrument      string
 	Side            Side
 	Quantity        float64
