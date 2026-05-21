@@ -15,8 +15,14 @@ import (
 )
 
 // Engine is a high-performance historical replayer.
+//
+// Multi-strategy support: create the engine with NewEngine for a single
+// strategy, then call AddExecutor for each additional strategy. All executors
+// share the portfolio and risk manager that were passed to NewEngine, so every
+// strategy's fills are applied to the same book and counted against the same
+// risk limits.
 type Engine struct {
-	exec    *executor.Executor
+	execs   []*executor.Executor
 	port    *portfolio.Portfolio
 	journal journal.Writer
 	riskMgr *risk.Manager
@@ -24,14 +30,22 @@ type Engine struct {
 }
 
 // NewEngine initializes the backtest engine with all required execution components.
+// To run multiple strategies simultaneously, call AddExecutor after construction.
 func NewEngine(exec *executor.Executor, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager) *Engine {
 	return &Engine{
-		exec:    exec,
+		execs:   []*executor.Executor{exec},
 		port:    port,
 		journal: jw,
 		riskMgr: rm,
 		equity:  make([]float64, 0),
 	}
+}
+
+// AddExecutor registers an additional strategy executor that will receive every
+// feature event alongside the primary executor. The added executor must share
+// the same portfolio and risk manager that were passed to NewEngine.
+func (e *Engine) AddExecutor(exec *executor.Executor) {
+	e.execs = append(e.execs, exec)
 }
 
 // Run executes the backtest by sequentially processing a JSONL file of FeatureEvents.
@@ -42,7 +56,7 @@ func (e *Engine) Run(dataPath string) error {
 	}
 	defer f.Close()
 
-	slog.Info("Starting backtest", "data", dataPath)
+	slog.Info("Starting backtest", "data", dataPath, "strategies", len(e.execs))
 	start := time.Now()
 	var eventsProcessed int
 
@@ -56,8 +70,13 @@ func (e *Engine) Run(dataPath string) error {
 			continue
 		}
 
-		// Dispatch directly to the executor, bypassing Kafka entirely
-		e.exec.OnFeature(event)
+		// Dispatch to every registered executor in registration order.
+		// All executors share the same portfolio and risk manager, so
+		// later strategies see any position/cash changes from earlier ones
+		// within the same event tick.
+		for _, exec := range e.execs {
+			exec.OnFeature(event)
+		}
 		eventsProcessed++
 
 		// Track daily equity curve for advanced metrics (Sharpe/Sortino).

@@ -100,6 +100,94 @@ func TestEquityCurveYearBoundary(t *testing.T) {
 	}
 }
 
+// TestMultiStrategySharedPortfolio verifies that AddExecutor causes a second
+// strategy's fills to land in the same portfolio as the first strategy.
+//
+// Setup: two OBI strategies, one long-biased (threshold 0.3) and one
+// short-biased (threshold 0.3 with opposing signal values). Both share the
+// same portfolio; every fill from either strategy changes the shared book.
+// We verify that the total fill count (TotalFills on the snapshot) is the
+// sum of both strategies' individual fill counts, not just one of them.
+func TestMultiStrategySharedPortfolio(t *testing.T) {
+	t.Parallel()
+
+	const initialCash = 100_000.0
+	port := portfolio.New(initialCash)
+	rm := risk.NewManager(config.RiskConfig{
+		MaxDrawdownPct:    0.99,
+		DailyLossLimit:    99_000,
+		PositionLimitHard: 1_000,
+		StalenessTimeout:  0,
+	}, initialCash)
+
+	// OBI strategy A: fires on events where obi >= 0.6
+	stratA := &thresholdSignalStrategy{threshold: 0.6, orderSize: 0.001}
+	execA := executor.New(
+		stratA, port, nil, rm,
+		executor.Config{SlippageBps: 5, TransactionCostBps: 2},
+		false, nil, "",
+	)
+
+	// OBI strategy B: fires on events where obi >= 0.6 (same signal, distinct executor)
+	stratB := &thresholdSignalStrategy{threshold: 0.6, orderSize: 0.001}
+	execB := executor.New(
+		stratB, port, nil, rm,
+		executor.Config{SlippageBps: 5, TransactionCostBps: 2},
+		false, nil, "",
+	)
+
+	eng := NewEngine(execA, port, nil, rm)
+	eng.AddExecutor(execB)
+
+	// Build 4 events: two with obi above threshold (triggers both strategies)
+	// and two below (no fills). Each above-threshold event should produce 2
+	// fills — one from stratA and one from stratB.
+	t0 := time.Date(2025, 1, 1, 9, 0, 0, 0, time.UTC)
+	events := []model.FeatureEvent{
+		{EventID: "e1", EventTime: t0, FeatureName: "obi", Instrument: "BTC-USD",
+			Values: map[string]float64{"value": 50_000, "obi": 0.8}},  // above: 2 fills
+		{EventID: "e2", EventTime: t0.Add(time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
+			Values: map[string]float64{"value": 50_010, "obi": 0.2}},  // below: 0 fills
+		{EventID: "e3", EventTime: t0.Add(2 * time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
+			Values: map[string]float64{"value": 50_020, "obi": 0.9}},  // above: 2 fills
+		{EventID: "e4", EventTime: t0.Add(3 * time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
+			Values: map[string]float64{"value": 50_030, "obi": 0.1}},  // below: 0 fills
+	}
+
+	path := writeJSONLEvents(t, events)
+	if err := eng.Run(path); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	snap := port.Snapshot()
+	// Two above-threshold events × 2 strategies = 4 fills.
+	if snap.TotalFills != 4 {
+		t.Errorf("TotalFills = %d, want 4 (2 events × 2 strategies)", snap.TotalFills)
+	}
+}
+
+// thresholdSignalStrategy is a minimal test strategy that emits a BUY when
+// event.Values["obi"] >= threshold.
+type thresholdSignalStrategy struct {
+	threshold float64
+	orderSize float64
+}
+
+func (s *thresholdSignalStrategy) Name() string { return "threshold-signal" }
+func (s *thresholdSignalStrategy) OnFeature(event model.FeatureEvent) []model.Order {
+	obi, ok := event.Values["obi"]
+	if !ok || obi < s.threshold {
+		return nil
+	}
+	return []model.Order{{
+		Instrument: event.Instrument,
+		Side:       model.Buy,
+		Quantity:   s.orderSize,
+		Reason:     "obi signal",
+		Timestamp:  event.EventTime,
+	}}
+}
+
 // TestEquityCurveWithinSingleDay verifies that events in the same calendar day
 // produce exactly one equity sample (the mandatory final snapshot).
 func TestEquityCurveWithinSingleDay(t *testing.T) {

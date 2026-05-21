@@ -122,7 +122,7 @@ func TestBacktestEngineParity(t *testing.T) {
 	// Path B: direct OnFeature loop (the reference path — no file I/O, no
 	// JSON serialisation round-trip).
 	for _, ev := range events {
-		engB.exec.OnFeature(ev)
+		engB.execs[0].OnFeature(ev)
 	}
 
 	snapA := portA.Snapshot()
@@ -166,7 +166,7 @@ func TestBacktestEngineParity_LargeDataset(t *testing.T) {
 		t.Fatalf("engine A Run: %v", err)
 	}
 	for _, ev := range events {
-		engB.exec.OnFeature(ev)
+		engB.execs[0].OnFeature(ev)
 	}
 
 	snapA := portA.Snapshot()

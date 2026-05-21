@@ -165,7 +165,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 4 — Backtest fidelity
+## Phase 4 — Backtest fidelity ✅
 **Goal.** Backtest results predict live paper-trading results within a documented tolerance.
 
 **Deliverables.**
@@ -174,7 +174,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - ✅ **Latency model.** Optional `executor.fill_latency_ms` config (`EXECUTOR_FILL_LATENCY_MS` env var) that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking. Zero (default) preserves the original behaviour.
 - ✅ **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
 - ✅ **Backtest report HTML.** Optional `--report report.html` flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
-- **Multi-strategy backtest.** Run two strategies concurrently in one backtest, with shared portfolio + risk. Today the engine takes one executor; this requires a small refactor to a slice of executors and a shared portfolio.
+- ✅ **Multi-strategy backtest.** `Engine.AddExecutor` registers additional strategy executors that receive every event alongside the primary one. All executors share the same portfolio and risk manager. `TestMultiStrategySharedPortfolio` verifies fill counts accumulate from both strategies.
 
 **Exit criteria.** `parity_test.go` passes. The known year-boundary bug is regression-tested. A 1-week historical replay produces a report HTML in under 10 s.
 
