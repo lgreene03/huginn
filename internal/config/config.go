@@ -76,6 +76,12 @@ type RiskConfig struct {
 type DatabaseConfig struct {
 	Enabled bool   `yaml:"enabled" envconfig:"DATABASE_ENABLED"`
 	URL     string `yaml:"url" envconfig:"DATABASE_URL"`
+
+	// Connection-pool tunables. Zero values use pgxpool defaults.
+	MaxConns         int32         `yaml:"max_conns" envconfig:"DATABASE_MAX_CONNS"`
+	MinConns         int32         `yaml:"min_conns" envconfig:"DATABASE_MIN_CONNS"`
+	MaxConnLifetime  time.Duration `yaml:"max_conn_lifetime" envconfig:"DATABASE_MAX_CONN_LIFETIME"`
+	MaxConnIdleTime  time.Duration `yaml:"max_conn_idle_time" envconfig:"DATABASE_MAX_CONN_IDLE_TIME"`
 }
 
 func Load(path string) (*Config, error) {

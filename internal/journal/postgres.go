@@ -13,64 +13,64 @@ import (
 	"github.com/lgreene03/huginn/internal/portfolio"
 )
 
+// PoolConfig controls pgxpool connection-pool behaviour. Zero values use
+// pgxpool defaults (MaxConns=4, MinConns=0, lifetimes unlimited).
+type PoolConfig struct {
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+}
+
 // PostgresWriter logs simulated trade fills into a PostgreSQL database.
 type PostgresWriter struct {
 	pool *pgxpool.Pool
 }
 
-// NewPostgresWriter connects to PostgreSQL, validates the connection, and prepares the schema.
-func NewPostgresWriter(connStr string) (*PostgresWriter, error) {
+// NewPostgresWriter connects to PostgreSQL, validates the connection, runs any
+// pending schema migrations, and returns a ready writer.
+//
+// Pass a zero PoolConfig{} to use pgxpool defaults.
+func NewPostgresWriter(connStr string, pool PoolConfig) (*PostgresWriter, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	config, err := pgxpool.ParseConfig(connStr)
+	cfg, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse connection string: %w", err)
 	}
 
-	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if pool.MaxConns > 0 {
+		cfg.MaxConns = pool.MaxConns
+	}
+	if pool.MinConns > 0 {
+		cfg.MinConns = pool.MinConns
+	}
+	if pool.MaxConnLifetime > 0 {
+		cfg.MaxConnLifetime = pool.MaxConnLifetime
+	}
+	if pool.MaxConnIdleTime > 0 {
+		cfg.MaxConnIdleTime = pool.MaxConnIdleTime
+	}
+
+	p, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
+	if err := p.Ping(ctx); err != nil {
+		p.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	pw := &PostgresWriter{pool: pool}
+	pw := &PostgresWriter{pool: p}
 
-	if err := pw.initSchema(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+	if err := runMigrations(ctx, p); err != nil {
+		p.Close()
+		return nil, fmt.Errorf("failed to run schema migrations: %w", err)
 	}
 
 	return pw, nil
-}
-
-func (w *PostgresWriter) initSchema(ctx context.Context) error {
-	query := `
-	CREATE TABLE IF NOT EXISTS trade_fills (
-		order_id VARCHAR(64) PRIMARY KEY,
-		instrument VARCHAR(32) NOT NULL,
-		side INT NOT NULL,
-		quantity DOUBLE PRECISION NOT NULL,
-		fill_price DOUBLE PRECISION NOT NULL,
-		transaction_cost DOUBLE PRECISION NOT NULL,
-		slippage_bps DOUBLE PRECISION NOT NULL,
-		timestamp TIMESTAMPTZ NOT NULL
-	);
-	CREATE INDEX IF NOT EXISTS idx_trade_fills_timestamp ON trade_fills(timestamp);
-
-	CREATE TABLE IF NOT EXISTS strategy_state (
-		strategy_key VARCHAR(64) PRIMARY KEY,
-		state_blob JSONB NOT NULL,
-		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-	);
-	CREATE INDEX IF NOT EXISTS idx_strategy_state_updated ON strategy_state(updated_at);
-	`
-	_, err := w.pool.Exec(ctx, query)
-	return err
 }
 
 // AppendStrategyState upserts the latest state blob for the given strategy
@@ -104,8 +104,6 @@ func (w *PostgresWriter) LoadStrategyState(key string) ([]byte, error) {
 		`SELECT state_blob FROM strategy_state WHERE strategy_key = $1`, key,
 	).Scan(&blob)
 	if err != nil {
-		// pgx returns ErrNoRows from the database/sql import path; tolerate
-		// both that and the literal "no rows" string for cross-version safety.
 		if err.Error() == "no rows in result set" {
 			return nil, nil
 		}

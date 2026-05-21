@@ -186,12 +186,12 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 **Goal.** Postgres mode is the recommended default, not a side path.
 
 **Deliverables.**
-- **Migrations.** Adopt `golang-migrate` or `goose`. Move the inline `CREATE TABLE` out of `postgres.go:51`. Initial migration captures the existing schema; second migration adds the strategy-state table from Phase 1.
+- ✅ **Migrations.** No external dependency. `internal/journal/pg_migrations.go` implements a versioned migration ledger (`schema_migrations` table). Each version runs in its own transaction; a failure rolls back and the process exits loudly. Append-only — never edit existing entries.
 - **Schema additions.** `trade_orders` (intent records, pre-fill) so we can join intent→fill and observe the rejection rate. `daily_pnl_snapshots` (one row per UTC day) so we can recover the daily-loss-limit window without scanning all fills.
-- **Connection-pool tunables** in `DatabaseConfig`: `max_conns`, `min_conns`, `max_conn_lifetime`.
+- ✅ **Connection-pool tunables** in `DatabaseConfig`: `max_conns`, `min_conns`, `max_conn_lifetime`, `max_conn_idle_time` (env vars `DATABASE_MAX_CONNS`, `DATABASE_MIN_CONNS`, `DATABASE_MAX_CONN_LIFETIME`, `DATABASE_MAX_CONN_IDLE_TIME`). Passed to `NewPostgresWriter` via new `journal.PoolConfig` struct.
 - **Postgres-backed risk recovery.** Replace the `initialCash` argument to `RecoverPortfolioFromPostgres` with a portfolio that also restores peak-value and daily-loss baseline from `daily_pnl_snapshots`.
 - **Make Postgres the default** in `configs/default.yaml` once stable; keep JSONL mode for ephemeral demos and document it as such.
-- **Backup/restore runbook** in `docs/OPERATIONS.md`.
+- ✅ **Backup/restore runbook** in `docs/OPERATIONS.md`.
 
 **Exit criteria.** `make db-migrate-up` and `make db-migrate-down` work. A `huginn` process started against a freshly migrated DB, then restarted, recovers portfolio + peak + daily baseline bit-for-bit.
 
