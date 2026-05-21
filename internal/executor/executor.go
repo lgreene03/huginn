@@ -55,9 +55,9 @@ type Executor struct {
 // strategyKey is a stable identifier (typically the config strategy name like
 // "obi" / "vpin") used to key state persistence. Pass an empty string to
 // disable state persistence — useful in tests.
-func New(strat strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config, liveMode bool, pub IntentPublisher, strategyKey string) *Executor {
+func New(s strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *risk.Manager, cfg Config, liveMode bool, pub IntentPublisher, strategyKey string) *Executor {
 	return &Executor{
-		strategy:      strat,
+		strategy:      s,
 		strategyKey:   strategyKey,
 		portfolio:     port,
 		journalWriter: jw,

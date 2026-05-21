@@ -27,12 +27,16 @@ linters:
     # - errcheck
 
   settings:
+    staticcheck:
+      # Disable quick-fix / refactor suggestions — these are stylistic rewrites,
+      # not bug-catchers.
+      checks: ["all", "-QF*"]
     revive:
       rules:
         - name: exported
-          severity: warning
+          disabled: true  # docstrings are nice-to-have, not a CI blocker
         - name: var-naming
-          severity: warning
+          disabled: true  # false positives on short names common in Go
 
   exclusions:
     rules:

@@ -41,9 +41,9 @@ func buildParityPair(t *testing.T) (engA *Engine, portA *portfolio.Portfolio, en
 			PositionLimitHard: 100,
 			StalenessTimeout:  0,
 		}, 100_000)
-		strat := strategy.NewOBIThreshold(0.5, 0.01, 10.0)
+		s := strategy.NewOBIThreshold(0.5, 0.01, 10.0)
 		exec := executor.New(
-			strat, port, nil, rm,
+			s, port, nil, rm,
 			executor.Config{SlippageBps: 5, TransactionCostBps: 2},
 			false, nil, "",
 		)
