@@ -204,8 +204,8 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 **Deliverables.**
 - ✅ **Strategy control panel.** `GET/PUT /api/strategy/config` wired up — GET returns `executor.SystemConfig` (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls `executor.UpdateConfig` and is auth-guarded.
-- **Connection config from runtime, not literal.** Read `import.meta.env.VITE_API_BASE` so the prod build can be repointed without a rebuild.
-- ✅ **Equity-curve persistence.** `/api/snapshot/history` returns the last N equity samples from a 720-point in-memory ring buffer (default ~6 h at 30 s sampling). Ring populated by `srv.RunEquitySampler`.
+- ✅ **Connection config from runtime, not literal.** `API_BASE` in `web/src/App.tsx` now reads `import.meta.env.VITE_API_BASE` with fallback to `http://localhost:8081`. `web/.env.example` documents the variable.
+- ✅ **Equity-curve persistence.** `/api/snapshot/history` returns the last N equity samples from a 720-point in-memory ring buffer (default ~6 h at 30 s sampling). Ring populated by `srv.RunEquitySampler`. UI hydrates the chart on mount via a fetch to this endpoint.
 - **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — values available via `GET /api/strategy/config`.
 - ✅ **Auth.** `HUGINN_API_TOKEN` env var gates `/api/breaker/*`, `/api/fills/mock`, and `PUT /api/strategy/config`. Empty token disables auth (backward-compatible). CORS updated to allow `PUT` and `Authorization` header. Documented in `docs/OPERATIONS.md`.
 - **Production nginx config** with `try_files $uri /index.html;` and CORS handled at the proxy layer, not in the Go server.

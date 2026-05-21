@@ -31,7 +31,7 @@ interface Fill {
   Timestamp: string;
 }
 
-const API_BASE = 'http://localhost:8083';
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:8081';
 
 function App() {
   const [connected, setConnected] = useState(false);
@@ -109,6 +109,28 @@ function App() {
     return () => {
       eventSource.close();
     };
+  }, []);
+
+  // Hydrate equity history from the server ring buffer on first load,
+  // so the chart is not blank after a page refresh.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/snapshot/history`)
+      .then((r) => r.json())
+      .then((points: { timestamp: string; total_value: number }[]) => {
+        if (!Array.isArray(points) || points.length === 0) return;
+        const seeded = points.map((p) => ({
+          time: new Date(p.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
+          value: p.total_value,
+        }));
+        setEquityHistory(seeded);
+      })
+      .catch(() => {
+        // Non-fatal: server may not yet have history
+      });
   }, []);
 
   // Trigger manual breaker halt
