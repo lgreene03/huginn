@@ -17,9 +17,12 @@ import (
 	"github.com/lgreene03/huginn/internal/strategy"
 )
 
+const journalPath = "data/backtest_trades.jsonl"
+
 func main() {
 	configPath := flag.String("config", "configs/default.yaml", "Path to YAML config file")
 	dataPath := flag.String("data", "", "Path to historical FeatureEvent JSONL data file")
+	reportPath := flag.String("report", "", "Optional path for self-contained HTML report (e.g. report.html)")
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -56,7 +59,7 @@ func main() {
 	}
 
 	// Initialize journal writer for backtest output
-	jWriter, err := journal.NewJSONLWriter("data/backtest_trades.jsonl")
+	jWriter, err := journal.NewJSONLWriter(journalPath)
 	if err != nil {
 		slog.Error("Failed to initialize journal writer", "error", err)
 		os.Exit(1)
@@ -79,13 +82,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Print Summary
+	// Collect results
 	snap := engine.FinalSnapshot()
 	equity := engine.EquityCurve()
-
 	sharpe := metrics.CalculateSharpeRatio(equity, 0.0)
 	mdd := metrics.CalculateMaxDrawdown(equity)
 
+	// Read fills from the journal for extended metrics and the optional report.
+	fills, err := journal.ReadFills(journalPath)
+	if err != nil {
+		slog.Warn("Could not read fills from journal for extended metrics", "error", err)
+	}
+
+	hitRate := metrics.HitRate(fills)
+	turnover := metrics.Turnover(fills)
+	avgHold := metrics.AvgHoldTimeSeconds(fills)
+
+	// Print terminal summary
 	fmt.Println("\n═══ Backtest Summary ═══")
 	fmt.Printf("Strategy:        %s\n", activeStrategy.Name())
 	fmt.Printf("Initial Cash:    %.2f\n", cfg.Capital.InitialCash)
@@ -94,5 +107,34 @@ func main() {
 	fmt.Printf("Total Fills:     %d\n", snap.TotalFills)
 	fmt.Printf("Max Drawdown:    %.2f%%\n", mdd*100)
 	fmt.Printf("Sharpe Ratio:    %.4f\n", sharpe)
+	fmt.Printf("Hit Rate:        %.1f%%\n", hitRate*100)
+	fmt.Printf("Turnover:        %.2fx\n", turnover)
+	fmt.Printf("Avg Hold:        %.0fs\n", avgHold)
 	fmt.Println("════════════════════════")
+
+	// Optionally generate an HTML report.
+	if *reportPath != "" {
+		params := backtest.ReportParams{
+			Strategy:    activeStrategy.Name(),
+			ConfigPath:  *configPath,
+			DataPath:    *dataPath,
+			InitialCash: cfg.Capital.InitialCash,
+			FinalValue:  snap.TotalValue,
+			RealizedPnL: snap.RealizedPnL,
+			TotalFills:  snap.TotalFills,
+			MaxDrawdown: mdd,
+			Sharpe:      sharpe,
+			HitRate:     hitRate,
+			Turnover:    turnover,
+			AvgHoldSec:  avgHold,
+			Equity:      equity,
+			Fills:       fills,
+			GeneratedAt: time.Now().UTC(),
+		}
+		if err := backtest.GenerateHTMLReport(params, *reportPath); err != nil {
+			slog.Error("Failed to write HTML report", "error", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Report written to %s\n", *reportPath)
+	}
 }

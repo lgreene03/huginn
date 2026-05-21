@@ -173,7 +173,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - **Order-book-aware fill model.** Currently buys fill at `microPrice * (1 + slippage_bps)`. Optionally consume `bidPrice`/`askPrice`/`spread` from feature events when present (Muninn already publishes these in `features.book.v1`) and fill at the touch + slippage.
 - **Latency model.** Optional `executor.fill_latency_ms` config that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking.
 - ✅ **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
-- **Backtest report HTML.** Optional `--report report.html` flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
+- ✅ **Backtest report HTML.** Optional `--report report.html` flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
 - **Multi-strategy backtest.** Run two strategies concurrently in one backtest, with shared portfolio + risk. Today the engine takes one executor; this requires a small refactor to a slice of executors and a shared portfolio.
 
 **Exit criteria.** `parity_test.go` passes. The known year-boundary bug is regression-tested. A 1-week historical replay produces a report HTML in under 10 s.

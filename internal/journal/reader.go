@@ -58,6 +58,37 @@ func RecoverPortfolio(path string, initialCash float64) (*portfolio.Portfolio, e
 	return port, nil
 }
 
+// ReadFills reads all Fill records from a JSONL journal, skipping strategy-state
+// records. Returns an empty slice (not an error) when the file does not exist.
+func ReadFills(path string) ([]model.Fill, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var fills []model.Fill
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		var probe typeProbe
+		if err := json.Unmarshal(line, &probe); err == nil && probe.Type == "strategy_state" {
+			continue
+		}
+		var fill model.Fill
+		if err := json.Unmarshal(line, &fill); err != nil {
+			return nil, err
+		}
+		fills = append(fills, fill)
+	}
+	return fills, scanner.Err()
+}
+
 // LoadStrategyStateFromJSONL scans the journal and returns the most recent
 // strategy-state blob for the given key. Returns (nil, nil) when no matching
 // record exists, in which case the caller should start the strategy fresh.
