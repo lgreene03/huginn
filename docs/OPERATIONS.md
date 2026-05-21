@@ -65,6 +65,18 @@ Or via environment variables: `DATABASE_MAX_CONNS`, `DATABASE_MIN_CONNS`, `DATAB
 
 ---
 
+## API authentication
+
+Mutating endpoints (`/api/breaker/*`, `/api/fills/mock`, `PUT /api/strategy/config`) accept an optional bearer token. Set `HUGINN_API_TOKEN` in the environment; if the variable is empty, auth is disabled (backward-compatible default for local / trusted-network deployments).
+
+```bash
+# With a token set
+curl -X POST http://localhost:8081/api/breaker/trigger \
+  -H "Authorization: Bearer $HUGINN_API_TOKEN"
+```
+
+---
+
 ## Risk manager
 
 ### Manual halt

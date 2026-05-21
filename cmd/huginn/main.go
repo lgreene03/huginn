@@ -237,6 +237,10 @@ func main() {
 	// ctx cancel; the final tick fires on graceful shutdown.
 	go exec.RunStatePersister(ctx, 5*time.Second)
 
+	// Sample equity into the server-side ring buffer every 30 s so the
+	// /api/snapshot/history endpoint can hydrate the UI on page load.
+	go srv.RunEquitySampler(ctx, 30*time.Second)
+
 	// Feature-staleness watchdog: auto-halts if no event arrives within
 	// cfg.Risk.StalenessTimeout. Zero timeout (default) disables it; configure
 	// in YAML when you want it.

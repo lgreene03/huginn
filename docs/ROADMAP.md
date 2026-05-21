@@ -203,11 +203,11 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 **Goal.** The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.
 
 **Deliverables.**
-- **Strategy control panel.** Wire up `executor.GetConfig`/`UpdateConfig` (they exist! but are not exposed on any HTTP route) via `GET/PUT /api/strategy/config`. UI surfaces a "Tune live" panel.
+- ✅ **Strategy control panel.** `GET/PUT /api/strategy/config` wired up — GET returns `executor.SystemConfig` (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls `executor.UpdateConfig` and is auth-guarded.
 - **Connection config from runtime, not literal.** Read `import.meta.env.VITE_API_BASE` so the prod build can be repointed without a rebuild.
-- **Equity-curve persistence.** Today `equityHistory` lives in component state and resets on reload. Hydrate from `/api/snapshot/history` (a new endpoint that returns the last N minutes of equity samples from a small in-memory ring buffer on the server side, with optional Postgres-backed long history).
-- **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — values are already available via `GetConfig`.
-- **Auth.** Even a single shared bearer token in front of the mutating endpoints (`/api/breaker/*`, `/api/fills/mock`, `/api/strategy/config`). Today they are open.
+- ✅ **Equity-curve persistence.** `/api/snapshot/history` returns the last N equity samples from a 720-point in-memory ring buffer (default ~6 h at 30 s sampling). Ring populated by `srv.RunEquitySampler`.
+- **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — values available via `GET /api/strategy/config`.
+- ✅ **Auth.** `HUGINN_API_TOKEN` env var gates `/api/breaker/*`, `/api/fills/mock`, and `PUT /api/strategy/config`. Empty token disables auth (backward-compatible). CORS updated to allow `PUT` and `Authorization` header. Documented in `docs/OPERATIONS.md`.
 - **Production nginx config** with `try_files $uri /index.html;` and CORS handled at the proxy layer, not in the Go server.
 - **One Playwright smoke test**: load the page against a stub Huginn, assert equity panel renders.
 

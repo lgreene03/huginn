@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -17,6 +18,43 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// equityPoint is one sample in the server-side equity history ring.
+type equityPoint struct {
+	Timestamp  time.Time `json:"timestamp"`
+	TotalValue float64   `json:"total_value"`
+	Cash       float64   `json:"cash"`
+}
+
+// equityRing is a bounded in-memory ring buffer of recent equity samples,
+// capacity fixed at construction time (default 720 ≈ 6 h at 30 s sampling).
+type equityRing struct {
+	mu     sync.RWMutex
+	points []equityPoint
+	cap    int
+}
+
+func newEquityRing(capacity int) *equityRing {
+	return &equityRing{cap: capacity, points: make([]equityPoint, 0, capacity)}
+}
+
+func (r *equityRing) push(p equityPoint) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.points) >= r.cap {
+		r.points = append(r.points[1:], p)
+	} else {
+		r.points = append(r.points, p)
+	}
+}
+
+func (r *equityRing) snapshot() []equityPoint {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]equityPoint, len(r.points))
+	copy(out, r.points)
+	return out
+}
+
 type Server struct {
 	addr       string
 	portfolio  *portfolio.Portfolio
@@ -25,6 +63,10 @@ type Server struct {
 	isReady    bool
 	readyMutex sync.RWMutex
 	srv        *http.Server
+	// apiToken gates mutating endpoints. Read from HUGINN_API_TOKEN env var;
+	// empty string disables auth (backward-compatible default).
+	apiToken string
+	equity   *equityRing
 }
 
 func New(addr string, portf *portfolio.Portfolio, riskMgr *risk.Manager, exec *executor.Executor) *Server {
@@ -33,6 +75,8 @@ func New(addr string, portf *portfolio.Portfolio, riskMgr *risk.Manager, exec *e
 		portfolio: portf,
 		riskMgr:   riskMgr,
 		executor:  exec,
+		apiToken:  os.Getenv("HUGINN_API_TOKEN"),
+		equity:    newEquityRing(720),
 	}
 }
 
@@ -42,18 +86,51 @@ func (s *Server) SetReady(ready bool) {
 	s.isReady = ready
 }
 
+// RunEquitySampler pushes one equity point per interval into the ring buffer.
+// Call this in a goroutine; it stops when ctx is cancelled.
+func (s *Server) RunEquitySampler(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t := <-ticker.C:
+			snap := s.portfolio.Snapshot()
+			s.equity.push(equityPoint{
+				Timestamp:  t,
+				TotalValue: snap.TotalValue,
+				Cash:       snap.Cash,
+			})
+		}
+	}
+}
+
 // corsMiddleware adds standard CORS headers to allow frontend integration.
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
+		next(w, r)
+	}
+}
+
+// authMiddleware enforces bearer-token auth when HUGINN_API_TOKEN is set.
+// A missing or incorrect token returns 401. When the env var is empty,
+// all requests pass through (backward-compatible).
+func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.apiToken != "" && r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		next(w, r)
 	}
 }
@@ -235,15 +312,52 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// strategyConfigHandler handles GET and PUT for /api/strategy/config.
+// GET is public; PUT requires the bearer token (if HUGINN_API_TOKEN is set).
+func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := s.executor.GetConfig()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cfg)
+
+	case http.MethodPut:
+		// Auth check for mutating operation.
+		if s.apiToken != "" && r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var sc executor.SystemConfig
+		if err := json.NewDecoder(r.Body).Decode(&sc); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.executor.UpdateConfig(sc)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// snapshotHistoryHandler returns the last N equity samples from the ring buffer.
+func (s *Server) snapshotHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.equity.snapshot())
+}
+
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", corsMiddleware(s.healthzHandler))
 	mux.HandleFunc("/readyz", corsMiddleware(s.readyzHandler))
 	mux.HandleFunc("/api/snapshot", corsMiddleware(s.snapshotHandler))
+	mux.HandleFunc("/api/snapshot/history", corsMiddleware(s.snapshotHistoryHandler))
 	mux.HandleFunc("/api/stream", s.streamHandler)
-	mux.HandleFunc("/api/breaker/trigger", corsMiddleware(s.breakerTriggerHandler))
-	mux.HandleFunc("/api/breaker/reset", corsMiddleware(s.breakerResetHandler))
-	mux.HandleFunc("/api/fills/mock", corsMiddleware(s.mockFillHandler))
+	mux.HandleFunc("/api/breaker/trigger", corsMiddleware(s.authMiddleware(s.breakerTriggerHandler)))
+	mux.HandleFunc("/api/breaker/reset", corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
+	mux.HandleFunc("/api/fills/mock", corsMiddleware(s.authMiddleware(s.mockFillHandler)))
+	mux.HandleFunc("/api/strategy/config", corsMiddleware(s.strategyConfigHandler))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.srv = &http.Server{
