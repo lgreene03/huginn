@@ -8,13 +8,13 @@ import "time"
 //
 // This mirrors the FeatureComputedEvent record emitted by Muninn's feature engine.
 type FeatureEvent struct {
-	EventID        string            `json:"eventId"`
-	EventTime      time.Time         `json:"eventTime"`
-	FeatureName    string            `json:"featureName"`
-	FeatureVersion string            `json:"featureVersion"`
-	Instrument     string            `json:"instrument"`
-	WindowStart    time.Time         `json:"windowStart"`
-	WindowEnd      time.Time         `json:"windowEnd"`
+	EventID        string             `json:"eventId"`
+	EventTime      time.Time          `json:"eventTime"`
+	FeatureName    string             `json:"featureName"`
+	FeatureVersion string             `json:"featureVersion"`
+	Instrument     string             `json:"instrument"`
+	WindowStart    time.Time          `json:"windowStart"`
+	WindowEnd      time.Time          `json:"windowEnd"`
 	Values         map[string]float64 `json:"values"`
 }
 

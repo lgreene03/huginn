@@ -52,17 +52,17 @@ import (
 // plus NetPosition. Losing any one fabricates a bogus crossover on the
 // next event.
 type EMACrossover struct {
-	mu           sync.Mutex
-	FastPeriod   int
-	SlowPeriod   int
-	OrderSize    float64
-	maxPosition  float64
-	netPosition  float64
-	fastEMA      float64
-	slowEMA      float64
-	prevFastEMA  float64
-	prevSlowEMA  float64
-	count        int
+	mu          sync.Mutex
+	FastPeriod  int
+	SlowPeriod  int
+	OrderSize   float64
+	maxPosition float64
+	netPosition float64
+	fastEMA     float64
+	slowEMA     float64
+	prevFastEMA float64
+	prevSlowEMA float64
+	count       int
 }
 
 // NewEMACrossover creates a new stateful EMA crossover strategy.

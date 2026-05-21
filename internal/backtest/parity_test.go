@@ -74,7 +74,7 @@ func makeParityEvents(n int) []model.FeatureEvent {
 			FeatureName: "obi",
 			Instrument:  "BTC-USD",
 			Values: map[string]float64{
-				"obi":        obi,
+				"obi":         obi,
 				"micro_price": 50_000.0,
 			},
 		}

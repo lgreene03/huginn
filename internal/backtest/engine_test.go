@@ -17,8 +17,8 @@ import (
 // strategy-specific signal logic so we can focus on the equity-curve sampler.
 type noopStrategy struct{}
 
-func (n *noopStrategy) Name() string                                   { return "noop" }
-func (n *noopStrategy) OnFeature(_ model.FeatureEvent) []model.Order   { return nil }
+func (n *noopStrategy) Name() string                                 { return "noop" }
+func (n *noopStrategy) OnFeature(_ model.FeatureEvent) []model.Order { return nil }
 
 // writeJSONLEvents encodes events as JSONL into a temp file and returns the path.
 func writeJSONLEvents(t *testing.T, events []model.FeatureEvent) string {
@@ -45,10 +45,10 @@ func buildEngine(t *testing.T) *Engine {
 	t.Helper()
 	port := portfolio.New(10_000)
 	rm := risk.NewManager(config.RiskConfig{
-		MaxDrawdownPct:   0.99,
-		DailyLossLimit:   9_900,
+		MaxDrawdownPct:    0.99,
+		DailyLossLimit:    9_900,
 		PositionLimitHard: 100,
-		StalenessTimeout: 0, // disable staleness watchdog in tests
+		StalenessTimeout:  0, // disable staleness watchdog in tests
 	}, 10_000)
 	exec := executor.New(
 		&noopStrategy{}, port, nil, rm,
@@ -145,13 +145,13 @@ func TestMultiStrategySharedPortfolio(t *testing.T) {
 	t0 := time.Date(2025, 1, 1, 9, 0, 0, 0, time.UTC)
 	events := []model.FeatureEvent{
 		{EventID: "e1", EventTime: t0, FeatureName: "obi", Instrument: "BTC-USD",
-			Values: map[string]float64{"value": 50_000, "obi": 0.8}},  // above: 2 fills
+			Values: map[string]float64{"value": 50_000, "obi": 0.8}}, // above: 2 fills
 		{EventID: "e2", EventTime: t0.Add(time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
-			Values: map[string]float64{"value": 50_010, "obi": 0.2}},  // below: 0 fills
+			Values: map[string]float64{"value": 50_010, "obi": 0.2}}, // below: 0 fills
 		{EventID: "e3", EventTime: t0.Add(2 * time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
-			Values: map[string]float64{"value": 50_020, "obi": 0.9}},  // above: 2 fills
+			Values: map[string]float64{"value": 50_020, "obi": 0.9}}, // above: 2 fills
 		{EventID: "e4", EventTime: t0.Add(3 * time.Minute), FeatureName: "obi", Instrument: "BTC-USD",
-			Values: map[string]float64{"value": 50_030, "obi": 0.1}},  // below: 0 fills
+			Values: map[string]float64{"value": 50_030, "obi": 0.1}}, // below: 0 fills
 	}
 
 	path := writeJSONLEvents(t, events)

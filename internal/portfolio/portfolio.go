@@ -15,20 +15,20 @@ import (
 type Portfolio struct {
 	mu sync.RWMutex
 
-	cash           float64
-	positions      map[string]*Position // instrument -> position
-	realizedPnL    float64
-	totalFills     int
-	totalCosts     float64
-	totalSlippage  float64
-	fills          []model.Fill
+	cash          float64
+	positions     map[string]*Position // instrument -> position
+	realizedPnL   float64
+	totalFills    int
+	totalCosts    float64
+	totalSlippage float64
+	fills         []model.Fill
 }
 
 // Position tracks a single instrument's holdings.
 type Position struct {
-	Instrument   string
-	Quantity     float64
-	AverageCost  float64
+	Instrument    string
+	Quantity      float64
+	AverageCost   float64
 	UnrealizedPnL float64
 	LastMarkPrice float64
 }
@@ -152,4 +152,3 @@ func (p *Portfolio) Fills() []model.Fill {
 	copy(fillsCopy, p.fills)
 	return fillsCopy
 }
-

@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
+	kgo "github.com/segmentio/kafka-go"
+
 	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
-	kgo "github.com/segmentio/kafka-go"
 )
 
 // Consumer reads from one or more Muninn feature topics and dispatches

@@ -247,7 +247,7 @@ func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, wind
 
 	// Write computed windows in chronological order
 	slog.Info("Writing computed metrics to JSONL file...", "total_windows", len(windowMap))
-	
+
 	// We want to write windows sequentially. We start from minWindowStart and increment.
 	currWindow := minWindowStart
 	var writtenCount int

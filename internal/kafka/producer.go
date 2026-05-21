@@ -7,15 +7,16 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lgreene03/huginn/internal/model"
 	kgo "github.com/segmentio/kafka-go"
+
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // GatewayOrder represents the exchange-facing order layout that Sleipnir expects.
 type GatewayOrder struct {
 	OrderID    string  `json:"order_id"`
 	Instrument string  `json:"instrument"`
-	Side       string  `json:"side"`       // "BUY" or "SELL"
+	Side       string  `json:"side"` // "BUY" or "SELL"
 	Quantity   float64 `json:"quantity"`
 	Price      float64 `json:"price"`      // Ignore for MARKET orders
 	Type       string  `json:"order_type"` // "LIMIT" or "MARKET"

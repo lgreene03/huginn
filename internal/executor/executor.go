@@ -228,7 +228,7 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 				slog.Warn("Fill rejected by risk manager", "order_id", fill.OrderID)
 				continue
 			}
-			
+
 			if e.journalWriter != nil {
 				if err := e.journalWriter.Append(fill); err != nil {
 					slog.Error("Failed to journal fill", "error", err, "order_id", fill.OrderID)

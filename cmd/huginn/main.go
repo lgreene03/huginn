@@ -71,11 +71,11 @@ func main() {
 		}
 
 		jWriter, err = journal.NewPostgresWriter(cfg.Database.URL, journal.PoolConfig{
-				MaxConns:        cfg.Database.MaxConns,
-				MinConns:        cfg.Database.MinConns,
-				MaxConnLifetime: cfg.Database.MaxConnLifetime,
-				MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
-			})
+			MaxConns:        cfg.Database.MaxConns,
+			MinConns:        cfg.Database.MinConns,
+			MaxConnLifetime: cfg.Database.MaxConnLifetime,
+			MaxConnIdleTime: cfg.Database.MaxConnIdleTime,
+		})
 		if err != nil {
 			slog.Error("Failed to initialize PostgreSQL journal writer", "error", err)
 			os.Exit(1)

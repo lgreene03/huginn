@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 )

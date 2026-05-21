@@ -6,8 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lgreene03/huginn/internal/model"
 	kgo "github.com/segmentio/kafka-go"
+
+	"github.com/lgreene03/huginn/internal/model"
 )
 
 // GatewayFill represents the verified trade execution layout published by Sleipnir.

@@ -10,13 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/lgreene03/huginn/internal/executor"
 	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/version"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // equityPoint is one sample in the server-side equity history ring.

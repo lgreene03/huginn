@@ -37,12 +37,12 @@ type Manager struct {
 	config      config.RiskConfig
 	initialCash float64
 
-	mu            sync.RWMutex
-	halted        bool
-	haltReason    HaltReason
-	peakValue     float64
-	recentPrices  []float64
-	now           func() time.Time
+	mu           sync.RWMutex
+	halted       bool
+	haltReason   HaltReason
+	peakValue    float64
+	recentPrices []float64
+	now          func() time.Time
 	// dayStart is the UTC midnight that defines the current daily-loss window.
 	dayStart             time.Time
 	dayStartRealizedPnL  float64

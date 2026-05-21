@@ -251,19 +251,19 @@ func runSweep(stratName string, combos []map[string]string, events []model.Featu
 // (we want the strategy to expose its own behaviour, not be gated by the
 // sweep's risk config).
 func runOne(stratName string, params map[string]string, events []model.FeatureEvent, initialCash float64) (result, error) {
-	strat, err := buildStrategy(stratName, params)
+	strategy, err := buildStrategy(stratName, params)
 	if err != nil {
 		return result{}, err
 	}
 
 	port := portfolio.New(initialCash)
 	riskCfg := config.RiskConfig{
-		MaxDrawdownPct:    0.99,    // effectively disabled for the sweep
-		DailyLossLimit:    1e18,    // disabled
-		PositionLimitHard: 1e18,    // disabled
+		MaxDrawdownPct:    0.99, // effectively disabled for the sweep
+		DailyLossLimit:    1e18, // disabled
+		PositionLimitHard: 1e18, // disabled
 	}
 	rm := risk.NewManager(riskCfg, initialCash)
-	exec := executor.New(strat, port, nil, rm, executor.Config{
+	exec := executor.New(strategy, port, nil, rm, executor.Config{
 		TransactionCostBps: 5,
 		SlippageBps:        2,
 	}, false, nil, "" /* no state persistence */)

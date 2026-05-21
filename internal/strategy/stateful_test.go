@@ -105,7 +105,7 @@ func TestVWAPDeviation_RoundTripStateful(t *testing.T) {
 	t0 := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
 	events := make([]model.FeatureEvent, 15)
 	for i := range events {
-		price := 100.0
+		var price float64
 		if i%2 == 0 {
 			price = 100.5 // > VWAP -> sell
 		} else {
