@@ -332,6 +332,39 @@ func (m *Manager) GetPositionLimitHard() float64 {
 	return m.config.PositionLimitHard
 }
 
+// PeakValue returns the highest portfolio total value seen since the last
+// reset. Needed by the executor's daily PnL snapshot writer.
+func (m *Manager) PeakValue() float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.peakValue
+}
+
+// DayStartRealizedPnL returns the realized-PnL baseline at the start of the
+// current daily loss window. Needed by the executor's daily PnL snapshot writer.
+func (m *Manager) DayStartRealizedPnL() float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.dayStartRealizedPnL
+}
+
+// SeedFromBaseline seeds the risk manager's peakValue and dayStartRealizedPnL
+// from a daily_pnl_snapshots row. Used as a fallback boot path when the
+// strategy_state._risk blob is absent — provides best-effort recovery of the
+// two most critical risk fields without requiring a full state blob.
+func (m *Manager) SeedFromBaseline(peakValue, dayStartRealizedPnL float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if peakValue > 0 {
+		m.peakValue = peakValue
+	}
+	m.dayStartRealizedPnL = dayStartRealizedPnL
+	slog.Info("Risk manager seeded from daily_pnl_snapshots fallback",
+		"peak_value", peakValue,
+		"day_start_realized_pnl", dayStartRealizedPnL,
+	)
+}
+
 // ----- Persistence (matches strategy.Stateful semantics; the executor calls
 // MarshalState/RestoreState alongside the strategy's). -----
 

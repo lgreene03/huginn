@@ -142,6 +142,60 @@ func (w *PostgresWriter) Close() error {
 	return nil
 }
 
+// DailyPnLBaseline holds the most recent daily_pnl_snapshots row used to
+// seed the risk manager's peakValue and dayStartRealizedPnL on restart when
+// the strategy_state._risk blob is absent.
+type DailyPnLBaseline struct {
+	UTCDate             time.Time
+	PeakValue           float64
+	DayStartRealizedPnL float64
+}
+
+// AppendDailyPnLSnapshot upserts the closing portfolio snapshot for today's
+// UTC date. Called from the state-persister ticker so the risk manager's
+// critical fields survive even if the strategy_state._risk blob is lost.
+func (w *PostgresWriter) AppendDailyPnLSnapshot(realizedPnL, totalValue, peakValue, dayStartRealizedPnL float64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+	INSERT INTO daily_pnl_snapshots
+		(utc_date, realized_pnl, total_value, peak_value, day_start_realized_pnl, recorded_at)
+	VALUES (CURRENT_DATE, $1, $2, $3, $4, NOW())
+	ON CONFLICT (utc_date) DO UPDATE
+	SET realized_pnl           = EXCLUDED.realized_pnl,
+	    total_value             = EXCLUDED.total_value,
+	    peak_value              = EXCLUDED.peak_value,
+	    day_start_realized_pnl  = EXCLUDED.day_start_realized_pnl,
+	    recorded_at             = NOW();
+	`
+	_, err := w.pool.Exec(ctx, query, realizedPnL, totalValue, peakValue, dayStartRealizedPnL)
+	return err
+}
+
+// LoadLatestDailyBaseline returns the most recent row from daily_pnl_snapshots.
+// Returns (zero, false, nil) when the table has no rows — caller should start
+// fresh. Used as a fallback boot path when strategy_state._risk is absent.
+func (w *PostgresWriter) LoadLatestDailyBaseline() (DailyPnLBaseline, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var b DailyPnLBaseline
+	err := w.pool.QueryRow(ctx, `
+		SELECT utc_date, peak_value, day_start_realized_pnl
+		FROM daily_pnl_snapshots
+		ORDER BY utc_date DESC
+		LIMIT 1
+	`).Scan(&b.UTCDate, &b.PeakValue, &b.DayStartRealizedPnL)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return DailyPnLBaseline{}, false, nil
+		}
+		return DailyPnLBaseline{}, false, fmt.Errorf("load daily baseline: %w", err)
+	}
+	return b, true, nil
+}
+
 // RecoverPortfolioFromPostgres replays trade fills from PostgreSQL to rebuild the portfolio state.
 func RecoverPortfolioFromPostgres(connStr string, initialCash float64) (*portfolio.Portfolio, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

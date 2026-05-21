@@ -182,15 +182,15 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 5 — Postgres-grade persistence
+## Phase 5 — Postgres-grade persistence ✅
 **Goal.** Postgres mode is the recommended default, not a side path.
 
 **Deliverables.**
 - ✅ **Migrations.** No external dependency. `internal/journal/pg_migrations.go` implements a versioned migration ledger (`schema_migrations` table). Each version runs in its own transaction; a failure rolls back and the process exits loudly. Append-only — never edit existing entries.
-- **Schema additions.** `trade_orders` (intent records, pre-fill) so we can join intent→fill and observe the rejection rate. `daily_pnl_snapshots` (one row per UTC day) so we can recover the daily-loss-limit window without scanning all fills.
+- ✅ **Schema additions.** Migration v2 adds `trade_orders` (intent records, pre-fill, for intent→fill join) and `daily_pnl_snapshots` (one row per UTC day, upserted by the state-persister ticker).
 - ✅ **Connection-pool tunables** in `DatabaseConfig`: `max_conns`, `min_conns`, `max_conn_lifetime`, `max_conn_idle_time` (env vars `DATABASE_MAX_CONNS`, `DATABASE_MIN_CONNS`, `DATABASE_MAX_CONN_LIFETIME`, `DATABASE_MAX_CONN_IDLE_TIME`). Passed to `NewPostgresWriter` via new `journal.PoolConfig` struct.
-- **Postgres-backed risk recovery.** Replace the `initialCash` argument to `RecoverPortfolioFromPostgres` with a portfolio that also restores peak-value and daily-loss baseline from `daily_pnl_snapshots`.
-- **Make Postgres the default** in `configs/default.yaml` once stable; keep JSONL mode for ephemeral demos and document it as such.
+- ✅ **Postgres-backed risk recovery.** `PostgresWriter.AppendDailyPnLSnapshot` upserts today's `peakValue` and `dayStartRealizedPnL`. `LoadLatestDailyBaseline` reads it back. Boot path falls back to `SeedFromBaseline` when `strategy_state._risk` is absent. Tested in `TestRecoveryFallback_DrawdownGuard`.
+- ✅ **Make Postgres the default** in `configs/default.yaml`. JSONL mode preserved for ephemeral demos (`DATABASE_ENABLED=false`).
 - ✅ **Backup/restore runbook** in `docs/OPERATIONS.md`.
 
 **Exit criteria.** `make db-migrate-up` and `make db-migrate-down` work. A `huginn` process started against a freshly migrated DB, then restarted, recovers portfolio + peak + daily baseline bit-for-bit.

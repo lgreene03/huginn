@@ -20,7 +20,13 @@ server:
 capital:
   initial_cash: 100000.0
 
+# Postgres is the recommended default. Set DATABASE_ENABLED=false to fall back
+# to the JSONL file journal (useful for ephemeral demos and offline backtests).
 database:
-  enabled: false
+  enabled: true
   url: postgres://postgres:postgres@localhost:5432/huginn?sslmode=disable
+  max_conns: 10
+  min_conns: 2
+  max_conn_lifetime: 1h
+  max_conn_idle_time: 5m
 

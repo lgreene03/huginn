@@ -109,6 +109,20 @@ func (e *Executor) PersistStrategyState() {
 		} else {
 			metrics.StrategyStatePersistedTotal.Inc()
 		}
+
+		// Daily PnL snapshot (Postgres only): upsert today's closing numbers as a
+		// human-readable fallback for risk recovery if the _risk blob is lost.
+		if pw, ok := e.journalWriter.(*journal.PostgresWriter); ok {
+			snap := e.portfolio.Snapshot()
+			if err := pw.AppendDailyPnLSnapshot(
+				snap.RealizedPnL,
+				snap.TotalValue,
+				e.riskManager.PeakValue(),
+				e.riskManager.DayStartRealizedPnL(),
+			); err != nil {
+				slog.Error("Failed to persist daily PnL snapshot", "error", err)
+			}
+		}
 	}
 }
 

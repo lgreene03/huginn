@@ -49,6 +49,34 @@ CREATE TABLE IF NOT EXISTS strategy_state (
 CREATE INDEX IF NOT EXISTS idx_strategy_state_updated ON strategy_state(updated_at);
 `,
 	},
+	{
+		version: 2,
+		// trade_orders records order intents (pre-fill) for intent→fill join
+		// and rejection-rate analytics.
+		// daily_pnl_snapshots records one row per UTC day; used as a fallback
+		// seed for the risk manager's peakValue and dayStartRealizedPnL when
+		// the strategy_state._risk blob is absent on restart.
+		sql: `
+CREATE TABLE IF NOT EXISTS trade_orders (
+	order_id     VARCHAR(64)      PRIMARY KEY,
+	instrument   VARCHAR(32)      NOT NULL,
+	side         INT              NOT NULL,
+	quantity     DOUBLE PRECISION NOT NULL,
+	strategy_key VARCHAR(64)      NOT NULL DEFAULT '',
+	created_at   TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_trade_orders_created ON trade_orders(created_at);
+
+CREATE TABLE IF NOT EXISTS daily_pnl_snapshots (
+	utc_date                DATE             PRIMARY KEY,
+	realized_pnl            DOUBLE PRECISION NOT NULL,
+	total_value             DOUBLE PRECISION NOT NULL,
+	peak_value              DOUBLE PRECISION NOT NULL,
+	day_start_realized_pnl  DOUBLE PRECISION NOT NULL,
+	recorded_at             TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+`,
+	},
 }
 
 // runMigrations creates the schema_migrations ledger if needed, then applies

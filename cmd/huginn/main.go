@@ -171,6 +171,15 @@ func main() {
 		slog.Info("Restored risk state from prior run", "bytes", len(priorRisk))
 	} else {
 		slog.Info("No prior risk state found — starting with fresh peakValue + daily-loss baseline")
+		// Fallback: seed peak and daily baseline from daily_pnl_snapshots when the
+		// _risk blob is absent (e.g. first boot, corrupt state, or migrated instance).
+		if pw, ok := jWriter.(*journal.PostgresWriter); ok {
+			if baseline, found, bErr := pw.LoadLatestDailyBaseline(); bErr != nil {
+				slog.Warn("Failed to load daily PnL baseline (non-fatal)", "error", bErr)
+			} else if found {
+				riskManager.SeedFromBaseline(baseline.PeakValue, baseline.DayStartRealizedPnL)
+			}
+		}
 	}
 
 	// Initialize Kafka producer if live execution is enabled
