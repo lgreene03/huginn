@@ -28,6 +28,11 @@ type Config struct {
 
 	// SlippageBps is the simulated slippage in basis points per fill.
 	SlippageBps float64
+
+	// FillLatencyMs defers the fill timestamp by this many milliseconds in
+	// paper-trading mode. Zero (default) uses the raw event timestamp.
+	// Positive values model realistic signal-to-fill delays in backtests.
+	FillLatencyMs int64
 }
 
 // Executor receives feature events, delegates to a strategy, simulates fills,
@@ -295,25 +300,40 @@ func (e *Executor) OnExecutionFill(fill model.Fill) {
 	metrics.PortfolioTotalValue.Set(snap.TotalValue)
 }
 
-// simulateFill models execution with configurable slippage and transaction costs.
+// simulateFill models execution with configurable slippage, transaction costs,
+// an optional order-book-aware fill price, and an optional latency offset.
 func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) model.Fill {
 	e.fillCount++
 
-	// Use microPrice if available for more realistic fill simulation,
-	// otherwise fall back to mid-price estimation from OBI.
-	basePrice := e.estimatePrice(event)
-
-	// Apply slippage: buys fill higher, sells fill lower
 	slippageMultiplier := e.config.SlippageBps / 10_000.0
+
+	// Order-book-aware pricing: when the feature event carries bid/ask from
+	// features.book.v1, fill buys at the ask touch and sells at the bid touch.
+	// Falls back to estimatePrice (microPrice / VWAP value) when not present.
 	var fillPrice float64
 	switch order.Side {
 	case model.Buy:
-		fillPrice = basePrice * (1 + slippageMultiplier)
+		if ask, ok := event.Values["askPrice"]; ok && ask > 0 {
+			fillPrice = ask * (1 + slippageMultiplier)
+		} else {
+			fillPrice = e.estimatePrice(event) * (1 + slippageMultiplier)
+		}
 	case model.Sell:
-		fillPrice = basePrice * (1 - slippageMultiplier)
+		if bid, ok := event.Values["bidPrice"]; ok && bid > 0 {
+			fillPrice = bid * (1 - slippageMultiplier)
+		} else {
+			fillPrice = e.estimatePrice(event) * (1 - slippageMultiplier)
+		}
 	}
 
 	txCost := fillPrice * order.Quantity * (e.config.TransactionCostBps / 10_000.0)
+
+	// Latency model: defers the fill timestamp to simulate signal-to-fill delay.
+	// Zero means use the raw event timestamp (original behaviour).
+	fillTime := event.EventTime
+	if e.config.FillLatencyMs > 0 {
+		fillTime = fillTime.Add(time.Duration(e.config.FillLatencyMs) * time.Millisecond)
+	}
 
 	return model.Fill{
 		OrderID:         fmt.Sprintf("huginn-fill-%d", e.fillCount),
@@ -323,7 +343,7 @@ func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) mod
 		FillPrice:       fillPrice,
 		TransactionCost: txCost,
 		SlippageBps:     e.config.SlippageBps,
-		Timestamp:       event.EventTime,
+		Timestamp:       fillTime,
 	}
 }
 

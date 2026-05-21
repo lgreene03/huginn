@@ -170,8 +170,8 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 **Deliverables.**
 - ✅ **Fix the year-boundary bug** in `engine.go:64`: encode the daily key as `year*1000 + YearDay()` so Jan 1 of different years produces distinct equity samples. Regression tests in `internal/backtest/engine_test.go`.
-- **Order-book-aware fill model.** Currently buys fill at `microPrice * (1 + slippage_bps)`. Optionally consume `bidPrice`/`askPrice`/`spread` from feature events when present (Muninn already publishes these in `features.book.v1`) and fill at the touch + slippage.
-- **Latency model.** Optional `executor.fill_latency_ms` config that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking.
+- ✅ **Order-book-aware fill model.** Buys fill at `askPrice * (1 + slippage_bps)` and sells fill at `bidPrice * (1 - slippage_bps)` when the feature event carries `bidPrice`/`askPrice` (e.g. from `features.book.v1`). Falls back to `microPrice`/`value` when absent.
+- ✅ **Latency model.** Optional `executor.fill_latency_ms` config (`EXECUTOR_FILL_LATENCY_MS` env var) that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking. Zero (default) preserves the original behaviour.
 - ✅ **Parity test.** A new `parity_test.go` runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
 - ✅ **Backtest report HTML.** Optional `--report report.html` flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
 - **Multi-strategy backtest.** Run two strategies concurrently in one backtest, with shared portfolio + risk. Today the engine takes one executor; this requires a small refactor to a slice of executors and a shared portfolio.

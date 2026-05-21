@@ -179,6 +179,7 @@ func main() {
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
 		TransactionCostBps: cfg.Executor.TransactionCostBps,
 		SlippageBps:        cfg.Executor.SlippageBps,
+		FillLatencyMs:      cfg.Executor.FillLatencyMs,
 	}, cfg.LiveExecution, producer, strategyKey)
 
 	// Initialize Kafka consumer for incoming feature events

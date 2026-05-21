@@ -38,6 +38,10 @@ type StrategyConfig struct {
 type ExecutorConfig struct {
 	TransactionCostBps float64 `yaml:"transaction_cost_bps" envconfig:"EXECUTOR_TX_COST_BPS"`
 	SlippageBps        float64 `yaml:"slippage_bps" envconfig:"EXECUTOR_SLIPPAGE_BPS"`
+	// FillLatencyMs defers the fill timestamp by this many milliseconds in
+	// paper-trading mode. Zero (default) uses the raw event timestamp.
+	// Positive values model realistic signal-to-fill delays in backtests.
+	FillLatencyMs int64 `yaml:"fill_latency_ms" envconfig:"EXECUTOR_FILL_LATENCY_MS"`
 }
 
 type ServerConfig struct {
