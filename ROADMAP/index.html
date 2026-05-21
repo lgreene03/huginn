@@ -1,0 +1,1498 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantitative Strategy Execution Engine">
+      
+      
+      
+        <link rel="canonical" href="https://lgreene03.github.io/huginn/ROADMAP/">
+      
+      
+        <link rel="prev" href="../OPERATIONS/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Roadmap - Huginn</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="cyan" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#huginn-roadmap" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Huginn" class="md-header__button md-logo" aria-label="Huginn" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Huginn
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Roadmap
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="cyan" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="cyan" data-md-color-accent="cyan"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lgreene03/huginn" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lgreene03/huginn
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../architecture/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Architecture
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../strategies/" class="md-tabs__link">
+          
+  
+  
+  Strategies
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../risk-model/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Risk Model
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../OPERATIONS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Operations Runbook
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Huginn" class="md-nav__button md-logo" aria-label="Huginn" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Huginn
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lgreene03/huginn" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    lgreene03/huginn
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategies
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Strategies
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../strategies/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview & Authoring Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../calibration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../risk-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Risk Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#current-state-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current state assessment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current state assessment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-built-and-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is built and working
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-broken-right-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is broken right now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-readme-claims-but-isnt-real" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the README claims but isn't real
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy-quality-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy quality gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#risk-management-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risk management gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backtest-vs-live-divergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backtest vs. live divergence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-readiness-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production readiness gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web-ui-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web UI assessment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-goals-to-make-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals to make explicit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-unbreak-main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Unbreak main ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-restart-correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Restart correctness ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-strategy-quality-and-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Strategy quality and calibration ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-observability-that-doesnt-lie" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Observability that doesn't lie ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-backtest-fidelity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Backtest fidelity ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-postgres-grade-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Postgres-grade persistence ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-hardened-web-ui-mostly-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — Hardened Web UI 🟢 Mostly complete
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-release-engineering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Release engineering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase F — Future (deferred / speculative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals (explicit)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-ordering-rationale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase ordering rationale
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#current-state-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current state assessment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current state assessment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-built-and-working" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is built and working
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-broken-right-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is broken right now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-readme-claims-but-isnt-real" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the README claims but isn't real
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy-quality-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy quality gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#risk-management-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risk management gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backtest-vs-live-divergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backtest vs. live divergence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-readiness-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production readiness gaps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#web-ui-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web UI assessment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-goals-to-make-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals to make explicit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-unbreak-main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Unbreak main ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-restart-correctness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Restart correctness ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-strategy-quality-and-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Strategy quality and calibration ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-observability-that-doesnt-lie" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Observability that doesn't lie ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-backtest-fidelity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Backtest fidelity ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-5-postgres-grade-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5 — Postgres-grade persistence ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-6-hardened-web-ui-mostly-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6 — Hardened Web UI 🟢 Mostly complete
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-7-release-engineering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7 — Release engineering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase F — Future (deferred / speculative)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals-explicit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals (explicit)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-ordering-rationale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase ordering rationale
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="huginn-roadmap">Huginn — Roadmap<a class="headerlink" href="#huginn-roadmap" title="Permanent link">&para;</a></h1>
+<p>Phased delivery, mirroring the discipline of the <a href="https://github.com/lgreene03/muninn/blob/main/docs/steering/ROADMAP.md">Muninn server ROADMAP</a> and <a href="https://github.com/lgreene03/muninn-py/blob/main/docs/ROADMAP.md">muninn-py</a>. Each phase ends with a working, tested, documented increment. Phases are not skipped.</p>
+<blockquote>
+<p><strong>Reading this for the first time?</strong> Start with <strong>Current state assessment</strong> below to understand what is already in <code>main</code>, then read the phases.</p>
+</blockquote>
+<hr />
+<h2 id="current-state-assessment">Current state assessment<a class="headerlink" href="#current-state-assessment" title="Permanent link">&para;</a></h2>
+<h3 id="what-is-built-and-working">What is built and working<a class="headerlink" href="#what-is-built-and-working" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Strategy interface</strong> (<code>internal/strategy/strategy.go</code>): single-method <code>OnFeature(FeatureEvent) []Order</code> — clean, no concurrency contract documented but <code>EMACrossover</code> self-mutexes, the others do not.</li>
+<li><strong>Four strategies implemented</strong>: <code>OBIThreshold</code> (<code>obi_threshold.go</code>), <code>VPINBreakout</code> (same file, lines 87–143), <code>VWAPDeviation</code> (<code>vwap_deviation.go</code>), <code>EMACrossover</code> (<code>ema_crossover.go</code>). Each tested with at least one happy-path and one negative case (<code>internal/strategy/strategy_test.go</code>, 207 lines, 6 tests).</li>
+<li><strong>Risk manager</strong> (<code>internal/risk/manager.go</code>): peak-trailing drawdown stop (<code>peakValue</code> ratchet), daily-loss limit on <code>RealizedPnL</code>, hard position limit, <strong>volatility-scaled position limit</strong> (CV of last 30 fill prices, lines 106–141), manual halt/resume, dynamic <code>UpdateLimits</code>. <code>manager_test.go</code> covers all four reject paths.</li>
+<li><strong>Executor</strong> (<code>internal/executor/executor.go</code>): dual-mode — paper sim with bps slippage + tx cost on <code>microPrice</code>/<code>value</code>, or live mode that publishes order intents to Kafka (<code>executions.intents.v1</code>) and ingests fills from Sleipnir (<code>executions.fills.v1</code>). Dynamic <code>UpdateConfig</code> / <code>GetConfig</code> for live retuning.</li>
+<li><strong>Portfolio</strong> (<code>internal/portfolio/portfolio.go</code>): thread-safe FIFO-avg-cost book, realized PnL on sell, unrealized via <code>LastMarkPrice</code>. <code>portfolio_test.go</code> validates round-trip PnL.</li>
+<li><strong>Journal</strong> (<code>internal/journal/</code>): pluggable <code>Writer</code> interface, JSONL writer + JSONL reader/replay for crash recovery, Postgres writer with auto-init schema (<code>trade_fills</code> table, lines 51–67 of <code>postgres.go</code>) and replay-from-DB recovery.</li>
+<li><strong>Kafka</strong> (<code>internal/kafka/</code>): multi-topic fan-in consumer with buffered channel + per-topic goroutines, intent producer (<code>segmentio/kafka-go</code>, <code>RequireAll</code> acks), fills consumer.</li>
+<li><strong>HTTP server</strong> (<code>internal/server/http.go</code>): <code>/healthz</code> (returns portfolio snapshot), <code>/readyz</code>, <code>/metrics</code> (Prom), <code>/api/stream</code> (SSE @ 500 ms), <code>/api/breaker/{trigger,reset}</code>, <code>/api/fills/mock</code>.</li>
+<li><strong>Backtest engine</strong> (<code>internal/backtest/engine.go</code>): JSONL replay, daily equity sampling (by <code>event.EventTime.YearDay()</code>), terminal Sharpe + MDD via <code>internal/metrics/analysis.go</code>.</li>
+<li><strong>Historical fetcher</strong> (<code>cmd/fetcher/main.go</code>): Binance <code>aggTrades</code> → windowed OBI/VPIN/VWAP → JSONL. Used to feed the backtest engine.</li>
+<li><strong>Web UI</strong> (<code>web/</code>): React 19 + Vite + TS dashboard with neon-cyan theme. Connects to <code>http://localhost:8083/api/stream</code> (SSE), renders inline-SVG equity curve, positions table, fills log, manual halt/resume buttons, manual-fill console.</li>
+<li><strong>Docker Compose</strong> (<code>docker-compose.yml</code>): huginn + dashboard + sleipnir + redpanda + postgres. Sleipnir is wired as a sibling service pointing at Binance testnet.</li>
+<li><strong>CI</strong>: <code>.github/workflows/ci.yml</code> — Go 1.23, <code>go mod verify</code>, build, vet, <code>go test ./...</code>. Single Linux job, no race, no coverage, no matrix.</li>
+</ul>
+<h3 id="what-is-broken-right-now">What is broken right now<a class="headerlink" href="#what-is-broken-right-now" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong><code>go build ./...</code> fails on <code>main</code>.</strong> <code>cmd/huginn/main.go:146</code> calls <code>server.New(":"+cfg.Server.Port, port, riskManager)</code> (3 args) but <code>internal/server/http.go:30</code> signature is <code>New(addr, portf, riskMgr, exec *executor.Executor)</code>. Mid-refactor leak. The CI workflow above would catch this on the next push — but the last commit went in red, or CI is not actually green. <strong>This is Phase 0.</strong></li>
+<li><strong><code>web/package.json</code> pins <code>typescript ~6.0.2</code> and <code>vite ^8.0.12</code>.</strong> Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). <code>npm ci</code> will fail. Either the deps were hand-edited optimistically or this is dead-on-arrival for fresh clones.</li>
+<li><strong><code>docker-compose.yml</code></strong> references a <code>sleipnir</code> build context at <code>../sleipnir</code> — fine on the author's machine, broken for any other clone or CI.</li>
+</ol>
+<h3 id="what-the-readme-claims-but-isnt-real">What the README claims but isn't real<a class="headerlink" href="#what-the-readme-claims-but-isnt-real" title="Permanent link">&para;</a></h3>
+<ul>
+<li>README's strategy table only mentions <code>obi</code> and <code>vpin</code>; actually four are wired (<code>vwap_deviation</code>, <code>ema_crossover</code>).</li>
+<li>README claims <code>VPIN Breakout</code> is in its own file — it lives inside <code>obi_threshold.go</code> at line 87. Cosmetic but worth fixing.</li>
+<li>README's environment-variable table omits <code>LIVE_EXECUTION</code>, <code>KAFKA_INTENTS_TOPIC</code>, <code>KAFKA_FILLS_TOPIC</code>, <code>DATABASE_ENABLED</code>, <code>DATABASE_URL</code>, and all four EMA/VWAP strategy params.</li>
+<li>"No real exchange API connections" in Non-Goals contradicts the <code>LiveExecution=true</code> path that publishes to Sleipnir, which is itself a Binance gateway. The non-goal needs to be reframed: Huginn itself never opens an exchange socket; Sleipnir does, and Huginn only ever speaks to Sleipnir over Kafka.</li>
+</ul>
+<h3 id="strategy-quality-gaps">Strategy quality gaps<a class="headerlink" href="#strategy-quality-gaps" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>No calibration story.</strong> OBI threshold 0.7, VPIN 0.5, VWAP 0.001 — these are folklore values in the configs. There is no script, notebook, or sweep CLI that picks them from historical data. The fetcher writes JSONL; the backtest consumes JSONL; there is no glue to grid-search.</li>
+<li><strong>No documented failure mode per strategy.</strong> What happens to OBI mean-reversion in a regime change? When does EMA crossover whipsaw? Not in docstrings.</li>
+<li><strong>State leaks between backtest runs.</strong> <code>NewOBIThreshold</code> etc. start <code>netPosition=0</code>, but the live process re-uses an in-memory strategy across recoveries — strategy <code>netPosition</code> is <strong>not</strong> recovered from the journal, only the portfolio is. After a restart, OBI/EMA/VWAP will happily re-build position past the throttle limit.</li>
+<li><strong>EMA warmup logic is off-by-one.</strong> <code>s.count &lt; s.SlowPeriod</code> will produce orders on the very first post-warmup sample where <code>prevFastEMA == prevSlowEMA == price</code> is possible from the initialization at line 63–64. The <code>strategy_test.go:158</code> test passes by setting up a specific sequence; a fuzzed sequence will flag a bogus crossover.</li>
+<li><strong>Concurrency contract is inconsistent.</strong> <code>OBIThreshold</code>, <code>VPINBreakout</code>, <code>VWAPDeviation</code> mutate <code>netPosition</code>/<code>lastTrade</code> with no lock. The executor calls <code>OnFeature</code> from a single goroutine today (the dispatcher in <code>consumer.go</code>), but the interface doesn't document that.</li>
+</ul>
+<h3 id="risk-management-gaps">Risk management gaps<a class="headerlink" href="#risk-management-gaps" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Daily loss limit is not daily.</strong> <code>manager.go:97</code> compares <code>snap.RealizedPnL</code> (all-time) to <code>-DailyLossLimit</code>. No date roll. Once you hit the limit, you stay halted forever, even on a fresh trading day.</li>
+<li><strong>Drawdown gauge tracks peak across all time, not session.</strong> Same issue as above — on a recovered portfolio, <code>peakValue</code> resets to <code>initialCash</code> (<code>manager.go:29</code>) even if the recovered portfolio is already at $120k. First drawdown after restart will misfire.</li>
+<li><strong>Volatility scaling uses recent fill prices, not feature prices.</strong> If you stop fillling (because you halted), the ring buffer goes stale but never resets.</li>
+<li><strong>No feature-staleness circuit breaker.</strong> If Muninn stops publishing, the strategy keeps quietly running on the last event. Recommend a "no event in N seconds" watchdog.</li>
+<li><strong>No per-instrument position limit</strong> — only gross notional. A strategy that signals on multiple symbols will not be limited per symbol.</li>
+<li><strong>Risk evaluates the prospective fill but doesn't reserve cash.</strong> Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.</li>
+<li><strong>Mock-fill endpoint bypasses the strategy and risk-update gauges in a subtle way.</strong> <code>/api/fills/mock</code> (<code>http.go:154</code>) calls <code>ApplyFill</code> but does not call <code>OnExecutionFill</code> — fills land in the portfolio but Prometheus <code>OrdersGeneratedTotal</code> never increments. Operator-only feature, but it makes metrics lie.</li>
+</ul>
+<h3 id="backtest-vs-live-divergence">Backtest vs. live divergence<a class="headerlink" href="#backtest-vs-live-divergence" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Time semantics: OK.</strong> Backtest dispatches directly to <code>exec.OnFeature(event)</code> with <code>event.EventTime</code>; fills inherit that time. Live mode also tags fills with <code>event.EventTime</code>. Consistent.</li>
+<li><strong>Slippage &amp; fees parity: OK in paper mode.</strong> Both paths call the same <code>simulateFill</code> (<code>executor.go:172–201</code>).</li>
+<li><strong>Risk parity: OK.</strong> Same <code>riskManager.Evaluate(...)</code> runs in both paths.</li>
+<li><strong>Backtest does not run live mode.</strong> <code>cmd/backtest/main.go:73</code> hardcodes <code>liveMode=false</code>. Fine, but worth documenting.</li>
+<li><strong>Daily equity sampling is fragile.</strong> <code>engine.go:64</code> uses <code>EventTime.YearDay()</code> — wraps around year boundary; multi-year backtests will collapse Jan 1 of two different years into the same bucket.</li>
+<li><strong>No warmup vs. live divergence test.</strong> A strategy run live for 3 days and a backtest of the same 3 days should agree on fills and PnL. There is no test that checks this.</li>
+</ul>
+<h3 id="production-readiness-gaps">Production readiness gaps<a class="headerlink" href="#production-readiness-gaps" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Logging is structured (<code>slog</code> JSON) — good.</strong> But spammy <code>slog.Info</code> in the inner loop (<code>portfolio.go:100</code>, <code>executor.go:125</code>, every strategy on every signal). At any real event rate this is unmanageable.</li>
+<li><strong>Metrics:</strong> counters for features-consumed, orders-generated, fills-executed, plus four portfolio gauges. Missing: orders-rejected-by-risk (with reason label), feature-event-staleness histogram, end-to-end signal-to-fill latency histogram, strategy-feature-skipped counter, Kafka consumer lag.</li>
+<li><strong>OTel traces:</strong> none.</li>
+<li><strong>Graceful shutdown:</strong> present but not exercised in tests. <code>consumer.Run(ctx)</code> returns when context cancels; <code>srv.Stop</code> is best-effort.</li>
+<li><strong>Postgres migrations:</strong> schema is inline <code>CREATE TABLE IF NOT EXISTS</code> (<code>postgres.go:51</code>). No versioning, no <code>goose</code>/<code>atlas</code>/<code>golang-migrate</code>.</li>
+<li><strong>Restart-from-journal correctness:</strong> portfolio recovers, <strong>strategies do not</strong>, <strong>risk peak does not</strong>, <strong>daily loss reset does not</strong>. See gaps above.</li>
+<li><strong>No <code>internal/strategy/vpin_breakout.go</code></strong> — code colocated in <code>obi_threshold.go</code>, README implies separate file. Cosmetic; do it during cleanup.</li>
+<li><strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).</li>
+</ul>
+<h3 id="web-ui-assessment">Web UI assessment<a class="headerlink" href="#web-ui-assessment" title="Permanent link">&para;</a></h3>
+<ul>
+<li>~250 lines of TS, one <code>App.tsx</code>, no router, no test, no state-management library.</li>
+<li>Single SSE source-of-truth — good pattern.</li>
+<li>Hardcoded <code>http://localhost:8083</code>. Will not work behind a reverse proxy.</li>
+<li>Dep versions in <code>package.json</code> are not installable (TypeScript 6.x, Vite 8.x don't exist yet).</li>
+<li>Dockerfile builds via <code>npm ci</code> and serves with nginx. The nginx config is implicit (default), so SPA fallback routing doesn't work.</li>
+<li>It is a legitimate operator console (halt/resume, manual fill, live equity, fills tail) but absolutely not analytics-grade. It should be a phase of its own.</li>
+</ul>
+<h3 id="non-goals-to-make-explicit">Non-goals to make explicit<a class="headerlink" href="#non-goals-to-make-explicit" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Not a feature-engineering library.</strong> Features come from Muninn. Huginn never recomputes OBI/VPIN/VWAP from raw trades inside its hot path. (The <code>cmd/fetcher</code> is a one-off offline data preparation tool for backtests; it intentionally duplicates the formulas — that duplication is a known debt, not a feature.)</li>
+<li><strong>Not a multi-venue smart-order router.</strong> All live execution goes through Sleipnir, which talks to a single venue. Huginn does not split orders across venues, manage inventory across venues, or arbitrage.</li>
+<li><strong>Not a portfolio-optimization library.</strong> No mean-variance, no Black-Litterman, no factor model. Position sizing is per-strategy notional throttling, period.</li>
+<li><strong>Not a real exchange client.</strong> Huginn never opens an exchange socket. Sleipnir does. Huginn's "live" mode means "live paper-or-real trading via Sleipnir."</li>
+<li><strong>Not a research notebook environment.</strong> Analytics belong in muninn-py.</li>
+<li><strong>Not opinionated about strategy language.</strong> Strategies are Go structs implementing the <code>Strategy</code> interface. No DSL, no Python embedding, no Lua hook — and there is no plan for one.</li>
+</ul>
+<hr />
+<h2 id="phase-0-unbreak-main">Phase 0 — Unbreak <code>main</code> ✅<a class="headerlink" href="#phase-0-unbreak-main" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Get <code>go build ./...</code> and <code>npm ci &amp;&amp; npm run build</code> green on a fresh clone.</p>
+<p><strong>Deliverables.</strong>
+- Fix <code>cmd/huginn/main.go:146</code> to pass <code>exec</code> to <code>server.New</code>, or revert <code>server.New</code> to its 3-arg form. Pick one; the SSE handler doesn't currently use <code>executor</code>, so reverting is simpler and removes the unused field on <code>Server</code>.
+- Pin <code>web/package.json</code> to versions that actually exist on npm (TypeScript 5.6.x, Vite 6.x, React 19.x as it stands).
+- Add <code>go test -race ./...</code> and <code>go vet ./...</code> to CI, plus a <code>web</code> job that runs <code>npm ci &amp;&amp; npm run build</code> and <code>npm run lint</code>.
+- Make <code>docker-compose.yml</code> Sleipnir reference optional via a compose profile (<code>profiles: [live]</code>) so plain clones still come up.
+- README correction pass: fix the strategy list, env-var table, and the "no exchange API connection" Non-Goal phrasing.</p>
+<p><strong>Exit criteria.</strong> Fresh clone: <code>go build ./... &amp;&amp; go test -race ./... &amp;&amp; (cd web &amp;&amp; npm ci &amp;&amp; npm run build)</code> all pass. CI is actually green, not just "passing because the workflow only checks <code>go vet</code>."</p>
+<p><strong>Risks.</strong> None — pure janitorial. If this phase is hard, the codebase has rot we haven't surfaced yet.</p>
+<hr />
+<h2 id="phase-1-restart-correctness">Phase 1 — Restart correctness ✅<a class="headerlink" href="#phase-1-restart-correctness" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Huginn restarts the same way it left, end-to-end.</p>
+<p><strong>Deliverables.</strong>
+- <strong>Strategy state journal.</strong> Add a small <code>Stateful</code> optional interface (<code>MarshalState() []byte</code> / <code>RestoreState([]byte) error</code>) on <code>Strategy</code>. Persist alongside portfolio in journal — JSONL gets a <code>{type: "strategy_state", ...}</code> record; Postgres gets a <code>strategy_state(strategy_name, state_blob, updated_at)</code> table. Implement for all four strategies.
+- <strong>Daily reset for risk.</strong> Risk manager owns a UTC-day boundary. On crossing, reset realized-PnL-baseline for the daily-loss check (track <code>dayStartRealizedPnL</code>, compare <code>snap.RealizedPnL - dayStartRealizedPnL</code>).
+- <strong>Persist peak value.</strong> Add <code>peak_value</code> to the journal so trailing drawdown survives restart.
+- <strong>Per-instrument position limit</strong> in <code>RiskConfig</code>. Optional map <code>position_limit_per_instrument: { "BTC-USD": ..., "ETH-USD": ... }</code>. Falls back to gross.
+- <strong>Feature-staleness watchdog.</strong> Risk manager auto-halts when <code>time.Since(lastFeatureEvent) &gt; cfg.Risk.StalenessTimeout</code> (default 60 s); auto-resumes on next event if <code>auto_resume_after_staleness: true</code>.</p>
+<p><strong>Exit criteria.</strong> A new test (<code>risk/manager_recovery_test.go</code>) starts a Huginn, runs 10 fills crossing midnight, restarts the process, and asserts the daily-loss-limit window has rolled. Strategy state for OBI/VPIN/VWAP/EMA round-trips through both journal backends.</p>
+<p><strong>Risks.</strong> Strategy-state schema versioning. Use <code>{version: 1, ...}</code> from day one.</p>
+<hr />
+<h2 id="phase-2-strategy-quality-and-calibration">Phase 2 — Strategy quality and calibration ✅<a class="headerlink" href="#phase-2-strategy-quality-and-calibration" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Every strategy has a documented failure mode, a calibration story, and dense unit tests.</p>
+<p><strong>Deliverables.</strong>
+- <strong>Per-strategy docstrings</strong>: signal hypothesis, expected regime, known failure mode, parameter sensitivity. Add to each <code>*.go</code> file in <code>internal/strategy/</code>.
+- <strong>Extract <code>vpin_breakout.go</code></strong> into its own file. Cosmetic, but matches README.
+- <strong>Calibration CLI</strong> (<code>cmd/calibrate</code>). Takes a JSONL feature file, a strategy name, and a parameter grid (e.g. <code>--threshold 0.5,0.6,0.7,0.8 --order-size 0.01</code>). Runs N backtests in parallel goroutines, emits CSV of <code>(params, sharpe, mdd, total_fills, realized_pnl, hit_rate)</code>. Persist to <code>data/calibration/&lt;strategy&gt;-&lt;timestamp&gt;.csv</code>.
+- <strong>Walk-forward backtest mode</strong> for <code>cmd/backtest</code>: split data into train/test windows, calibrate on train, evaluate on test.
+- <strong>Hit-rate, turnover, average-hold-time</strong> added to <code>internal/metrics/analysis.go</code>. Surface in backtest summary.
+- <strong>Property-based tests</strong> (<code>testing/quick</code> or <code>gopter</code>) for each strategy: never emit an order with <code>Quantity &lt;= 0</code>, never breach <code>maxPosition</code>, never reverse signs without crossing zero.
+- <strong>Document the concurrency contract</strong> on the <code>Strategy</code> interface: "OnFeature is called from a single goroutine. Implementations need not be thread-safe unless <code>Stateful</code> is also implemented." Or, alternatively, require <code>Strategy</code> to be safe under a documented mutex — pick one and document.</p>
+<p><strong>Exit criteria.</strong> <code>cmd/calibrate --strategy obi --data data/historical.jsonl</code> produces a CSV. Each strategy file has a "Failure modes" docstring section. <code>go test ./internal/strategy/... -count=100</code> passes.</p>
+<p><strong>Risks.</strong> Calibration as a CLI invites hill-climbing on noise. Document explicitly that this is a <em>sanity sweep</em> — it is not a research tool. Real research happens in <code>muninn-py</code>.</p>
+<hr />
+<h2 id="phase-3-observability-that-doesnt-lie">Phase 3 — Observability that doesn't lie ✅<a class="headerlink" href="#phase-3-observability-that-doesnt-lie" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> A human looking at Grafana can tell whether Huginn is healthy without reading logs.</p>
+<p><strong>Deliverables.</strong>
+- <strong>New metrics.</strong> <code>huginn_orders_rejected_total{reason=...}</code>, <code>huginn_feature_event_age_seconds</code> (histogram, computed <code>now - event.EventTime</code> at dispatch), <code>huginn_signal_to_fill_latency_seconds</code>, <code>huginn_kafka_consumer_lag{topic=...}</code>, <code>huginn_strategy_state_persisted_total</code>, <code>huginn_risk_halt_active</code> (gauge 0/1).
+- <strong>OpenTelemetry traces.</strong> Span per <code>OnFeature</code> covering strategy → risk → executor → journal → portfolio. Optional OTLP exporter behind <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>. <em>Deferred: OTel adds substantial dependency weight; the no-op path satisfies the risk note. Will be revisited in Phase 7 (release engineering) where a full dep audit is planned.</em>
+- <strong>Log volume control.</strong> Demote inner-loop <code>slog.Info</code> in <code>portfolio.ApplyFill</code>, <code>executor.OnFeature</code>, and strategy "Strategy signal" lines to <code>slog.Debug</code>; gate <code>Info</code>-level on a sampling counter or every-Nth-event flag.
+- <strong>A bundled Grafana dashboard JSON</strong> in <code>deploy/grafana/huginn.json</code>: equity curve, realized vs unrealized PnL, fills/min, orders rejected by reason, feature age, halt status.
+- <strong><code>/api/snapshot</code> endpoint</strong> returning the current snapshot as plain JSON (the SSE stream's per-tick payload sans streaming) — needed for the dashboard and easier to scrape than SSE.</p>
+<p><strong>Exit criteria.</strong> <code>curl :8081/metrics</code> exposes the new metrics. The Grafana dashboard JSON loads against a default Prometheus scrape and shows non-empty panels in a backtest replay.</p>
+<p><strong>Risks.</strong> OTel pulls in significant deps. Make the exporter optional (no-op tracer if env unset).</p>
+<hr />
+<h2 id="phase-4-backtest-fidelity">Phase 4 — Backtest fidelity ✅<a class="headerlink" href="#phase-4-backtest-fidelity" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Backtest results predict live paper-trading results within a documented tolerance.</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong>Fix the year-boundary bug</strong> in <code>engine.go:64</code>: encode the daily key as <code>year*1000 + YearDay()</code> so Jan 1 of different years produces distinct equity samples. Regression tests in <code>internal/backtest/engine_test.go</code>.
+- ✅ <strong>Order-book-aware fill model.</strong> Buys fill at <code>askPrice * (1 + slippage_bps)</code> and sells fill at <code>bidPrice * (1 - slippage_bps)</code> when the feature event carries <code>bidPrice</code>/<code>askPrice</code> (e.g. from <code>features.book.v1</code>). Falls back to <code>microPrice</code>/<code>value</code> when absent.
+- ✅ <strong>Latency model.</strong> Optional <code>executor.fill_latency_ms</code> config (<code>EXECUTOR_FILL_LATENCY_MS</code> env var) that defers the fill timestamp; in backtest this changes which subsequent event triggers PnL marking. Zero (default) preserves the original behaviour.
+- ✅ <strong>Parity test.</strong> A new <code>parity_test.go</code> runs the same 1000-event JSONL through (a) backtest engine, (b) executor driven by an in-memory channel mimicking the consumer. Asserts identical fill counts, identical realized PnL to 6 decimals.
+- ✅ <strong>Backtest report HTML.</strong> Optional <code>--report report.html</code> flag emits a self-contained HTML with equity curve, drawdown, fills table, parameter echo. Useful for sharing on PRs.
+- ✅ <strong>Multi-strategy backtest.</strong> <code>Engine.AddExecutor</code> registers additional strategy executors that receive every event alongside the primary one. All executors share the same portfolio and risk manager. <code>TestMultiStrategySharedPortfolio</code> verifies fill counts accumulate from both strategies.</p>
+<p><strong>Exit criteria.</strong> <code>parity_test.go</code> passes. The known year-boundary bug is regression-tested. A 1-week historical replay produces a report HTML in under 10 s.</p>
+<p><strong>Risks.</strong> Touch-fill model needs feature topics that may not yet be live in Muninn. Make it an opt-in.</p>
+<hr />
+<h2 id="phase-5-postgres-grade-persistence">Phase 5 — Postgres-grade persistence ✅<a class="headerlink" href="#phase-5-postgres-grade-persistence" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Postgres mode is the recommended default, not a side path.</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong>Migrations.</strong> No external dependency. <code>internal/journal/pg_migrations.go</code> implements a versioned migration ledger (<code>schema_migrations</code> table). Each version runs in its own transaction; a failure rolls back and the process exits loudly. Append-only — never edit existing entries.
+- ✅ <strong>Schema additions.</strong> Migration v2 adds <code>trade_orders</code> (intent records, pre-fill, for intent→fill join) and <code>daily_pnl_snapshots</code> (one row per UTC day, upserted by the state-persister ticker).
+- ✅ <strong>Connection-pool tunables</strong> in <code>DatabaseConfig</code>: <code>max_conns</code>, <code>min_conns</code>, <code>max_conn_lifetime</code>, <code>max_conn_idle_time</code> (env vars <code>DATABASE_MAX_CONNS</code>, <code>DATABASE_MIN_CONNS</code>, <code>DATABASE_MAX_CONN_LIFETIME</code>, <code>DATABASE_MAX_CONN_IDLE_TIME</code>). Passed to <code>NewPostgresWriter</code> via new <code>journal.PoolConfig</code> struct.
+- ✅ <strong>Postgres-backed risk recovery.</strong> <code>PostgresWriter.AppendDailyPnLSnapshot</code> upserts today's <code>peakValue</code> and <code>dayStartRealizedPnL</code>. <code>LoadLatestDailyBaseline</code> reads it back. Boot path falls back to <code>SeedFromBaseline</code> when <code>strategy_state._risk</code> is absent. Tested in <code>TestRecoveryFallback_DrawdownGuard</code>.
+- ✅ <strong>Make Postgres the default</strong> in <code>configs/default.yaml</code>. JSONL mode preserved for ephemeral demos (<code>DATABASE_ENABLED=false</code>).
+- ✅ <strong>Backup/restore runbook</strong> in <code>docs/OPERATIONS.md</code>.</p>
+<p><strong>Exit criteria.</strong> <code>make db-migrate-up</code> and <code>make db-migrate-down</code> work. A <code>huginn</code> process started against a freshly migrated DB, then restarted, recovers portfolio + peak + daily baseline bit-for-bit.</p>
+<p><strong>Risks.</strong> Backwards compatibility with existing <code>trade_fills</code> tables. The first migration should be idempotent against the current schema.</p>
+<hr />
+<h2 id="phase-6-hardened-web-ui-mostly-complete">Phase 6 — Hardened Web UI 🟢 <em>Mostly complete</em><a class="headerlink" href="#phase-6-hardened-web-ui-mostly-complete" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong>Strategy control panel.</strong> <code>GET/PUT /api/strategy/config</code> wired up — GET returns <code>executor.SystemConfig</code> (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls <code>executor.UpdateConfig</code> and is auth-guarded.
+- ✅ <strong>Connection config from runtime, not literal.</strong> <code>API_BASE</code> in <code>web/src/App.tsx</code> now reads <code>import.meta.env.VITE_API_BASE</code> with fallback to <code>http://localhost:8081</code>. <code>web/.env.example</code> documents the variable.
+- ✅ <strong>Equity-curve persistence.</strong> <code>/api/snapshot/history</code> returns the last N equity samples from a 720-point in-memory ring buffer (default ~6 h at 30 s sampling). Ring populated by <code>srv.RunEquitySampler</code>. UI hydrates the chart on mount via a fetch to this endpoint.
+- ✅ <strong>Strategy panel showing which strategy is active</strong>, current threshold, current position, current PnL — fetches <code>GET /api/strategy/config</code> on mount and every 30 s; displays strategy name, threshold, order size, EMA periods (if applicable), position limit, and real-time PnL.
+- ✅ <strong>Auth.</strong> <code>HUGINN_API_TOKEN</code> env var gates <code>/api/breaker/*</code>, <code>/api/fills/mock</code>, and <code>PUT /api/strategy/config</code>. Empty token disables auth (backward-compatible). CORS updated to allow <code>PUT</code> and <code>Authorization</code> header. Documented in <code>docs/OPERATIONS.md</code>.
+- ✅ <strong>Production nginx config</strong> (<code>web/nginx.conf</code>) with <code>try_files $uri /index.html;</code>, SSE-safe proxy (<code>proxy_buffering off</code>), CORS headers at proxy layer. Dockerfile updated to use the template via nginx envsubst; <code>HUGINN_UPSTREAM</code> env var sets the API host.
+- <strong>One Playwright smoke test</strong>: load the page against a stub Huginn, assert equity panel renders.</p>
+<p><strong>Exit criteria.</strong> <code>docker-compose up</code> produces a UI that, behind a reverse proxy at <code>/</code>, shows live state, can halt+resume, and can update strategy threshold without restarting Huginn.</p>
+<p><strong>Risks.</strong> UI scope creep. Cap it at operator-grade — analytics live in <code>muninn-py</code>.</p>
+<hr />
+<h2 id="phase-7-release-engineering">Phase 7 — Release engineering<a class="headerlink" href="#phase-7-release-engineering" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Huginn is installable, reproducible, documented, and clearly versioned.</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong><code>docker buildx</code> multi-arch images.</strong> <code>release.yml</code> builds <code>linux/amd64</code> + <code>linux/arm64</code> and pushes to GHCR on tag. Dockerfile base images pinned by digest; VERSION/GIT_SHA/BUILD_TIME injected via <code>-ldflags</code>.
+- ✅ <strong>Versioning.</strong> <code>internal/version</code> package with <code>Version</code>, <code>GitSHA</code>, <code>BuildTime</code> (injected via <code>-ldflags</code>). Exposed at <code>/version</code> endpoint (JSON) and in the startup <code>slog.Info</code> line.
+- ✅ <strong><code>CONTRIBUTING.md</code> and <code>SECURITY.md</code></strong> — developer setup, strategy authoring checklist, migration rules, vulnerability reporting procedure.
+- ✅ <strong><code>CODE_OF_CONDUCT.md</code></strong> — Contributor Covenant v2.1 reference.
+- ✅ <strong>MkDocs site</strong> under <code>docs/</code> covering: architecture, strategy authoring guide, risk model, ops runbook, calibration workflow, the four bundled strategies' failure modes. Deployed to https://lgreene03.github.io/huginn via <code>.github/workflows/docs.yml</code>; linked from README.
+- ✅ <strong>Cross-link from Muninn's <code>companion-services</code> section.</strong> Muninn README updated with a "Companion Services" section linking both Huginn and Sleipnir.
+- ✅ <strong>Lint/format in CI.</strong> <code>.golangci.yml</code> v2 with <code>staticcheck</code>, <code>gofmt</code>, <code>goimports</code>, <code>misspell</code>, <code>revive</code>, <code>unconvert</code>, <code>unparam</code>, <code>unused</code>. <code>lint</code> job added to <code>.github/workflows/ci.yml</code> via <code>golangci/golangci-lint-action@v9</code>.</p>
+<p><strong>Exit criteria.</strong> <code>docker pull ghcr.io/lgreene03/huginn:v0.1.0</code> works. The docs site is published on GitHub Pages and linked from the README.</p>
+<p><strong>Risks.</strong> Doc maintenance — keep it co-located with the code that needs it.</p>
+<hr />
+<h2 id="phase-f-future-deferred-speculative">Phase F — Future <em>(deferred / speculative)</em><a class="headerlink" href="#phase-f-future-deferred-speculative" title="Permanent link">&para;</a></h2>
+<p>Tracked so ideas aren't lost; explicitly not scheduled.</p>
+<ul>
+<li><strong>Live trading mode for real.</strong> The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper.</li>
+<li><strong>Strategy hot-reload from disk</strong> (drop a <code>.so</code> plugin). Significant complexity, very little payoff over restarts.</li>
+<li><strong>Cross-strategy meta-allocator</strong> that splits capital across the four strategies based on rolling Sharpe. Adjacent to portfolio optimization — explicit non-goal today, revisit if a real driver appears.</li>
+<li><strong>Replay-divergence diagnostics</strong> — given a fills journal and the original features, deterministically replay and surface any divergence. Useful only once Phase 4 parity is rock-solid.</li>
+<li><strong>WebSocket consumer for muninn streaming features</strong> when the server adds one. Not before.</li>
+<li><strong>Multi-venue support.</strong> Requires a Sleipnir per venue; out of scope.</li>
+</ul>
+<hr />
+<h2 id="non-goals-explicit">Non-goals (explicit)<a class="headerlink" href="#non-goals-explicit" title="Permanent link">&para;</a></h2>
+<p>In the same spirit as Muninn's <a href="https://github.com/lgreene03/muninn/blob/main/docs/steering/NON_GOALS.md">NON_GOALS.md</a>:</p>
+<ul>
+<li><strong>Not a feature-engineering library.</strong> Features come from Muninn. The <code>cmd/fetcher</code> is an offline data-prep tool for backtests, not a runtime computation path.</li>
+<li><strong>Not a multi-venue smart-order router.</strong> One Sleipnir, one venue.</li>
+<li><strong>Not a portfolio-optimization library.</strong> Position sizing is per-strategy throttling.</li>
+<li><strong>Not a real exchange client.</strong> Huginn talks to Sleipnir over Kafka; Sleipnir talks to the venue.</li>
+<li><strong>Not a research notebook environment.</strong> Analytics belong in <code>muninn-py</code>.</li>
+<li><strong>Not opinionated about strategy language.</strong> Strategies are Go structs.</li>
+<li><strong>Not a UI framework or analytics dashboard.</strong> The bundled <code>web/</code> is an operator console — halt, resume, tune, observe. Not a research surface.</li>
+</ul>
+<hr />
+<h2 id="phase-ordering-rationale">Phase ordering rationale<a class="headerlink" href="#phase-ordering-rationale" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Phase 0 before everything</strong>, because a roadmap on top of a red <code>main</code> is fiction.</li>
+<li><strong>Phase 1 before Phase 2</strong>, because a calibration workflow that produces good numbers on a process that doesn't survive a restart is worse than no calibration workflow at all.</li>
+<li><strong>Phase 2 before Phase 3</strong>, because metrics that lie about a strategy that fails silently is the worst combination — fix the strategies first, then make the observability honest.</li>
+<li><strong>Phase 3 before Phase 4</strong>, because backtest fidelity is judged by observed-vs-replayed divergence — you need the observability to measure the divergence.</li>
+<li><strong>Phase 4 before Phase 5</strong>, because Postgres-grade persistence on a system whose backtest doesn't match live execution just persists wrong numbers more durably.</li>
+<li><strong>Phase 5 before Phase 6</strong>, because the UI promises in Phase 6 (history, equity persistence, strategy tuning audit) all depend on Postgres being the system of record.</li>
+<li><strong>Phase 7 last</strong> — release a product, not a sketch.</li>
+<li><strong>Phase F never on its own schedule</strong> — items move out only when a real driver appears.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/lgreene03/huginn" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
