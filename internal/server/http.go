@@ -15,6 +15,7 @@ import (
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
+	"github.com/lgreene03/huginn/internal/version"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -312,6 +313,12 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// versionHandler returns the build identity as JSON.
+func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(version.Get())
+}
+
 // strategyConfigHandler handles GET and PUT for /api/strategy/config.
 // GET is public; PUT requires the bearer token (if HUGINN_API_TOKEN is set).
 func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +365,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/breaker/reset", corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
 	mux.HandleFunc("/api/fills/mock", corsMiddleware(s.authMiddleware(s.mockFillHandler)))
 	mux.HandleFunc("/api/strategy/config", corsMiddleware(s.strategyConfigHandler))
+	mux.HandleFunc("/version", corsMiddleware(s.versionHandler))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.srv = &http.Server{

@@ -222,11 +222,12 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 **Deliverables.**
 - **`docker buildx` multi-arch images** (`linux/amd64`, `linux/arm64`) published to GHCR on tag. Both `huginn` and `huginn-dashboard` images.
-- **Versioning.** `internal/version` package with `Version`, `GitSHA`, `BuildTime`; expose at `/version` and in startup log.
-- **`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`** matching the discipline of the Muninn server repo.
+- ✅ **Versioning.** `internal/version` package with `Version`, `GitSHA`, `BuildTime` (injected via `-ldflags`). Exposed at `/version` endpoint (JSON) and in the startup `slog.Info` line.
+- ✅ **`CONTRIBUTING.md` and `SECURITY.md`** — developer setup, strategy authoring checklist, migration rules, vulnerability reporting procedure.
+- **`CODE_OF_CONDUCT.md`** — standard Contributor Covenant (add when the project goes public).
 - **MkDocs site** under `docs/` covering: architecture, strategy authoring guide, risk model, ops runbook, calibration workflow, the four bundled strategies' failure modes.
 - **Cross-link from Muninn's `companion-services` section** once published.
-- **Lint/format in CI.** `golangci-lint` config with the same rule set the Muninn server uses.
+- ✅ **Lint/format in CI.** `.golangci.yml` with `errcheck`, `staticcheck`, `gofmt`, `goimports`, `misspell`, `revive`. `lint` job added to `.github/workflows/ci.yml` via `golangci/golangci-lint-action@v6`.
 
 **Exit criteria.** `docker pull ghcr.io/lgreene03/huginn:v0.1.0` works. The docs site is published on GitHub Pages and linked from the README.
 

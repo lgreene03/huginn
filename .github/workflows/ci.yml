@@ -32,6 +32,19 @@ jobs:
     - name: Test (race + coverage)
       run: go test -race -coverprofile=cover.out ./...
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        args: --timeout=5m
+
   web:
     runs-on: ubuntu-latest
     defaults:

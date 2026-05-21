@@ -24,6 +24,7 @@ import (
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/server"
 	"github.com/lgreene03/huginn/internal/strategy"
+	"github.com/lgreene03/huginn/internal/version"
 )
 
 func main() {
@@ -42,7 +43,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	v := version.Get()
 	slog.Info("Starting Huginn",
+		"version", v.Version,
+		"git_sha", v.GitSHA,
+		"build_time", v.BuildTime,
 		"config", *configPath,
 		"broker", cfg.Kafka.Brokers[0], // Simplified logging for first broker
 		"topic", cfg.Kafka.Topics[0],
