@@ -83,7 +83,15 @@ Huginn is configured via YAML profiles (e.g., `configs/default.yaml`). You can o
 | `risk.position_limit_hard` | `RISK_POSITION_LIMIT_HARD` | Hard position limit (gross notional) |
 | `database.enabled` | `DATABASE_ENABLED` | Use Postgres for journal recovery instead of JSONL |
 | `database.url` | `DATABASE_URL` | Postgres DSN |
+| `database.max_conns` | `DATABASE_MAX_CONNS` | Max Postgres connection-pool connections |
+| `database.min_conns` | `DATABASE_MIN_CONNS` | Min warm connections in pool |
+| `database.max_conn_lifetime` | `DATABASE_MAX_CONN_LIFETIME` | Max connection lifetime (e.g. `1h`) |
+| `database.max_conn_idle_time` | `DATABASE_MAX_CONN_IDLE_TIME` | Idle connection eviction time (e.g. `5m`) |
+| `executor.fill_latency_ms` | `EXECUTOR_FILL_LATENCY_MS` | Simulated fill timestamp delay in ms (backtest realism) |
+| `risk.staleness_timeout` | `RISK_STALENESS_TIMEOUT` | Auto-halt if no feature event within this duration |
+| `risk.auto_resume_after_staleness` | `RISK_AUTO_RESUME_AFTER_STALENESS` | Auto-resume when a fresh event arrives after staleness halt |
 | `server.port` | `SERVER_PORT` | Port for observability server (default `8081`) |
+| _(env only)_ | `HUGINN_API_TOKEN` | Bearer token for mutating HTTP endpoints; empty = auth disabled |
 
 You can specify a config file via the CLI:
 ```bash

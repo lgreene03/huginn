@@ -224,7 +224,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - **`docker buildx` multi-arch images** (`linux/amd64`, `linux/arm64`) published to GHCR on tag. Both `huginn` and `huginn-dashboard` images.
 - ✅ **Versioning.** `internal/version` package with `Version`, `GitSHA`, `BuildTime` (injected via `-ldflags`). Exposed at `/version` endpoint (JSON) and in the startup `slog.Info` line.
 - ✅ **`CONTRIBUTING.md` and `SECURITY.md`** — developer setup, strategy authoring checklist, migration rules, vulnerability reporting procedure.
-- **`CODE_OF_CONDUCT.md`** — standard Contributor Covenant (add when the project goes public).
+- ✅ **`CODE_OF_CONDUCT.md`** — Contributor Covenant v2.1 reference.
 - **MkDocs site** under `docs/` covering: architecture, strategy authoring guide, risk model, ops runbook, calibration workflow, the four bundled strategies' failure modes.
 - **Cross-link from Muninn's `companion-services` section** once published.
 - ✅ **Lint/format in CI.** `.golangci.yml` with `errcheck`, `staticcheck`, `gofmt`, `goimports`, `misspell`, `revive`. `lint` job added to `.github/workflows/ci.yml` via `golangci/golangci-lint-action@v6`.
