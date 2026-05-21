@@ -24,8 +24,6 @@ linters:
     - unused
 
   settings:
-    goimports:
-      local-prefixes: github.com/lgreene03/huginn
     revive:
       rules:
         - name: exported
@@ -43,6 +41,9 @@ formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    goimports:
+      local-prefixes: github.com/lgreene03/huginn
 
 issues:
   max-issues-per-linter: 0
