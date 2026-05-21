@@ -31,6 +31,15 @@ interface Fill {
   Timestamp: string;
 }
 
+interface SystemConfig {
+  strategy_name: string;
+  threshold: number;
+  order_size: number;
+  fast_period: number;
+  slow_period: number;
+  position_limit_hard: number;
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:8081';
 
 function App() {
@@ -39,6 +48,7 @@ function App() {
   const [halted, setHalted] = useState(false);
   const [fills, setFills] = useState<Fill[]>([]);
   const [equityHistory, setEquityHistory] = useState<{ time: string; value: number }[]>([]);
+  const [strategyConfig, setStrategyConfig] = useState<SystemConfig | null>(null);
 
   // Console execution state
   const [instrument, setInstrument] = useState('BTC-USD');
@@ -109,6 +119,20 @@ function App() {
     return () => {
       eventSource.close();
     };
+  }, []);
+
+  // Fetch strategy config on mount and every 30 s so the panel reflects
+  // live parameter changes made via PUT /api/strategy/config.
+  useEffect(() => {
+    const fetchConfig = () => {
+      fetch(`${API_BASE}/api/strategy/config`)
+        .then((r) => r.json())
+        .then((cfg: SystemConfig) => setStrategyConfig(cfg))
+        .catch(() => {/* non-fatal */});
+    };
+    fetchConfig();
+    const id = setInterval(fetchConfig, 30_000);
+    return () => clearInterval(id);
   }, []);
 
   // Hydrate equity history from the server ring buffer on first load,
@@ -449,7 +473,46 @@ function App() {
           </div>
         </div>
 
-        {/* SECTION 3: EQUITY GRAPH & MANUAL FORM */}
+        {/* SECTION 3: ACTIVE STRATEGY PANEL */}
+        {strategyConfig && (
+          <div className="panel" style={{ marginBottom: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+              Active Strategy
+            </h2>
+            <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+              <div>
+                <div className="stat-label">Strategy</div>
+                <div className="stat-val stat-val-cyan" style={{ fontSize: '1.1rem' }}>{strategyConfig.strategy_name || '—'}</div>
+              </div>
+              <div>
+                <div className="stat-label">Threshold</div>
+                <div className="stat-val text-mono" style={{ fontSize: '1.1rem' }}>{strategyConfig.threshold.toFixed(4)}</div>
+              </div>
+              <div>
+                <div className="stat-label">Order Size</div>
+                <div className="stat-val text-mono" style={{ fontSize: '1.1rem' }}>{strategyConfig.order_size.toFixed(4)}</div>
+              </div>
+              {strategyConfig.fast_period > 0 && (
+                <div>
+                  <div className="stat-label">EMA Periods</div>
+                  <div className="stat-val text-mono" style={{ fontSize: '1.1rem' }}>{strategyConfig.fast_period} / {strategyConfig.slow_period}</div>
+                </div>
+              )}
+              <div>
+                <div className="stat-label">Position Limit</div>
+                <div className="stat-val text-mono" style={{ fontSize: '1.1rem' }}>{strategyConfig.position_limit_hard.toFixed(4)}</div>
+              </div>
+              <div>
+                <div className="stat-label">Current PnL</div>
+                <div className={`stat-val text-mono ${totalPnL >= 0 ? 'stat-val-green' : 'stat-val-red'}`} style={{ fontSize: '1.1rem' }}>
+                  {totalPnL >= 0 ? '+' : ''}{formatCurrency(totalPnL)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 4 (was 3): EQUITY GRAPH & MANUAL FORM */}
         <div className="main-grid">
           <div className="panel">
             <h2 style={{ fontSize: '1.2rem', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
@@ -528,7 +591,7 @@ function App() {
           </div>
         </div>
 
-        {/* SECTION 4: POSITIONS TABLE & EXECUTIONS TICKER */}
+        {/* SECTION 5: POSITIONS TABLE & EXECUTIONS TICKER */}
         <div className="main-grid">
           <div className="panel">
             <h2 style={{ fontSize: '1.2rem', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>

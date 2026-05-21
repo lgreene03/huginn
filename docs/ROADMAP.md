@@ -206,9 +206,9 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - ✅ **Strategy control panel.** `GET/PUT /api/strategy/config` wired up — GET returns `executor.SystemConfig` (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls `executor.UpdateConfig` and is auth-guarded.
 - ✅ **Connection config from runtime, not literal.** `API_BASE` in `web/src/App.tsx` now reads `import.meta.env.VITE_API_BASE` with fallback to `http://localhost:8081`. `web/.env.example` documents the variable.
 - ✅ **Equity-curve persistence.** `/api/snapshot/history` returns the last N equity samples from a 720-point in-memory ring buffer (default ~6 h at 30 s sampling). Ring populated by `srv.RunEquitySampler`. UI hydrates the chart on mount via a fetch to this endpoint.
-- **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — values available via `GET /api/strategy/config`.
+- ✅ **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — fetches `GET /api/strategy/config` on mount and every 30 s; displays strategy name, threshold, order size, EMA periods (if applicable), position limit, and real-time PnL.
 - ✅ **Auth.** `HUGINN_API_TOKEN` env var gates `/api/breaker/*`, `/api/fills/mock`, and `PUT /api/strategy/config`. Empty token disables auth (backward-compatible). CORS updated to allow `PUT` and `Authorization` header. Documented in `docs/OPERATIONS.md`.
-- **Production nginx config** with `try_files $uri /index.html;` and CORS handled at the proxy layer, not in the Go server.
+- ✅ **Production nginx config** (`web/nginx.conf`) with `try_files $uri /index.html;`, SSE-safe proxy (`proxy_buffering off`), CORS headers at proxy layer. Dockerfile updated to use the template via nginx envsubst; `HUGINN_UPSTREAM` env var sets the API host.
 - **One Playwright smoke test**: load the page against a stub Huginn, assert equity panel renders.
 
 **Exit criteria.** `docker-compose up` produces a UI that, behind a reverse proxy at `/`, shows live state, can halt+resume, and can update strategy threshold without restarting Huginn.
