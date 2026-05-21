@@ -199,7 +199,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 6 — Hardened Web UI
+## Phase 6 — Hardened Web UI 🟢 _Mostly complete_
 **Goal.** The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.
 
 **Deliverables.**
