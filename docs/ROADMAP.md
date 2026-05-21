@@ -221,7 +221,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 **Goal.** Huginn is installable, reproducible, documented, and clearly versioned.
 
 **Deliverables.**
-- **`docker buildx` multi-arch images** (`linux/amd64`, `linux/arm64`) published to GHCR on tag. Both `huginn` and `huginn-dashboard` images.
+- ✅ **`docker buildx` multi-arch images.** `release.yml` builds `linux/amd64` + `linux/arm64` and pushes to GHCR on tag. Dockerfile base images pinned by digest; VERSION/GIT_SHA/BUILD_TIME injected via `-ldflags`.
 - ✅ **Versioning.** `internal/version` package with `Version`, `GitSHA`, `BuildTime` (injected via `-ldflags`). Exposed at `/version` endpoint (JSON) and in the startup `slog.Info` line.
 - ✅ **`CONTRIBUTING.md` and `SECURITY.md`** — developer setup, strategy authoring checklist, migration rules, vulnerability reporting procedure.
 - ✅ **`CODE_OF_CONDUCT.md`** — Contributor Covenant v2.1 reference.
