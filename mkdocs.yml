@@ -1,0 +1,54 @@
+site_name: Huginn
+site_description: Quantitative Strategy Execution Engine
+site_url: https://lgreene03.github.io/huginn
+repo_url: https://github.com/lgreene03/huginn
+repo_name: lgreene03/huginn
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Strategies:
+      - Overview & Authoring Guide: strategies.md
+      - Calibration Workflow: calibration.md
+  - Risk Model: risk-model.md
+  - Operations Runbook: OPERATIONS.md
+  - Roadmap: ROADMAP.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/lgreene03/huginn
