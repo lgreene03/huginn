@@ -40,7 +40,9 @@ jobs:
       with:
         go-version: '1.25'
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v6
+      # v9 ships a golangci-lint binary built with Go 1.25, required by our
+      # go.mod. v6 shipped v1.64.x (Go 1.24) which rejects Go 1.25 modules.
+      uses: golangci/golangci-lint-action@v9
       with:
         version: latest
         args: --timeout=5m
