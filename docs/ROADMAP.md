@@ -225,9 +225,9 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - ✅ **Versioning.** `internal/version` package with `Version`, `GitSHA`, `BuildTime` (injected via `-ldflags`). Exposed at `/version` endpoint (JSON) and in the startup `slog.Info` line.
 - ✅ **`CONTRIBUTING.md` and `SECURITY.md`** — developer setup, strategy authoring checklist, migration rules, vulnerability reporting procedure.
 - ✅ **`CODE_OF_CONDUCT.md`** — Contributor Covenant v2.1 reference.
-- **MkDocs site** under `docs/` covering: architecture, strategy authoring guide, risk model, ops runbook, calibration workflow, the four bundled strategies' failure modes.
+- ✅ **MkDocs site** under `docs/` covering: architecture, strategy authoring guide, risk model, ops runbook, calibration workflow, the four bundled strategies' failure modes. Deployed to https://lgreene03.github.io/huginn via `.github/workflows/docs.yml`; linked from README.
 - ✅ **Cross-link from Muninn's `companion-services` section.** Muninn README updated with a "Companion Services" section linking both Huginn and Sleipnir.
-- ✅ **Lint/format in CI.** `.golangci.yml` with `errcheck`, `staticcheck`, `gofmt`, `goimports`, `misspell`, `revive`. `lint` job added to `.github/workflows/ci.yml` via `golangci/golangci-lint-action@v6`.
+- ✅ **Lint/format in CI.** `.golangci.yml` v2 with `staticcheck`, `gofmt`, `goimports`, `misspell`, `revive`, `unconvert`, `unparam`, `unused`. `lint` job added to `.github/workflows/ci.yml` via `golangci/golangci-lint-action@v9`.
 
 **Exit criteria.** `docker pull ghcr.io/lgreene03/huginn:v0.1.0` works. The docs site is published on GitHub Pages and linked from the README.
 

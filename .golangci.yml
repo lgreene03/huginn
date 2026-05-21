@@ -28,9 +28,10 @@ linters:
 
   settings:
     staticcheck:
-      # Disable quick-fix / refactor suggestions — these are stylistic rewrites,
-      # not bug-catchers.
-      checks: ["all", "-QF*"]
+      # Disable quick-fix / refactor suggestions (QF*) and style checks (ST*)
+      # — these flag formatting and naming preferences, not bugs. SA* (analysis)
+      # and S1* (simplifications) checks remain active.
+      checks: ["all", "-QF*", "-ST*"]
     revive:
       rules:
         - name: exported

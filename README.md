@@ -1,7 +1,12 @@
 # Huginn — Quantitative Strategy Execution Engine
 
+[![CI](https://github.com/lgreene03/huginn/actions/workflows/ci.yml/badge.svg)](https://github.com/lgreene03/huginn/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-cyan)](https://lgreene03.github.io/huginn)
+
 > *Named after Odin's raven of "thought."*
 > *Huginn* consumes deterministic features from **Muninn** ("memory") and executes paper-trading strategies.
+
+**[Full documentation →](https://lgreene03.github.io/huginn)**
 
 ## Architecture
 
