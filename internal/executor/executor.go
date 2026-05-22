@@ -297,7 +297,11 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 // the fills topic — every operation here (dedup → journal → portfolio
 // apply) attaches to the same span tree the original intent began on.
 func (e *Executor) OnExecutionFill(ctx context.Context, fill model.Fill) {
-	ctx, span := tracing.StartSpan(ctx, "executor.on_execution_fill",
+	// ineffassign suppression: the returned ctx isn't passed to anything
+	// downstream right now (journal.Append + portfolio.ApplyFill are both
+	// ctx-free), but we keep the span open so its attributes + duration get
+	// captured. Discarding with _ keeps the linter happy.
+	_, span := tracing.StartSpan(ctx, "executor.on_execution_fill",
 		attribute.String("order_id", fill.OrderID),
 		attribute.String("execution_id", fill.ExecutionID),
 		attribute.Float64("quantity", fill.Quantity),
