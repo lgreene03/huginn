@@ -68,7 +68,9 @@ test('smoke: page loads and renders key panels', async ({ page }) => {
   await expect(banner).toBeVisible();
 
   // Portfolio stats grid is rendered with at least one panel.
-  const statsGrid = page.locator('.stats-grid');
+  // Use .first() because App.tsx has two .stats-grid containers:
+  // the outer portfolio grid and the inner strategy-panel sub-grid.
+  const statsGrid = page.locator('.stats-grid').first();
   await expect(statsGrid).toBeVisible();
   await expect(statsGrid.locator('.panel').first()).toBeVisible();
 
