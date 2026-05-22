@@ -199,7 +199,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 6 — Hardened Web UI 🟢 _Mostly complete_
+## Phase 6 — Hardened Web UI ✅
 **Goal.** The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.
 
 **Deliverables.**
@@ -209,7 +209,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - ✅ **Strategy panel showing which strategy is active**, current threshold, current position, current PnL — fetches `GET /api/strategy/config` on mount and every 30 s; displays strategy name, threshold, order size, EMA periods (if applicable), position limit, and real-time PnL.
 - ✅ **Auth.** `HUGINN_API_TOKEN` env var gates `/api/breaker/*`, `/api/fills/mock`, and `PUT /api/strategy/config`. Empty token disables auth (backward-compatible). CORS updated to allow `PUT` and `Authorization` header. Documented in `docs/OPERATIONS.md`.
 - ✅ **Production nginx config** (`web/nginx.conf`) with `try_files $uri /index.html;`, SSE-safe proxy (`proxy_buffering off`), CORS headers at proxy layer. Dockerfile updated to use the template via nginx envsubst; `HUGINN_UPSTREAM` env var sets the API host.
-- **One Playwright smoke test**: load the page against a stub Huginn, assert equity panel renders.
+- ✅ **One Playwright smoke test**: load the page against a stub Huginn, assert equity panel renders. Two tests in `web/tests/e2e/smoke.spec.ts`; `@playwright/test` added as devDependency; CI `web` job installs Chromium and runs `npm run test:e2e` after build.
 
 **Exit criteria.** `docker-compose up` produces a UI that, behind a reverse proxy at `/`, shows live state, can halt+resume, and can update strategy threshold without restarting Huginn.
 
