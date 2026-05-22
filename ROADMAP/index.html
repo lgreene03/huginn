@@ -849,10 +849,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#phase-6-hardened-web-ui-mostly-complete" class="md-nav__link">
+  <a href="#phase-6-hardened-web-ui" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 6 — Hardened Web UI 🟢 Mostly complete
+        Phase 6 — Hardened Web UI ✅
       
     </span>
   </a>
@@ -1120,10 +1120,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#phase-6-hardened-web-ui-mostly-complete" class="md-nav__link">
+  <a href="#phase-6-hardened-web-ui" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 6 — Hardened Web UI 🟢 Mostly complete
+        Phase 6 — Hardened Web UI ✅
       
     </span>
   </a>
@@ -1357,7 +1357,7 @@
 <p><strong>Exit criteria.</strong> <code>make db-migrate-up</code> and <code>make db-migrate-down</code> work. A <code>huginn</code> process started against a freshly migrated DB, then restarted, recovers portfolio + peak + daily baseline bit-for-bit.</p>
 <p><strong>Risks.</strong> Backwards compatibility with existing <code>trade_fills</code> tables. The first migration should be idempotent against the current schema.</p>
 <hr />
-<h2 id="phase-6-hardened-web-ui-mostly-complete">Phase 6 — Hardened Web UI 🟢 <em>Mostly complete</em><a class="headerlink" href="#phase-6-hardened-web-ui-mostly-complete" title="Permanent link">&para;</a></h2>
+<h2 id="phase-6-hardened-web-ui">Phase 6 — Hardened Web UI ✅<a class="headerlink" href="#phase-6-hardened-web-ui" title="Permanent link">&para;</a></h2>
 <p><strong>Goal.</strong> The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.</p>
 <p><strong>Deliverables.</strong>
 - ✅ <strong>Strategy control panel.</strong> <code>GET/PUT /api/strategy/config</code> wired up — GET returns <code>executor.SystemConfig</code> (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls <code>executor.UpdateConfig</code> and is auth-guarded.
@@ -1366,7 +1366,7 @@
 - ✅ <strong>Strategy panel showing which strategy is active</strong>, current threshold, current position, current PnL — fetches <code>GET /api/strategy/config</code> on mount and every 30 s; displays strategy name, threshold, order size, EMA periods (if applicable), position limit, and real-time PnL.
 - ✅ <strong>Auth.</strong> <code>HUGINN_API_TOKEN</code> env var gates <code>/api/breaker/*</code>, <code>/api/fills/mock</code>, and <code>PUT /api/strategy/config</code>. Empty token disables auth (backward-compatible). CORS updated to allow <code>PUT</code> and <code>Authorization</code> header. Documented in <code>docs/OPERATIONS.md</code>.
 - ✅ <strong>Production nginx config</strong> (<code>web/nginx.conf</code>) with <code>try_files $uri /index.html;</code>, SSE-safe proxy (<code>proxy_buffering off</code>), CORS headers at proxy layer. Dockerfile updated to use the template via nginx envsubst; <code>HUGINN_UPSTREAM</code> env var sets the API host.
-- <strong>One Playwright smoke test</strong>: load the page against a stub Huginn, assert equity panel renders.</p>
+- ✅ <strong>One Playwright smoke test</strong>: load the page against a stub Huginn, assert equity panel renders. Two tests in <code>web/tests/e2e/smoke.spec.ts</code>; <code>@playwright/test</code> added as devDependency; CI <code>web</code> job installs Chromium and runs <code>npm run test:e2e</code> after build.</p>
 <p><strong>Exit criteria.</strong> <code>docker-compose up</code> produces a UI that, behind a reverse proxy at <code>/</code>, shows live state, can halt+resume, and can update strategy threshold without restarting Huginn.</p>
 <p><strong>Risks.</strong> UI scope creep. Cap it at operator-grade — analytics live in <code>muninn-py</code>.</p>
 <hr />
