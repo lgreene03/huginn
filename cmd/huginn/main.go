@@ -24,6 +24,7 @@ import (
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/server"
 	"github.com/lgreene03/huginn/internal/strategy"
+	"github.com/lgreene03/huginn/internal/tracing"
 	"github.com/lgreene03/huginn/internal/version"
 )
 
@@ -232,6 +233,23 @@ func main() {
 		sig := <-sigCh
 		slog.Info("Received shutdown signal", "signal", sig.String())
 		cancel()
+	}()
+
+	// OpenTelemetry tracing: if OTEL_EXPORTER_OTLP_ENDPOINT is set, spans
+	// are exported via OTLP/gRPC. Unset → no-op (still propagates W3C
+	// TraceContext in-process, so kafka headers carry the trace id even
+	// when nothing's recording locally).
+	tracingShutdown, err := tracing.Init(ctx, "dev")
+	if err != nil {
+		slog.Error("Failed to initialize OTel tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := tracingShutdown(shutdownCtx); err != nil {
+			slog.Error("OTel tracing shutdown error", "error", err)
+		}
 	}()
 
 	// Run

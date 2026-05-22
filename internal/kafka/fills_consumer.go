@@ -7,8 +7,10 @@ import (
 	"time"
 
 	kgo "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/tracing"
 )
 
 // GatewayFill represents the verified trade execution layout published by Sleipnir.
@@ -25,15 +27,20 @@ type GatewayFill struct {
 	Timestamp       time.Time `json:"timestamp"`
 }
 
+// FillHandler is the per-fill callback type. Phase 7 extended the signature
+// with a context.Context so the trace started by sleipnir on the producer
+// side can propagate into huginn's executor (dedup → journal → portfolio).
+type FillHandler func(context.Context, model.Fill)
+
 // FillsConsumer reads execution fills from Sleipnir and dispatches them to a handler.
 type FillsConsumer struct {
 	reader  *kgo.Reader
-	handler func(model.Fill)
+	handler FillHandler
 	topic   string
 }
 
 // NewFillsConsumer creates a consumer for Sleipnir fills.
-func NewFillsConsumer(brokers []string, topic, groupID string, handler func(model.Fill)) *FillsConsumer {
+func NewFillsConsumer(brokers []string, topic, groupID string, handler FillHandler) *FillsConsumer {
 	r := kgo.NewReader(kgo.ReaderConfig{
 		Brokers:  brokers,
 		GroupID:  groupID,
@@ -50,6 +57,9 @@ func NewFillsConsumer(brokers []string, topic, groupID string, handler func(mode
 }
 
 // Run starts the fills consumption loop. It blocks until the context is cancelled.
+//
+// Each message's W3C TraceContext headers are extracted into a per-message
+// context so the handler's span attaches to the trace sleipnir started.
 func (c *FillsConsumer) Run(ctx context.Context) error {
 	slog.Info("Fills consumer started", "topic", c.topic)
 
@@ -98,8 +108,18 @@ func (c *FillsConsumer) Run(ctx context.Context) error {
 			Timestamp:       gatewayFill.Timestamp,
 		}
 
+		// Resume sleipnir's trace so OnExecutionFill's work links back to
+		// the original intent's span tree.
+		fillCtx := tracing.ExtractKafkaContext(ctx, msg.Headers)
+		fillCtx, span := tracing.StartSpan(fillCtx, "kafka.fill_received",
+			attribute.String("order_id", fill.OrderID),
+			attribute.String("execution_id", fill.ExecutionID),
+			attribute.String("instrument", fill.Instrument),
+		)
+
 		// Dispatch back into execution engine
-		c.handler(fill)
+		c.handler(fillCtx, fill)
+		span.End()
 	}
 }
 

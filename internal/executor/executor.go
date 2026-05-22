@@ -8,12 +8,15 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/lgreene03/huginn/internal/journal"
 	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/strategy"
+	"github.com/lgreene03/huginn/internal/tracing"
 )
 
 // IntentPublisher defines a gateway client capable of transmitting order requests.
@@ -162,6 +165,17 @@ func (e *Executor) RunStatePersister(ctx context.Context, interval time.Duration
 // OnFeature is the main event handler. It is called by the Kafka consumer
 // for each deserialized FeatureEvent.
 func (e *Executor) OnFeature(event model.FeatureEvent) {
+	// Root span for the per-event lifecycle. If live mode publishes an
+	// intent, `PublishIntent` injects this span's TraceContext into the
+	// Kafka headers — sleipnir's gateway extracts it and the response leg
+	// continues here via `OnExecutionFill`.
+	ctx, span := tracing.StartSpan(context.Background(), "executor.on_feature",
+		attribute.String("event_id", event.EventID),
+		attribute.String("feature", event.FeatureName),
+		attribute.String("instrument", event.Instrument),
+	)
+	defer span.End()
+
 	// Observability: wall-clock age of this feature event at the moment it
 	// reaches huginn. Histogram in `huginn_feature_event_age_seconds`.
 	if !event.EventTime.IsZero() {
@@ -206,9 +220,11 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			}
 
 			if e.publisher != nil {
-				// Publish order intent to Kafka for Sleipnir
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := e.publisher.PublishIntent(ctx, order, orderID); err != nil {
+				// Publish order intent to Kafka for Sleipnir. Use the OnFeature
+				// span's ctx (not context.Background) so the producer's
+				// InjectKafkaHeaders writes the trace parent into the message.
+				publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				if err := e.publisher.PublishIntent(publishCtx, order, orderID); err != nil {
 					slog.Error("Failed to publish live order intent to gateway", "error", err, "order_id", orderID)
 				}
 				cancel()
@@ -276,13 +292,25 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 // already delivered; without dedup we would double-count quantity, cash, and
 // realized PnL. The bounded LRU keyed on Fill.ExecutionID drops those repeats.
 // Empty ExecutionID (paper mode, or pre-Phase-5 fills) is never deduplicated.
-func (e *Executor) OnExecutionFill(fill model.Fill) {
+//
+// The ctx parameter carries the trace context sleipnir threaded through on
+// the fills topic — every operation here (dedup → journal → portfolio
+// apply) attaches to the same span tree the original intent began on.
+func (e *Executor) OnExecutionFill(ctx context.Context, fill model.Fill) {
+	ctx, span := tracing.StartSpan(ctx, "executor.on_execution_fill",
+		attribute.String("order_id", fill.OrderID),
+		attribute.String("execution_id", fill.ExecutionID),
+		attribute.Float64("quantity", fill.Quantity),
+	)
+	defer span.End()
+
 	if e.dedup.Seen(fill.ExecutionID) {
 		slog.Warn("Dropping duplicate execution fill",
 			"order_id", fill.OrderID,
 			"execution_id", fill.ExecutionID,
 			"qty", fill.Quantity,
 		)
+		span.SetAttributes(attribute.Bool("dedup_hit", true))
 		return
 	}
 	e.dedup.Mark(fill.ExecutionID)

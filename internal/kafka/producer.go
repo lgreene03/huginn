@@ -10,6 +10,7 @@ import (
 	kgo "github.com/segmentio/kafka-go"
 
 	"github.com/lgreene03/huginn/internal/model"
+	"github.com/lgreene03/huginn/internal/tracing"
 )
 
 // GatewayOrder represents the exchange-facing order layout that Sleipnir expects.
@@ -74,9 +75,15 @@ func (p *Producer) PublishIntent(ctx context.Context, order model.Order, orderID
 		"qty", gatewayOrder.Quantity,
 	)
 
+	// Inject W3C TraceContext so sleipnir's gateway can resume the trace
+	// (and re-inject on the outbound fill so we close the loop back here in
+	// OnExecutionFill). See sleipnir/docs/CONTRACTS.md.
+	headers := tracing.InjectKafkaHeaders(ctx, nil)
+
 	err = p.writer.WriteMessages(ctx, kgo.Message{
-		Key:   []byte(orderID),
-		Value: payload,
+		Key:     []byte(orderID),
+		Value:   payload,
+		Headers: headers,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to write intent message to Kafka: %w", err)
