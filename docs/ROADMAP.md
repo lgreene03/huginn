@@ -217,7 +217,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ---
 
-## Phase 7 — Release engineering
+## Phase 7 — Release engineering ✅
 **Goal.** Huginn is installable, reproducible, documented, and clearly versioned.
 
 **Deliverables.**
