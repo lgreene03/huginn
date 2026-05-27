@@ -20,7 +20,7 @@ graph TD
     E --> J[Trade Journal]
 ```
 
-Huginn is a **downstream companion** to [Muninn](https://github.com/lgreene/muninn). It strictly adheres to Muninn's architectural principle: *Muninn observes and computes; Huginn thinks and acts.*
+Huginn is a **downstream companion** to [Muninn](https://github.com/lgreene03/muninn). It strictly adheres to Muninn's architectural principle: *Muninn observes and computes; Huginn thinks and acts.*
 
 | Layer | Responsibility |
 |---|---|
@@ -108,16 +108,19 @@ You can specify a config file via the CLI:
 ```bash
 go test ./...
 go vet ./...
+
+# End-to-end smoke test (boots Docker, pushes OBI event, verifies strategy fires)
+bash scripts/smoke.sh
 ```
 
 ## Non-Goals
 
 Huginn is a **paper-trading research engine**. See `docs/ROADMAP.md` for the full non-goals list. In particular:
-- **Huginn never opens an exchange socket.** Live mode publishes order intents to [Sleipnir](https://github.com/lgreene/sleipnir) over Kafka; Sleipnir talks to the venue. Huginn only ever speaks to Sleipnir.
-- **Not a feature-engineering library.** Features come from [Muninn](https://github.com/lgreene/muninn).
+- **Huginn never opens an exchange socket.** Live mode publishes order intents to [Sleipnir](https://github.com/lgreene03/sleipnir) over Kafka; Sleipnir talks to the venue. Huginn only ever speaks to Sleipnir.
+- **Not a feature-engineering library.** Features come from [Muninn](https://github.com/lgreene03/muninn).
 - **Not a multi-venue smart-order router.** One Sleipnir, one venue.
 - **Not a portfolio-optimization library.** No mean-variance, no factor models. Position sizing is per-strategy notional throttling.
-- **Not a research notebook environment.** Analytics live in [muninn-py](https://github.com/lgreene/muninn-py).
+- **Not a research notebook environment.** Analytics live in [muninn-py](https://github.com/lgreene03/muninn-py).
 - **No wallet or custody management. No financial advice.**
 
 See `docs/ROADMAP.md` for current state, planned phases, and explicit non-goals.

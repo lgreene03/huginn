@@ -26,16 +26,17 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ### What is broken right now
 
-1. **`go build ./...` fails on `main`.** `cmd/huginn/main.go:146` calls `server.New(":"+cfg.Server.Port, port, riskManager)` (3 args) but `internal/server/http.go:30` signature is `New(addr, portf, riskMgr, exec *executor.Executor)`. Mid-refactor leak. The CI workflow above would catch this on the next push — but the last commit went in red, or CI is not actually green. **This is Phase 0.**
-2. **`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail. Either the deps were hand-edited optimistically or this is dead-on-arrival for fresh clones.
-3. **`docker-compose.yml`** references a `sleipnir` build context at `../sleipnir` — fine on the author's machine, broken for any other clone or CI.
+1. ~~**`go build ./...` fails on `main`.**~~ Fixed — `server.New` signature updated. `go build ./...` is green.
+2. **`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail. Either the deps were hand-edited optimistically or this is dead-on-arrival for fresh clones. _(Low priority — the Go binary is the primary artifact; the web dashboard is operator-grade.)_
+3. **`docker-compose.yml`** references a `sleipnir` build context at `../sleipnir` — fine on the author's machine, broken for any other clone or CI. _(Mitigated by the cross-stack `docker-compose.stack.yml` in the muninn repo, which is the recommended way to run the full stack.)_
 
 ### What the README claims but isn't real
 
-- README's strategy table only mentions `obi` and `vpin`; actually four are wired (`vwap_deviation`, `ema_crossover`).
-- README claims `VPIN Breakout` is in its own file — it lives inside `obi_threshold.go` at line 87. Cosmetic but worth fixing.
-- README's environment-variable table omits `LIVE_EXECUTION`, `KAFKA_INTENTS_TOPIC`, `KAFKA_FILLS_TOPIC`, `DATABASE_ENABLED`, `DATABASE_URL`, and all four EMA/VWAP strategy params.
-- "No real exchange API connections" in Non-Goals contradicts the `LiveExecution=true` path that publishes to Sleipnir, which is itself a Binance gateway. The non-goal needs to be reframed: Huginn itself never opens an exchange socket; Sleipnir does, and Huginn only ever speaks to Sleipnir over Kafka.
+_Most items from the original audit have been addressed:_
+- ~~README's strategy table only mentions `obi` and `vpin`~~ — all four strategies are now documented.
+- ~~README's environment-variable table omits key params~~ — full config table now in README (21 keys).
+- ~~"No real exchange API connections" Non-Goal phrasing~~ — reframed: Huginn itself never opens an exchange socket; Sleipnir does, and Huginn only ever speaks to Sleipnir over Kafka.
+- README still claims `VPIN Breakout` source is `internal/strategy/obi_threshold.go` — VPIN was extracted to its own file in Phase 2 (`vpin_breakout.go`).
 
 ### Strategy quality gaps
 
@@ -47,13 +48,14 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ### Risk management gaps
 
-- **Daily loss limit is not daily.** `manager.go:97` compares `snap.RealizedPnL` (all-time) to `-DailyLossLimit`. No date roll. Once you hit the limit, you stay halted forever, even on a fresh trading day.
-- **Drawdown gauge tracks peak across all time, not session.** Same issue as above — on a recovered portfolio, `peakValue` resets to `initialCash` (`manager.go:29`) even if the recovered portfolio is already at $120k. First drawdown after restart will misfire.
-- **Volatility scaling uses recent fill prices, not feature prices.** If you stop fillling (because you halted), the ring buffer goes stale but never resets.
-- **No feature-staleness circuit breaker.** If Muninn stops publishing, the strategy keeps quietly running on the last event. Recommend a "no event in N seconds" watchdog.
-- **No per-instrument position limit** — only gross notional. A strategy that signals on multiple symbols will not be limited per symbol.
+_Several items from the original audit were addressed in Phases 1 and 5:_
+- ~~**Daily loss limit is not daily.**~~ Fixed in Phase 1 — daily reset with `dayStartRealizedPnL` baseline, UTC-day boundary tracking, Postgres-backed recovery.
+- ~~**Drawdown gauge tracks peak across all time, not session.**~~ Fixed in Phase 1 — `peakValue` persisted to journal, recovered on restart.
+- **Volatility scaling uses recent fill prices, not feature prices.** If you stop filling (because you halted), the ring buffer goes stale but never resets.
+- ~~**No feature-staleness circuit breaker.**~~ Fixed in Phase 1 — `RISK_STALENESS_TIMEOUT` auto-halts when no feature event arrives; `RISK_AUTO_RESUME_AFTER_STALENESS` auto-resumes on fresh event.
+- ~~**No per-instrument position limit.**~~ Fixed in Phase 1 — `position_limit_per_instrument` config map.
 - **Risk evaluates the prospective fill but doesn't reserve cash.** Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.
-- **Mock-fill endpoint bypasses the strategy and risk-update gauges in a subtle way.** `/api/fills/mock` (`http.go:154`) calls `ApplyFill` but does not call `OnExecutionFill` — fills land in the portfolio but Prometheus `OrdersGeneratedTotal` never increments. Operator-only feature, but it makes metrics lie.
+- **Mock-fill endpoint bypasses the strategy and risk-update gauges in a subtle way.** `/api/fills/mock` calls `ApplyFill` but does not call `OnExecutionFill` — fills land in the portfolio but Prometheus `OrdersGeneratedTotal` never increments. Operator-only feature, but it makes metrics lie.
 
 ### Backtest vs. live divergence
 
