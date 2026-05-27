@@ -24,6 +24,7 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata
 
 COPY --from=builder /app/huginn .
+COPY --from=builder /app/configs ./configs
 
 EXPOSE 8081
 
