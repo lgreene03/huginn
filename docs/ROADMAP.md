@@ -11,7 +11,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 ### What is built and working
 
 - **Strategy interface** (`internal/strategy/strategy.go`): single-method `OnFeature(FeatureEvent) []Order` — clean, no concurrency contract documented but `EMACrossover` self-mutexes, the others do not.
-- **Four strategies implemented**: `OBIThreshold` (`obi_threshold.go`), `VPINBreakout` (same file, lines 87–143), `VWAPDeviation` (`vwap_deviation.go`), `EMACrossover` (`ema_crossover.go`). Each tested with at least one happy-path and one negative case (`internal/strategy/strategy_test.go`, 207 lines, 6 tests).
+- **Four strategies implemented**: `OBIThreshold` (`obi_threshold.go`), `VPINBreakout` (`vpin_breakout.go`), `VWAPDeviation` (`vwap_deviation.go`), `EMACrossover` (`ema_crossover.go`). Each tested with at least one happy-path and one negative case (`internal/strategy/strategy_test.go`, 207 lines, 6 tests).
 - **Risk manager** (`internal/risk/manager.go`): peak-trailing drawdown stop (`peakValue` ratchet), daily-loss limit on `RealizedPnL`, hard position limit, **volatility-scaled position limit** (CV of last 30 fill prices, lines 106–141), manual halt/resume, dynamic `UpdateLimits`. `manager_test.go` covers all four reject paths.
 - **Executor** (`internal/executor/executor.go`): dual-mode — paper sim with bps slippage + tx cost on `microPrice`/`value`, or live mode that publishes order intents to Kafka (`executions.intents.v1`) and ingests fills from Sleipnir (`executions.fills.v1`). Dynamic `UpdateConfig` / `GetConfig` for live retuning.
 - **Portfolio** (`internal/portfolio/portfolio.go`): thread-safe FIFO-avg-cost book, realized PnL on sell, unrealized via `LastMarkPrice`. `portfolio_test.go` validates round-trip PnL.
@@ -32,11 +32,11 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 
 ### What the README claims but isn't real
 
-_Most items from the original audit have been addressed:_
+_All items from the original audit have been addressed:_
 - ~~README's strategy table only mentions `obi` and `vpin`~~ — all four strategies are now documented.
 - ~~README's environment-variable table omits key params~~ — full config table now in README (21 keys).
 - ~~"No real exchange API connections" Non-Goal phrasing~~ — reframed: Huginn itself never opens an exchange socket; Sleipnir does, and Huginn only ever speaks to Sleipnir over Kafka.
-- README still claims `VPIN Breakout` source is `internal/strategy/obi_threshold.go` — VPIN was extracted to its own file in Phase 2 (`vpin_breakout.go`).
+- ~~README still claims `VPIN Breakout` source is `internal/strategy/obi_threshold.go`~~ — README now points at `internal/strategy/vpin_breakout.go`, where VPIN was extracted in Phase 2.
 
 ### Strategy quality gaps
 
@@ -74,7 +74,7 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 - **Graceful shutdown:** present but not exercised in tests. `consumer.Run(ctx)` returns when context cancels; `srv.Stop` is best-effort.
 - **Postgres migrations:** schema is inline `CREATE TABLE IF NOT EXISTS` (`postgres.go:51`). No versioning, no `goose`/`atlas`/`golang-migrate`.
 - **Restart-from-journal correctness:** portfolio recovers, **strategies do not**, **risk peak does not**, **daily loss reset does not**. See gaps above.
-- **No `internal/strategy/vpin_breakout.go`** — code colocated in `obi_threshold.go`, README implies separate file. Cosmetic; do it during cleanup.
+- ~~**No `internal/strategy/vpin_breakout.go`** — code colocated in `obi_threshold.go`~~ — resolved: VPIN extracted to its own `vpin_breakout.go` in Phase 2; README and assessment now reference it.
 - **No race detector in CI**, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).
 
 ### Web UI assessment

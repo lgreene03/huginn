@@ -39,7 +39,7 @@ Four strategies are bundled. Pick one via `strategy.name` in the config (`obi`, 
 Monitors Order Book Imbalance. When extreme buy pressure is detected (OBI > threshold), it sells expecting reversion. Vice versa for extreme sell pressure. Source: `internal/strategy/obi_threshold.go`.
 
 ### VPIN Breakout (Momentum)
-Monitors Volume-Synchronized Probability of Informed Trading. When VPIN exceeds the threshold, it enters in the direction of informed flow with a configurable cooldown. Source: `internal/strategy/obi_threshold.go` (lines 87+; will move to its own file in Phase 2).
+Monitors Volume-Synchronized Probability of Informed Trading. When VPIN exceeds the threshold, it enters in the direction of informed flow with a configurable cooldown. Source: `internal/strategy/vpin_breakout.go`.
 
 ### EMA Crossover (Trend-Following)
 Two exponential moving averages with configurable fast/slow periods. Enters long on fast-over-slow crossover, short on the reverse. Source: `internal/strategy/ema_crossover.go`.
