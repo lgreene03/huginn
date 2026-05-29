@@ -1204,7 +1204,7 @@
 <h3 id="what-is-built-and-working">What is built and working<a class="headerlink" href="#what-is-built-and-working" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Strategy interface</strong> (<code>internal/strategy/strategy.go</code>): single-method <code>OnFeature(FeatureEvent) []Order</code> — clean, no concurrency contract documented but <code>EMACrossover</code> self-mutexes, the others do not.</li>
-<li><strong>Four strategies implemented</strong>: <code>OBIThreshold</code> (<code>obi_threshold.go</code>), <code>VPINBreakout</code> (same file, lines 87–143), <code>VWAPDeviation</code> (<code>vwap_deviation.go</code>), <code>EMACrossover</code> (<code>ema_crossover.go</code>). Each tested with at least one happy-path and one negative case (<code>internal/strategy/strategy_test.go</code>, 207 lines, 6 tests).</li>
+<li><strong>Four strategies implemented</strong>: <code>OBIThreshold</code> (<code>obi_threshold.go</code>), <code>VPINBreakout</code> (<code>vpin_breakout.go</code>), <code>VWAPDeviation</code> (<code>vwap_deviation.go</code>), <code>EMACrossover</code> (<code>ema_crossover.go</code>). Each tested with at least one happy-path and one negative case (<code>internal/strategy/strategy_test.go</code>, 207 lines, 6 tests).</li>
 <li><strong>Risk manager</strong> (<code>internal/risk/manager.go</code>): peak-trailing drawdown stop (<code>peakValue</code> ratchet), daily-loss limit on <code>RealizedPnL</code>, hard position limit, <strong>volatility-scaled position limit</strong> (CV of last 30 fill prices, lines 106–141), manual halt/resume, dynamic <code>UpdateLimits</code>. <code>manager_test.go</code> covers all four reject paths.</li>
 <li><strong>Executor</strong> (<code>internal/executor/executor.go</code>): dual-mode — paper sim with bps slippage + tx cost on <code>microPrice</code>/<code>value</code>, or live mode that publishes order intents to Kafka (<code>executions.intents.v1</code>) and ingests fills from Sleipnir (<code>executions.fills.v1</code>). Dynamic <code>UpdateConfig</code> / <code>GetConfig</code> for live retuning.</li>
 <li><strong>Portfolio</strong> (<code>internal/portfolio/portfolio.go</code>): thread-safe FIFO-avg-cost book, realized PnL on sell, unrealized via <code>LastMarkPrice</code>. <code>portfolio_test.go</code> validates round-trip PnL.</li>
@@ -1224,11 +1224,11 @@
 <li><strong><code>docker-compose.yml</code></strong> references a <code>sleipnir</code> build context at <code>../sleipnir</code> — fine on the author's machine, broken for any other clone or CI. <em>(Mitigated by the cross-stack <code>docker-compose.stack.yml</code> in the muninn repo, which is the recommended way to run the full stack.)</em></li>
 </ol>
 <h3 id="what-the-readme-claims-but-isnt-real">What the README claims but isn't real<a class="headerlink" href="#what-the-readme-claims-but-isnt-real" title="Permanent link">&para;</a></h3>
-<p><em>Most items from the original audit have been addressed:</em>
+<p><em>All items from the original audit have been addressed:</em>
 - ~~README's strategy table only mentions <code>obi</code> and <code>vpin</code>~~ — all four strategies are now documented.
 - ~~README's environment-variable table omits key params~~ — full config table now in README (21 keys).
 - ~~"No real exchange API connections" Non-Goal phrasing~~ — reframed: Huginn itself never opens an exchange socket; Sleipnir does, and Huginn only ever speaks to Sleipnir over Kafka.
-- README still claims <code>VPIN Breakout</code> source is <code>internal/strategy/obi_threshold.go</code> — VPIN was extracted to its own file in Phase 2 (<code>vpin_breakout.go</code>).</p>
+- ~~README still claims <code>VPIN Breakout</code> source is <code>internal/strategy/obi_threshold.go</code>~~ — README now points at <code>internal/strategy/vpin_breakout.go</code>, where VPIN was extracted in Phase 2.</p>
 <h3 id="strategy-quality-gaps">Strategy quality gaps<a class="headerlink" href="#strategy-quality-gaps" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>No calibration story.</strong> OBI threshold 0.7, VPIN 0.5, VWAP 0.001 — these are folklore values in the configs. There is no script, notebook, or sweep CLI that picks them from historical data. The fetcher writes JSONL; the backtest consumes JSONL; there is no glue to grid-search.</li>
@@ -1263,7 +1263,7 @@
 <li><strong>Graceful shutdown:</strong> present but not exercised in tests. <code>consumer.Run(ctx)</code> returns when context cancels; <code>srv.Stop</code> is best-effort.</li>
 <li><strong>Postgres migrations:</strong> schema is inline <code>CREATE TABLE IF NOT EXISTS</code> (<code>postgres.go:51</code>). No versioning, no <code>goose</code>/<code>atlas</code>/<code>golang-migrate</code>.</li>
 <li><strong>Restart-from-journal correctness:</strong> portfolio recovers, <strong>strategies do not</strong>, <strong>risk peak does not</strong>, <strong>daily loss reset does not</strong>. See gaps above.</li>
-<li><strong>No <code>internal/strategy/vpin_breakout.go</code></strong> — code colocated in <code>obi_threshold.go</code>, README implies separate file. Cosmetic; do it during cleanup.</li>
+<li>~~<strong>No <code>internal/strategy/vpin_breakout.go</code></strong> — code colocated in <code>obi_threshold.go</code>~~ — resolved: VPIN extracted to its own <code>vpin_breakout.go</code> in Phase 2; README and assessment now reference it.</li>
 <li><strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).</li>
 </ul>
 <h3 id="web-ui-assessment">Web UI assessment<a class="headerlink" href="#web-ui-assessment" title="Permanent link">&para;</a></h3>
