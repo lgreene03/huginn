@@ -277,33 +277,43 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 		side = model.Sell
 	}
 
+	ts := time.Now()
 	fill := model.Fill{
-		OrderID:         fmt.Sprintf("mock-fill-%d", time.Now().UnixNano()),
+		OrderID:         fmt.Sprintf("mock-fill-%d", ts.UnixNano()),
+		ExecutionID:     fmt.Sprintf("mock-exec-%d", ts.UnixNano()),
 		Instrument:      req.Instrument,
 		Side:            side,
 		Quantity:        req.Quantity,
 		FillPrice:       req.Price,
 		TransactionCost: req.Price * req.Quantity * 0.0005, // 5 bps cost
 		SlippageBps:     5,
-		Timestamp:       time.Now(),
+		Timestamp:       ts,
 	}
 
-	// Run risk evaluation before applying!
+	// Run risk evaluation before applying. A real Sleipnir fill's originating
+	// intent already cleared risk before publication; a mock fill has no prior
+	// intent, so it must be gated here.
 	snap := s.portfolio.Snapshot()
 	if s.riskMgr != nil && !s.riskMgr.Evaluate(fill, snap) {
 		http.Error(w, "Rejected by Risk Manager", http.StatusForbidden)
 		return
 	}
 
-	s.portfolio.ApplyFill(fill)
-
-	// Update portfolio metrics gauges
-	metricsSnap := s.portfolio.Snapshot()
-	metrics.PortfolioCash.Set(metricsSnap.Cash)
-	metrics.PortfolioRealizedPnL.Set(metricsSnap.RealizedPnL)
-	metrics.PortfolioUnrealizedPnL.Set(metricsSnap.UnrealizedPnL)
-	metrics.PortfolioTotalValue.Set(metricsSnap.TotalValue)
-	metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+	// Apply through the same path a live execution fill takes, so the mock is
+	// journaled, deduplicated, and triggers strategy-state persistence rather
+	// than being a bare portfolio mutation. Without this the mock fill never
+	// reached the journal and was lost on restart, silently diverging the
+	// journal from the portfolio book. OnExecutionFill increments
+	// FillsExecutedTotal and refreshes the cash/realized/total gauges; we
+	// refresh the unrealized gauge below since it does not. The nil-executor
+	// fallback keeps the endpoint working in a minimally-constructed server.
+	if s.executor != nil {
+		s.executor.OnExecutionFill(r.Context(), fill)
+	} else {
+		s.portfolio.ApplyFill(fill)
+		metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+	}
+	metrics.PortfolioUnrealizedPnL.Set(s.portfolio.Snapshot().UnrealizedPnL)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

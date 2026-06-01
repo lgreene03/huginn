@@ -55,7 +55,7 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 - ~~**No feature-staleness circuit breaker.**~~ Fixed in Phase 1 — `RISK_STALENESS_TIMEOUT` auto-halts when no feature event arrives; `RISK_AUTO_RESUME_AFTER_STALENESS` auto-resumes on fresh event.
 - ~~**No per-instrument position limit.**~~ Fixed in Phase 1 — `position_limit_per_instrument` config map.
 - **Risk evaluates the prospective fill but doesn't reserve cash.** Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.
-- **Mock-fill endpoint bypasses the strategy and risk-update gauges in a subtle way.** `/api/fills/mock` calls `ApplyFill` but does not call `OnExecutionFill` — fills land in the portfolio but Prometheus `OrdersGeneratedTotal` never increments. Operator-only feature, but it makes metrics lie.
+- ~~**Mock-fill endpoint bypasses the live-fill path.**~~ Fixed — `/api/fills/mock` now applies through `executor.OnExecutionFill` (`internal/server/http.go`) instead of a bare `portfolio.ApplyFill`. The mock fill is journaled, deduplicated (tagged with a `mock-exec-*` `ExecutionID`), increments `FillsExecutedTotal`, and triggers strategy-state persistence — full parity with a real Sleipnir fill. Previously it mutated the portfolio in isolation, so the fill never reached the journal and was lost on restart, silently diverging the journal from the book. Regression-tested in `internal/server/mock_fill_test.go`.
 
 ### Backtest vs. live divergence
 
