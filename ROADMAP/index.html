@@ -1220,7 +1220,7 @@
 <h3 id="what-is-broken-right-now">What is broken right now<a class="headerlink" href="#what-is-broken-right-now" title="Permanent link">&para;</a></h3>
 <ol>
 <li>~~<strong><code>go build ./...</code> fails on <code>main</code>.</strong>~~ Fixed — <code>server.New</code> signature updated. <code>go build ./...</code> is green.</li>
-<li><strong><code>web/package.json</code> pins <code>typescript ~6.0.2</code> and <code>vite ^8.0.12</code>.</strong> Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). <code>npm ci</code> will fail. Either the deps were hand-edited optimistically or this is dead-on-arrival for fresh clones. <em>(Low priority — the Go binary is the primary artifact; the web dashboard is operator-grade.)</em></li>
+<li>~~<strong><code>web/package.json</code> pins <code>typescript ~6.0.2</code> and <code>vite ^8.0.12</code>.</strong> Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). <code>npm ci</code> will fail.~~ Resolved — those releases shipped (the lockfile now resolves <code>typescript@6.0.3</code> and <code>vite@8.0.13</code> with integrity hashes), and the <code>web</code> CI job (<code>npm ci</code> → build → Playwright) is green on <code>main</code>. The optimistic pins turned out to be correct; fresh clones install cleanly.</li>
 <li><strong><code>docker-compose.yml</code></strong> references a <code>sleipnir</code> build context at <code>../sleipnir</code> — fine on the author's machine, broken for any other clone or CI. <em>(Mitigated by the cross-stack <code>docker-compose.stack.yml</code> in the muninn repo, which is the recommended way to run the full stack.)</em></li>
 </ol>
 <h3 id="what-the-readme-claims-but-isnt-real">What the README claims but isn't real<a class="headerlink" href="#what-the-readme-claims-but-isnt-real" title="Permanent link">&para;</a></h3>
@@ -1267,14 +1267,13 @@
 <li><strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).</li>
 </ul>
 <h3 id="web-ui-assessment">Web UI assessment<a class="headerlink" href="#web-ui-assessment" title="Permanent link">&para;</a></h3>
-<ul>
-<li>~250 lines of TS, one <code>App.tsx</code>, no router, no test, no state-management library.</li>
-<li>Single SSE source-of-truth — good pattern.</li>
-<li>Hardcoded <code>http://localhost:8083</code>. Will not work behind a reverse proxy.</li>
-<li>Dep versions in <code>package.json</code> are not installable (TypeScript 6.x, Vite 8.x don't exist yet).</li>
-<li>Dockerfile builds via <code>npm ci</code> and serves with nginx. The nginx config is implicit (default), so SPA fallback routing doesn't work.</li>
-<li>It is a legitimate operator console (halt/resume, manual fill, live equity, fills tail) but absolutely not analytics-grade. It should be a phase of its own.</li>
-</ul>
+<p><em>This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated.</em>
+- ~250 lines of TS, one <code>App.tsx</code>, no router, ~~no test~~ (Phase 6 added Playwright e2e at <code>web/tests/e2e/smoke.spec.ts</code>), no state-management library.
+- Single SSE source-of-truth — good pattern.
+- ~~Hardcoded <code>http://localhost:8083</code>. Will not work behind a reverse proxy.~~ Fixed in Phase 6 — <code>API_BASE</code> reads <code>import.meta.env.VITE_API_BASE</code> (default <code>http://localhost:8081</code>), documented in <code>web/.env.example</code>.
+- ~~Dep versions in <code>package.json</code> are not installable (TypeScript 6.x, Vite 8.x don't exist yet).~~ Resolved — those releases shipped; the lockfile resolves <code>typescript@6.0.3</code> / <code>vite@8.0.13</code> and the <code>web</code> CI job is green.
+- ~~Dockerfile builds via <code>npm ci</code> and serves with nginx. The nginx config is implicit (default), so SPA fallback routing doesn't work.~~ Fixed in Phase 6 — <code>web/nginx.conf</code> ships <code>try_files $uri $uri/ /index.html;</code> for SPA fallback and <code>proxy_buffering off;</code> for SSE.
+- It is a legitimate operator console (halt/resume, manual fill, live equity, fills tail) but absolutely not analytics-grade. ~~It should be a phase of its own.~~ It became <strong>Phase 6 — Hardened Web UI</strong> (✅).</p>
 <h3 id="non-goals-to-make-explicit">Non-goals to make explicit<a class="headerlink" href="#non-goals-to-make-explicit" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Not a feature-engineering library.</strong> Features come from Muninn. Huginn never recomputes OBI/VPIN/VWAP from raw trades inside its hot path. (The <code>cmd/fetcher</code> is a one-off offline data preparation tool for backtests; it intentionally duplicates the formulas — that duplication is a known debt, not a feature.)</li>
