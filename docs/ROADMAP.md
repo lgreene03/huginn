@@ -27,7 +27,7 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 ### What is broken right now
 
 1. ~~**`go build ./...` fails on `main`.**~~ Fixed — `server.New` signature updated. `go build ./...` is green.
-2. **`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail. Either the deps were hand-edited optimistically or this is dead-on-arrival for fresh clones. _(Low priority — the Go binary is the primary artifact; the web dashboard is operator-grade.)_
+2. ~~**`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail.~~ Resolved — those releases shipped (the lockfile now resolves `typescript@6.0.3` and `vite@8.0.13` with integrity hashes), and the `web` CI job (`npm ci` → build → Playwright) is green on `main`. The optimistic pins turned out to be correct; fresh clones install cleanly.
 3. **`docker-compose.yml`** references a `sleipnir` build context at `../sleipnir` — fine on the author's machine, broken for any other clone or CI. _(Mitigated by the cross-stack `docker-compose.stack.yml` in the muninn repo, which is the recommended way to run the full stack.)_
 
 ### What the README claims but isn't real
@@ -79,12 +79,13 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 
 ### Web UI assessment
 
-- ~250 lines of TS, one `App.tsx`, no router, no test, no state-management library.
+_This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated._
+- ~250 lines of TS, one `App.tsx`, no router, ~~no test~~ (Phase 6 added Playwright e2e at `web/tests/e2e/smoke.spec.ts`), no state-management library.
 - Single SSE source-of-truth — good pattern.
-- Hardcoded `http://localhost:8083`. Will not work behind a reverse proxy.
-- Dep versions in `package.json` are not installable (TypeScript 6.x, Vite 8.x don't exist yet).
-- Dockerfile builds via `npm ci` and serves with nginx. The nginx config is implicit (default), so SPA fallback routing doesn't work.
-- It is a legitimate operator console (halt/resume, manual fill, live equity, fills tail) but absolutely not analytics-grade. It should be a phase of its own.
+- ~~Hardcoded `http://localhost:8083`. Will not work behind a reverse proxy.~~ Fixed in Phase 6 — `API_BASE` reads `import.meta.env.VITE_API_BASE` (default `http://localhost:8081`), documented in `web/.env.example`.
+- ~~Dep versions in `package.json` are not installable (TypeScript 6.x, Vite 8.x don't exist yet).~~ Resolved — those releases shipped; the lockfile resolves `typescript@6.0.3` / `vite@8.0.13` and the `web` CI job is green.
+- ~~Dockerfile builds via `npm ci` and serves with nginx. The nginx config is implicit (default), so SPA fallback routing doesn't work.~~ Fixed in Phase 6 — `web/nginx.conf` ships `try_files $uri $uri/ /index.html;` for SPA fallback and `proxy_buffering off;` for SSE.
+- It is a legitimate operator console (halt/resume, manual fill, live equity, fills tail) but absolutely not analytics-grade. ~~It should be a phase of its own.~~ It became **Phase 6 — Hardened Web UI** (✅).
 
 ### Non-goals to make explicit
 
