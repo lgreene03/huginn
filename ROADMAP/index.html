@@ -1381,14 +1381,14 @@
 <p><strong>Risks.</strong> Doc maintenance — keep it co-located with the code that needs it.</p>
 <hr />
 <h2 id="phase-f-future-deferred-speculative">Phase F — Future <em>(deferred / speculative)</em><a class="headerlink" href="#phase-f-future-deferred-speculative" title="Permanent link">&para;</a></h2>
-<p>Tracked so ideas aren't lost; explicitly not scheduled.</p>
+<p>Tracked so ideas aren't lost; explicitly not scheduled. Each is gated by an <strong>observable trigger</strong> (never a date) catalogued in <a href="https://github.com/lgreene03/sleipnir/blob/main/docs/TRIGGERS.md">sleipnir/docs/TRIGGERS.md</a>, the shared cross-repo trigger catalog. When a trigger trips, the item moves out of Phase F into the next numbered phase, marked 🟢 with the trigger ID.</p>
 <ul>
-<li><strong>Live trading mode for real.</strong> The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper.</li>
-<li><strong>Strategy hot-reload from disk</strong> (drop a <code>.so</code> plugin). Significant complexity, very little payoff over restarts.</li>
-<li><strong>Cross-strategy meta-allocator</strong> that splits capital across the four strategies based on rolling Sharpe. Adjacent to portfolio optimization — explicit non-goal today, revisit if a real driver appears.</li>
-<li><strong>Replay-divergence diagnostics</strong> — given a fills journal and the original features, deterministically replay and surface any divergence. Useful only once Phase 4 parity is rock-solid.</li>
-<li><strong>WebSocket consumer for muninn streaming features</strong> when the server adds one. Not before.</li>
-<li><strong>Multi-venue support.</strong> Requires a Sleipnir per venue; out of scope.</li>
+<li><strong>Live trading mode for real.</strong> The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper. <em>Gated by <strong>T9</strong> (the go-live gate: ≥8 weeks clean paper trading + named human sign-off); opens a new <strong>Phase 8 — Live trading</strong> rather than promoting a single line.</em></li>
+<li><strong>Strategy hot-reload from disk</strong> (drop a <code>.so</code> plugin). Significant complexity, very little payoff over restarts. <em>Gated by <strong>T12</strong> (strategy iteration cadence high enough that restart downtime hurts — likely never).</em></li>
+<li><strong>Cross-strategy meta-allocator</strong> that splits capital across the four strategies based on rolling Sharpe. Adjacent to portfolio optimization — explicit non-goal today, revisit if a real driver appears. <em>Gated by <strong>T10</strong> (≥2 strategies running live and manual capital split is the bottleneck; itself behind T9).</em></li>
+<li><strong>Replay-divergence diagnostics</strong> — given a fills journal and the original features, deterministically replay and surface any divergence. Useful only once Phase 4 parity is rock-solid. <em>Gated by <strong>T11</strong> (any nonzero live-vs-replay divergence is observed).</em></li>
+<li><strong>WebSocket consumer for muninn streaming features</strong> when the server adds one. Not before. <em>Gated by <strong>T3</strong> (muninn ships a streaming features endpoint).</em></li>
+<li><strong>Multi-venue support.</strong> Requires a Sleipnir per venue; out of scope. <em>Gated by <strong>T4</strong> (sleipnir adds a second venue connector).</em></li>
 </ul>
 <hr />
 <h2 id="non-goals-explicit">Non-goals (explicit)<a class="headerlink" href="#non-goals-explicit" title="Permanent link">&para;</a></h2>
