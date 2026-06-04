@@ -874,7 +874,7 @@
   <a href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 8 — Live feature streaming consumer 🟢 promoted by T3
+        Phase 8 — Live feature streaming consumer ✅ promoted by T3
       
     </span>
   </a>
@@ -1156,7 +1156,7 @@
   <a href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 8 — Live feature streaming consumer 🟢 promoted by T3
+        Phase 8 — Live feature streaming consumer ✅ promoted by T3
       
     </span>
   </a>
@@ -1402,15 +1402,15 @@
 <p><strong>Exit criteria.</strong> <code>docker pull ghcr.io/lgreene03/huginn:v0.1.0</code> works. The docs site is published on GitHub Pages and linked from the README.</p>
 <p><strong>Risks.</strong> Doc maintenance — keep it co-located with the code that needs it.</p>
 <hr />
-<h2 id="phase-8-live-feature-streaming-consumer-promoted-by-t3">Phase 8 — Live feature streaming consumer 🟢 <em>promoted by T3</em><a class="headerlink" href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" title="Permanent link">&para;</a></h2>
+<h2 id="phase-8-live-feature-streaming-consumer-promoted-by-t3">Phase 8 — Live feature streaming consumer ✅ <em>promoted by T3</em><a class="headerlink" href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" title="Permanent link">&para;</a></h2>
 <p><strong>Goal.</strong> Consume muninn's live feature stream instead of relying solely on the existing feed path, so strategies react to features as the engine computes them.</p>
-<p><strong>Promoted out of Phase F by trigger T3</strong> — muninn shipped the streaming endpoint <code>GET /api/v1/features/stream</code> (muninn Phase 10 / <a href="https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md">ADR-0009</a>). Now eligible for scheduled pickup. <strong>Not yet implemented</strong> — scoped here so the next iteration can start.</p>
-<p><strong>Deliverables (planned).</strong>
-- [ ] An SSE feed source that connects to muninn's <code>/api/v1/features/stream</code> (optionally <code>?feature=</code>), decodes each <code>FeatureComputedEvent</code> JSON frame, and maps it onto huginn's internal <code>FeatureEvent</code> for the strategy dispatch path.
-- [ ] A config flag selecting the feed source (stream vs the current path); default to the current path until the stream path is proven in paper.
-- [ ] Reconnect-with-backoff and a feature-staleness metric/breaker consistent with the existing <code>RISK_STALENESS_TIMEOUT</code> behaviour.
-- [ ] Tests against a stub SSE server (a local <code>httptest</code> server emitting <code>event: feature</code> frames).</p>
-<p><strong>Exit criteria.</strong> Huginn can drive strategies from the live stream with no added latency over the current feed and clean reconnects. <em>Not started.</em></p>
+<p><strong>Promoted out of Phase F by trigger T3</strong> — muninn shipped the streaming endpoint <code>GET /api/v1/features/stream</code> (muninn Phase 10 / <a href="https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md">ADR-0009</a>).</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong>SSE feed source</strong> (<code>internal/feed/sse.go</code>). <code>SSESource</code> connects to muninn's <code>/api/v1/features/stream</code> (optional <code>?feature=</code>), incrementally decodes each <code>event: feature</code> frame with an SSE line decoder that mirrors muninn-py's <code>_SseDecoder</code> (comment/keepalive lines and non-<code>event</code>/<code>data</code> fields ignored), and maps each <code>FeatureComputedEvent</code> onto huginn's <code>model.FeatureEvent</code>. The wire carries a scalar <code>value</code> for scalar features and a <code>values</code> map for map features; the mapper writes a scalar under both the literal <code>"value"</code> key and the feature's leading name segment (<code>obi.1m</code> → <code>obi</code>), so a scalar OBI/VPIN/VWAP feature reaches the matching strategy — without overwriting any explicit <code>values</code> entry.
+- ✅ <strong>Config flag selecting the feed source.</strong> <code>feed.source</code> (<code>FEED_SOURCE</code>) is <code>kafka</code> (default) or <code>stream</code>; <code>feed.stream_url</code> (<code>FEED_STREAM_URL</code>) and <code>feed.stream_feature</code> (<code>FEED_STREAM_FEATURE</code>) configure the SSE path. Default stays on the Kafka path until the stream is proven in paper. <code>cmd/huginn</code> selects the source at the run step — both dispatch through <code>exec.OnFeature</code>, so strategy/risk wiring is identical.
+- ✅ <strong>Reconnect-with-backoff and staleness breaker.</strong> <code>SSESource.Run</code> reconnects with exponential backoff (500 ms → 30 s, reset on a healthy session that drops). Because every event flows through <code>exec.OnFeature</code> → <code>risk.Manager.OnFeatureSeen</code>, the existing <code>RISK_STALENESS_TIMEOUT</code> watchdog covers the stream path with no extra wiring. New metrics <code>huginn_feature_stream_connected</code> (gauge, mirrors sleipnir's <code>sleipnir_ws_connected</code>) and <code>huginn_feature_stream_reconnects_total</code> give connection visibility.
+- ✅ <strong>Tests against a stub SSE server.</strong> <code>internal/feed/sse_test.go</code> covers the decoder, the scalar-bridging mapper, an <code>httptest</code> stream emitting keepalive + <code>event: feature</code> frames, a forced mid-stream reconnect, and clean ctx-cancel shutdown.</p>
+<p><strong>Exit criteria.</strong> ✅ Huginn drives strategies from the live stream through the same dispatch path as Kafka (no added in-process latency) with clean exponential-backoff reconnects, selectable by config.</p>
 <p><strong>Reference.</strong> The muninn-py SDK's <code>MuninnStreamClient</code> (also promoted by T3) is the Python reference implementation of the same wire format.</p>
 <hr />
 <h2 id="phase-f-future-deferred-speculative">Phase F — Future <em>(deferred / speculative)</em><a class="headerlink" href="#phase-f-future-deferred-speculative" title="Permanent link">&para;</a></h2>
