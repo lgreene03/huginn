@@ -11,12 +11,29 @@ import (
 type Config struct {
 	LiveExecution bool           `yaml:"live_execution" envconfig:"LIVE_EXECUTION"`
 	Kafka         KafkaConfig    `yaml:"kafka"`
+	Feed          FeedConfig     `yaml:"feed"`
 	Strategy      StrategyConfig `yaml:"strategy"`
 	Executor      ExecutorConfig `yaml:"executor"`
 	Server        ServerConfig   `yaml:"server"`
 	Capital       CapitalConfig  `yaml:"capital"`
 	Risk          RiskConfig     `yaml:"risk"`
 	Database      DatabaseConfig `yaml:"database"`
+}
+
+// FeedConfig selects where strategy-driving feature events come from. Both
+// sources dispatch through the same handler (executor.OnFeature), so strategy,
+// risk, and staleness behaviour are identical regardless of choice.
+type FeedConfig struct {
+	// Source is "kafka" (default) to consume Muninn's Redpanda topics, or
+	// "stream" to tail Muninn's SSE feature stream (ADR-0009). The default
+	// stays "kafka" until the stream path is proven in paper trading.
+	Source string `yaml:"source" envconfig:"FEED_SOURCE"`
+	// StreamURL is Muninn's base URL for the SSE source (e.g.
+	// "http://localhost:8080"). Used only when Source == "stream".
+	StreamURL string `yaml:"stream_url" envconfig:"FEED_STREAM_URL"`
+	// StreamFeature optionally restricts the SSE stream to one feature name
+	// (?feature=). Empty streams all features.
+	StreamFeature string `yaml:"stream_feature" envconfig:"FEED_STREAM_FEATURE"`
 }
 
 type KafkaConfig struct {
@@ -112,6 +129,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Strategy.SlowPeriod == 0 {
 		cfg.Strategy.SlowPeriod = 30
+	}
+	if cfg.Feed.Source == "" {
+		cfg.Feed.Source = "kafka"
+	}
+	if cfg.Feed.StreamURL == "" {
+		cfg.Feed.StreamURL = "http://localhost:8080"
 	}
 	if cfg.Kafka.IntentsTopic == "" {
 		cfg.Kafka.IntentsTopic = "executions.intents.v1"

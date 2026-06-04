@@ -17,6 +17,7 @@ import (
 
 	"github.com/lgreene03/huginn/internal/config"
 	"github.com/lgreene03/huginn/internal/executor"
+	"github.com/lgreene03/huginn/internal/feed"
 	"github.com/lgreene03/huginn/internal/journal"
 	"github.com/lgreene03/huginn/internal/kafka"
 	"github.com/lgreene03/huginn/internal/metrics"
@@ -277,8 +278,27 @@ func main() {
 		}()
 	}
 
-	if err := consumer.Run(ctx); err != nil {
-		slog.Error("Consumer error", "error", err)
+	// Select the feature-event source. "kafka" (default) consumes Muninn's
+	// Redpanda topics; "stream" tails Muninn's SSE feature stream (ADR-0009).
+	// Both dispatch through exec.OnFeature, so the staleness watchdog and all
+	// strategy/risk wiring are identical regardless of source. Each blocks
+	// until ctx is cancelled.
+	switch cfg.Feed.Source {
+	case "stream":
+		slog.Info("Feature source: Muninn SSE stream",
+			"url", cfg.Feed.StreamURL, "feature", cfg.Feed.StreamFeature)
+		src := feed.NewSSESource(feed.SSEConfig{
+			BaseURL: cfg.Feed.StreamURL,
+			Feature: cfg.Feed.StreamFeature,
+		}, exec.OnFeature)
+		if err := src.Run(ctx); err != nil {
+			slog.Error("SSE feature source error", "error", err)
+		}
+	default:
+		slog.Info("Feature source: Kafka topics", "topics", cfg.Kafka.Topics)
+		if err := consumer.Run(ctx); err != nil {
+			slog.Error("Consumer error", "error", err)
+		}
 	}
 	srv.SetReady(false)
 

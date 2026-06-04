@@ -71,6 +71,9 @@ Huginn is configured via YAML profiles (e.g., `configs/default.yaml`). You can o
 | `kafka.brokers` | `KAFKA_BROKERS` | List of Redpanda/Kafka brokers |
 | `kafka.topics` | `KAFKA_TOPICS` | List of feature topics to consume |
 | `kafka.group_id` | `KAFKA_GROUP_ID` | Kafka consumer group ID |
+| `feed.source` | `FEED_SOURCE` | Feature source: `kafka` (default) or `stream` (Muninn SSE feature stream, ADR-0009) |
+| `feed.stream_url` | `FEED_STREAM_URL` | Muninn base URL for the SSE source (default `http://localhost:8080`) |
+| `feed.stream_feature` | `FEED_STREAM_FEATURE` | Restrict the SSE stream to one feature name (`?feature=`); empty streams all |
 | `strategy.name` | `STRATEGY_NAME` | Strategy to run: `obi`, `vpin`, `ema_crossover`, or `vwap_deviation` |
 | `strategy.threshold` | `STRATEGY_THRESHOLD` | Signal activation threshold (OBI / VPIN / VWAP %) |
 | `strategy.order_size` | `STRATEGY_ORDER_SIZE` | Order size per signal |

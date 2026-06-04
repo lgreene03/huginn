@@ -146,4 +146,29 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	// ─── Phase 8 additions (SSE feature stream) ─────────────────────────
+
+	// FeatureStreamConnected is 1 while the SSE feed source holds an open
+	// connection to muninn's /api/v1/features/stream, 0 while disconnected
+	// (including during backoff between reconnect attempts). Mirrors
+	// sleipnir's sleipnir_ws_connected gauge. Only meaningful when the
+	// feed source is "stream"; stays 0 in the default Kafka path.
+	FeatureStreamConnected = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "huginn_feature_stream_connected",
+			Help: "1 while the SSE feature stream is connected, else 0",
+		},
+	)
+
+	// FeatureStreamReconnectsTotal counts how many times the SSE feed source
+	// re-established its connection after a drop. A climbing value means the
+	// stream is flapping (proxy timeout, muninn restart, network); pair with
+	// FeatureStreamConnected to distinguish "flapping" from "down".
+	FeatureStreamReconnectsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "huginn_feature_stream_reconnects_total",
+			Help: "Total successful SSE feature-stream reconnections after a drop",
+		},
+	)
 )

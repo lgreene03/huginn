@@ -238,19 +238,19 @@ _This assessment predates Phase 6, which hardened the operator console; the item
 
 ---
 
-## Phase 8 — Live feature streaming consumer 🟢 _promoted by T3_
+## Phase 8 — Live feature streaming consumer ✅ _promoted by T3_
 
 **Goal.** Consume muninn's live feature stream instead of relying solely on the existing feed path, so strategies react to features as the engine computes them.
 
-**Promoted out of Phase F by trigger T3** — muninn shipped the streaming endpoint `GET /api/v1/features/stream` (muninn Phase 10 / [ADR-0009](https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md)). Now eligible for scheduled pickup. **Not yet implemented** — scoped here so the next iteration can start.
+**Promoted out of Phase F by trigger T3** — muninn shipped the streaming endpoint `GET /api/v1/features/stream` (muninn Phase 10 / [ADR-0009](https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md)).
 
-**Deliverables (planned).**
-- [ ] An SSE feed source that connects to muninn's `/api/v1/features/stream` (optionally `?feature=`), decodes each `FeatureComputedEvent` JSON frame, and maps it onto huginn's internal `FeatureEvent` for the strategy dispatch path.
-- [ ] A config flag selecting the feed source (stream vs the current path); default to the current path until the stream path is proven in paper.
-- [ ] Reconnect-with-backoff and a feature-staleness metric/breaker consistent with the existing `RISK_STALENESS_TIMEOUT` behaviour.
-- [ ] Tests against a stub SSE server (a local `httptest` server emitting `event: feature` frames).
+**Deliverables.**
+- ✅ **SSE feed source** (`internal/feed/sse.go`). `SSESource` connects to muninn's `/api/v1/features/stream` (optional `?feature=`), incrementally decodes each `event: feature` frame with an SSE line decoder that mirrors muninn-py's `_SseDecoder` (comment/keepalive lines and non-`event`/`data` fields ignored), and maps each `FeatureComputedEvent` onto huginn's `model.FeatureEvent`. The wire carries a scalar `value` for scalar features and a `values` map for map features; the mapper writes a scalar under both the literal `"value"` key and the feature's leading name segment (`obi.1m` → `obi`), so a scalar OBI/VPIN/VWAP feature reaches the matching strategy — without overwriting any explicit `values` entry.
+- ✅ **Config flag selecting the feed source.** `feed.source` (`FEED_SOURCE`) is `kafka` (default) or `stream`; `feed.stream_url` (`FEED_STREAM_URL`) and `feed.stream_feature` (`FEED_STREAM_FEATURE`) configure the SSE path. Default stays on the Kafka path until the stream is proven in paper. `cmd/huginn` selects the source at the run step — both dispatch through `exec.OnFeature`, so strategy/risk wiring is identical.
+- ✅ **Reconnect-with-backoff and staleness breaker.** `SSESource.Run` reconnects with exponential backoff (500 ms → 30 s, reset on a healthy session that drops). Because every event flows through `exec.OnFeature` → `risk.Manager.OnFeatureSeen`, the existing `RISK_STALENESS_TIMEOUT` watchdog covers the stream path with no extra wiring. New metrics `huginn_feature_stream_connected` (gauge, mirrors sleipnir's `sleipnir_ws_connected`) and `huginn_feature_stream_reconnects_total` give connection visibility.
+- ✅ **Tests against a stub SSE server.** `internal/feed/sse_test.go` covers the decoder, the scalar-bridging mapper, an `httptest` stream emitting keepalive + `event: feature` frames, a forced mid-stream reconnect, and clean ctx-cancel shutdown.
 
-**Exit criteria.** Huginn can drive strategies from the live stream with no added latency over the current feed and clean reconnects. _Not started._
+**Exit criteria.** ✅ Huginn drives strategies from the live stream through the same dispatch path as Kafka (no added in-process latency) with clean exponential-backoff reconnects, selectable by config.
 
 **Reference.** The muninn-py SDK's `MuninnStreamClient` (also promoted by T3) is the Python reference implementation of the same wire format.
 

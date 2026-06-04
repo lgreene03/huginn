@@ -5,6 +5,15 @@ kafka:
     - features.obi.v1
   group_id: huginn-paper-trader
 
+# Feature-event source. "kafka" (default) consumes the Redpanda topics above.
+# "stream" tails Muninn's live SSE feature stream (ADR-0009) from stream_url
+# instead; both dispatch through the same strategy/risk path. Switch to the
+# stream only once it has been proven in paper.
+feed:
+  source: kafka
+  stream_url: http://localhost:8080
+  # stream_feature: vwap.1m   # optional ?feature= filter; empty streams all
+
 strategy:
   name: obi
   threshold: 0.7
