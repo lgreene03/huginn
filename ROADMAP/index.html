@@ -871,6 +871,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Live feature streaming consumer 🟢 promoted by T3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1142,6 +1153,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8 — Live feature streaming consumer 🟢 promoted by T3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1380,14 +1402,25 @@
 <p><strong>Exit criteria.</strong> <code>docker pull ghcr.io/lgreene03/huginn:v0.1.0</code> works. The docs site is published on GitHub Pages and linked from the README.</p>
 <p><strong>Risks.</strong> Doc maintenance — keep it co-located with the code that needs it.</p>
 <hr />
+<h2 id="phase-8-live-feature-streaming-consumer-promoted-by-t3">Phase 8 — Live feature streaming consumer 🟢 <em>promoted by T3</em><a class="headerlink" href="#phase-8-live-feature-streaming-consumer-promoted-by-t3" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Consume muninn's live feature stream instead of relying solely on the existing feed path, so strategies react to features as the engine computes them.</p>
+<p><strong>Promoted out of Phase F by trigger T3</strong> — muninn shipped the streaming endpoint <code>GET /api/v1/features/stream</code> (muninn Phase 10 / <a href="https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md">ADR-0009</a>). Now eligible for scheduled pickup. <strong>Not yet implemented</strong> — scoped here so the next iteration can start.</p>
+<p><strong>Deliverables (planned).</strong>
+- [ ] An SSE feed source that connects to muninn's <code>/api/v1/features/stream</code> (optionally <code>?feature=</code>), decodes each <code>FeatureComputedEvent</code> JSON frame, and maps it onto huginn's internal <code>FeatureEvent</code> for the strategy dispatch path.
+- [ ] A config flag selecting the feed source (stream vs the current path); default to the current path until the stream path is proven in paper.
+- [ ] Reconnect-with-backoff and a feature-staleness metric/breaker consistent with the existing <code>RISK_STALENESS_TIMEOUT</code> behaviour.
+- [ ] Tests against a stub SSE server (a local <code>httptest</code> server emitting <code>event: feature</code> frames).</p>
+<p><strong>Exit criteria.</strong> Huginn can drive strategies from the live stream with no added latency over the current feed and clean reconnects. <em>Not started.</em></p>
+<p><strong>Reference.</strong> The muninn-py SDK's <code>MuninnStreamClient</code> (also promoted by T3) is the Python reference implementation of the same wire format.</p>
+<hr />
 <h2 id="phase-f-future-deferred-speculative">Phase F — Future <em>(deferred / speculative)</em><a class="headerlink" href="#phase-f-future-deferred-speculative" title="Permanent link">&para;</a></h2>
 <p>Tracked so ideas aren't lost; explicitly not scheduled. Each is gated by an <strong>observable trigger</strong> (never a date) catalogued in <a href="https://github.com/lgreene03/sleipnir/blob/main/docs/TRIGGERS.md">sleipnir/docs/TRIGGERS.md</a>, the shared cross-repo trigger catalog. When a trigger trips, the item moves out of Phase F into the next numbered phase, marked 🟢 with the trigger ID.</p>
 <ul>
-<li><strong>Live trading mode for real.</strong> The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper. <em>Gated by <strong>T9</strong> (the go-live gate: ≥8 weeks clean paper trading + named human sign-off); opens a new <strong>Phase 8 — Live trading</strong> rather than promoting a single line.</em></li>
+<li><strong>Live trading mode for real.</strong> The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper. <em>Gated by <strong>T9</strong> (the go-live gate: ≥8 weeks clean paper trading + named human sign-off); opens a new <strong>Phase 9 — Live trading</strong> rather than promoting a single line.</em></li>
 <li><strong>Strategy hot-reload from disk</strong> (drop a <code>.so</code> plugin). Significant complexity, very little payoff over restarts. <em>Gated by <strong>T12</strong> (strategy iteration cadence high enough that restart downtime hurts — likely never).</em></li>
 <li><strong>Cross-strategy meta-allocator</strong> that splits capital across the four strategies based on rolling Sharpe. Adjacent to portfolio optimization — explicit non-goal today, revisit if a real driver appears. <em>Gated by <strong>T10</strong> (≥2 strategies running live and manual capital split is the bottleneck; itself behind T9).</em></li>
 <li><strong>Replay-divergence diagnostics</strong> — given a fills journal and the original features, deterministically replay and surface any divergence. Useful only once Phase 4 parity is rock-solid. <em>Gated by <strong>T11</strong> (any nonzero live-vs-replay divergence is observed).</em></li>
-<li><strong>WebSocket consumer for muninn streaming features</strong> when the server adds one. Not before. <em>Gated by <strong>T3</strong> (muninn ships a streaming features endpoint).</em></li>
+<li>~~<strong>WebSocket consumer for muninn streaming features</strong> when the server adds one.~~ ✅ <strong>Promoted by T3 → Phase 8 above</strong> (muninn shipped SSE; see ADR-0009). The transport is SSE, not raw WebSocket.</li>
 <li><strong>Multi-venue support.</strong> Requires a Sleipnir per venue; out of scope. <em>Gated by <strong>T4</strong> (sleipnir adds a second venue connector).</em></li>
 </ul>
 <hr />
