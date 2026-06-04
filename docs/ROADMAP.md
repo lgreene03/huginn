@@ -238,15 +238,33 @@ _This assessment predates Phase 6, which hardened the operator console; the item
 
 ---
 
+## Phase 8 — Live feature streaming consumer 🟢 _promoted by T3_
+
+**Goal.** Consume muninn's live feature stream instead of relying solely on the existing feed path, so strategies react to features as the engine computes them.
+
+**Promoted out of Phase F by trigger T3** — muninn shipped the streaming endpoint `GET /api/v1/features/stream` (muninn Phase 10 / [ADR-0009](https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md)). Now eligible for scheduled pickup. **Not yet implemented** — scoped here so the next iteration can start.
+
+**Deliverables (planned).**
+- [ ] An SSE feed source that connects to muninn's `/api/v1/features/stream` (optionally `?feature=`), decodes each `FeatureComputedEvent` JSON frame, and maps it onto huginn's internal `FeatureEvent` for the strategy dispatch path.
+- [ ] A config flag selecting the feed source (stream vs the current path); default to the current path until the stream path is proven in paper.
+- [ ] Reconnect-with-backoff and a feature-staleness metric/breaker consistent with the existing `RISK_STALENESS_TIMEOUT` behaviour.
+- [ ] Tests against a stub SSE server (a local `httptest` server emitting `event: feature` frames).
+
+**Exit criteria.** Huginn can drive strategies from the live stream with no added latency over the current feed and clean reconnects. _Not started._
+
+**Reference.** The muninn-py SDK's `MuninnStreamClient` (also promoted by T3) is the Python reference implementation of the same wire format.
+
+---
+
 ## Phase F — Future _(deferred / speculative)_
 
 Tracked so ideas aren't lost; explicitly not scheduled. Each is gated by an **observable trigger** (never a date) catalogued in [sleipnir/docs/TRIGGERS.md](https://github.com/lgreene03/sleipnir/blob/main/docs/TRIGGERS.md), the shared cross-repo trigger catalog. When a trigger trips, the item moves out of Phase F into the next numbered phase, marked 🟢 with the trigger ID.
 
-- **Live trading mode for real.** The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper. _Gated by **T9** (the go-live gate: ≥8 weeks clean paper trading + named human sign-off); opens a new **Phase 8 — Live trading** rather than promoting a single line._
+- **Live trading mode for real.** The plumbing to Sleipnir exists. Moving from testnet to mainnet requires per-instrument kill-switches, two-person operational consent, real-money risk limits, and a dedicated incident response runbook. Not before Phases 1–3 are bulletproof in paper. _Gated by **T9** (the go-live gate: ≥8 weeks clean paper trading + named human sign-off); opens a new **Phase 9 — Live trading** rather than promoting a single line._
 - **Strategy hot-reload from disk** (drop a `.so` plugin). Significant complexity, very little payoff over restarts. _Gated by **T12** (strategy iteration cadence high enough that restart downtime hurts — likely never)._
 - **Cross-strategy meta-allocator** that splits capital across the four strategies based on rolling Sharpe. Adjacent to portfolio optimization — explicit non-goal today, revisit if a real driver appears. _Gated by **T10** (≥2 strategies running live and manual capital split is the bottleneck; itself behind T9)._
 - **Replay-divergence diagnostics** — given a fills journal and the original features, deterministically replay and surface any divergence. Useful only once Phase 4 parity is rock-solid. _Gated by **T11** (any nonzero live-vs-replay divergence is observed)._
-- **WebSocket consumer for muninn streaming features** when the server adds one. Not before. _Gated by **T3** (muninn ships a streaming features endpoint)._
+- ~~**WebSocket consumer for muninn streaming features** when the server adds one.~~ ✅ **Promoted by T3 → Phase 8 above** (muninn shipped SSE; see ADR-0009). The transport is SSE, not raw WebSocket.
 - **Multi-venue support.** Requires a Sleipnir per venue; out of scope. _Gated by **T4** (sleipnir adds a second venue connector)._
 
 ---
