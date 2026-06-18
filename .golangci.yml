@@ -40,6 +40,8 @@ linters:
           disabled: true  # false positives on short names common in Go
 
   exclusions:
+    paths:
+      - web/node_modules
     rules:
       - path: "_test\\.go"
         linters:

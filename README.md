@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/lgreene03/huginn/actions/workflows/ci.yml/badge.svg)](https://github.com/lgreene03/huginn/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-cyan)](https://lgreene03.github.io/huginn)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 > *Named after Odin's raven of "thought."*
 > *Huginn* consumes deterministic features from **Muninn** ("memory") and executes paper-trading strategies.
@@ -127,3 +128,7 @@ Huginn is a **paper-trading research engine**. See `docs/ROADMAP.md` for the ful
 - **No wallet or custody management. No financial advice.**
 
 See `docs/ROADMAP.md` for current state, planned phases, and explicit non-goals.
+
+## License
+
+[Apache License 2.0](LICENSE).
