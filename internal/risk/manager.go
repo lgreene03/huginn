@@ -87,6 +87,7 @@ func (m *Manager) Resume() {
 	defer m.mu.Unlock()
 	m.halted = false
 	m.haltReason = HaltNone
+	m.recentPrices = m.recentPrices[:0]
 	m.updateHaltGauges()
 	slog.Info("Manual Circuit Breaker Reset")
 }
@@ -124,6 +125,7 @@ func (m *Manager) OnFeatureSeen(eventTime time.Time) {
 	if m.halted && m.haltReason == HaltStaleness && m.config.AutoResumeAfterStaleness {
 		m.halted = false
 		m.haltReason = HaltNone
+		m.recentPrices = m.recentPrices[:0]
 		m.updateHaltGauges()
 		slog.Info("Staleness halt auto-cleared by fresh feature event", "event_time", eventTime)
 	}

@@ -157,8 +157,8 @@ func TestVWAPDeviation_Signals(t *testing.T) {
 func TestEMACrossover_WarmupAndCrossover(t *testing.T) {
 	s := NewEMACrossover(2, 4, 0.01, 0.1) // Fast=2, Slow=4
 
-	// Feed 3 events -> warmup count is 3 < SlowPeriod (4), should be nil
-	for i := 0; i < 3; i++ {
+	// Feed 4 events -> warmup count <= SlowPeriod (4), should be nil
+	for i := 0; i < 4; i++ {
 		orders := s.OnFeature(model.FeatureEvent{
 			EventTime:  time.Now(),
 			Instrument: "BTC-USDT",
@@ -169,7 +169,7 @@ func TestEMACrossover_WarmupAndCrossover(t *testing.T) {
 		}
 	}
 
-	// 4th event -> Warmup complete (count = 4). Still no crossover (prices equal).
+	// 5th event -> Warmup complete (count = 5 > SlowPeriod). Still no crossover (prices equal).
 	orders := s.OnFeature(model.FeatureEvent{
 		EventTime:  time.Now(),
 		Instrument: "BTC-USDT",
@@ -179,7 +179,7 @@ func TestEMACrossover_WarmupAndCrossover(t *testing.T) {
 		t.Fatalf("expected no crossover order, got %d", len(orders))
 	}
 
-	// 5th event -> price jumps up (Fast EMA will rise faster than Slow EMA -> Bullish crossover)
+	// 6th event -> price jumps up (Fast EMA will rise faster than Slow EMA -> Bullish crossover)
 	orders = s.OnFeature(model.FeatureEvent{
 		EventTime:  time.Now(),
 		Instrument: "BTC-USDT",
@@ -192,7 +192,7 @@ func TestEMACrossover_WarmupAndCrossover(t *testing.T) {
 		t.Errorf("expected BUY, got %s", orders[0].Side.String())
 	}
 
-	// 6th event -> price drops down (Fast EMA drops faster than Slow EMA -> Bearish crossover)
+	// 7th event -> price drops down (Fast EMA drops faster than Slow EMA -> Bearish crossover)
 	orders = s.OnFeature(model.FeatureEvent{
 		EventTime:  time.Now(),
 		Instrument: "BTC-USDT",
@@ -203,5 +203,33 @@ func TestEMACrossover_WarmupAndCrossover(t *testing.T) {
 	}
 	if orders[0].Side != model.Sell {
 		t.Errorf("expected SELL, got %s", orders[0].Side.String())
+	}
+}
+
+func TestEMACrossover_NoFalseSignalAtWarmupBoundary(t *testing.T) {
+	s := NewEMACrossover(2, 4, 0.01, 0.1)
+
+	// Feed exactly SlowPeriod events at constant price.
+	// The warmup boundary must NOT produce a signal — previously an off-by-one
+	// allowed the first post-warmup tick to fire when prevFastEMA == prevSlowEMA.
+	for i := 0; i < 4; i++ {
+		orders := s.OnFeature(model.FeatureEvent{
+			EventTime:  time.Now(),
+			Instrument: "BTC-USDT",
+			Values:     map[string]float64{"microPrice": 100.0},
+		})
+		if len(orders) != 0 {
+			t.Fatalf("event %d: expected nil during warmup, got %d orders", i+1, len(orders))
+		}
+	}
+
+	// SlowPeriod+1 event, still constant price — no crossover should fire.
+	orders := s.OnFeature(model.FeatureEvent{
+		EventTime:  time.Now(),
+		Instrument: "BTC-USDT",
+		Values:     map[string]float64{"microPrice": 100.0},
+	})
+	if len(orders) != 0 {
+		t.Fatalf("first post-warmup event at constant price should not signal, got %d orders", len(orders))
 	}
 }

@@ -107,7 +107,7 @@ func (s *EMACrossover) OnFeature(event model.FeatureEvent) []model.Order {
 	s.count++
 
 	// Warmup check: wait until slow EMA stabilizes
-	if s.count < s.SlowPeriod {
+	if s.count <= s.SlowPeriod {
 		return nil
 	}
 
