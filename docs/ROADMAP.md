@@ -43,7 +43,7 @@ _All items from the original audit have been addressed:_
 - **No calibration story.** OBI threshold 0.7, VPIN 0.5, VWAP 0.001 — these are folklore values in the configs. There is no script, notebook, or sweep CLI that picks them from historical data. The fetcher writes JSONL; the backtest consumes JSONL; there is no glue to grid-search.
 - **No documented failure mode per strategy.** What happens to OBI mean-reversion in a regime change? When does EMA crossover whipsaw? Not in docstrings.
 - **State leaks between backtest runs.** `NewOBIThreshold` etc. start `netPosition=0`, but the live process re-uses an in-memory strategy across recoveries — strategy `netPosition` is **not** recovered from the journal, only the portfolio is. After a restart, OBI/EMA/VWAP will happily re-build position past the throttle limit.
-- **EMA warmup logic is off-by-one.** `s.count < s.SlowPeriod` will produce orders on the very first post-warmup sample where `prevFastEMA == prevSlowEMA == price` is possible from the initialization at line 63–64. The `strategy_test.go:158` test passes by setting up a specific sequence; a fuzzed sequence will flag a bogus crossover.
+- ~~**EMA warmup logic is off-by-one.**~~ Fixed — guard changed to `s.count <= s.SlowPeriod` so the first post-warmup tick has stable prev values. Regression test `TestEMACrossover_NoFalseSignalAtWarmupBoundary` added.
 - **Concurrency contract is inconsistent.** `OBIThreshold`, `VPINBreakout`, `VWAPDeviation` mutate `netPosition`/`lastTrade` with no lock. The executor calls `OnFeature` from a single goroutine today (the dispatcher in `consumer.go`), but the interface doesn't document that.
 
 ### Risk management gaps
@@ -51,7 +51,7 @@ _All items from the original audit have been addressed:_
 _Several items from the original audit were addressed in Phases 1 and 5:_
 - ~~**Daily loss limit is not daily.**~~ Fixed in Phase 1 — daily reset with `dayStartRealizedPnL` baseline, UTC-day boundary tracking, Postgres-backed recovery.
 - ~~**Drawdown gauge tracks peak across all time, not session.**~~ Fixed in Phase 1 — `peakValue` persisted to journal, recovered on restart.
-- **Volatility scaling uses recent fill prices, not feature prices.** If you stop filling (because you halted), the ring buffer goes stale but never resets.
+- ~~**Volatility scaling uses recent fill prices, not feature prices.**~~ Fixed — `recentPrices` buffer cleared on manual `Resume()` and on auto-resume from staleness, preventing stale vol data from gating new positions.
 - ~~**No feature-staleness circuit breaker.**~~ Fixed in Phase 1 — `RISK_STALENESS_TIMEOUT` auto-halts when no feature event arrives; `RISK_AUTO_RESUME_AFTER_STALENESS` auto-resumes on fresh event.
 - ~~**No per-instrument position limit.**~~ Fixed in Phase 1 — `position_limit_per_instrument` config map.
 - **Risk evaluates the prospective fill but doesn't reserve cash.** Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.
