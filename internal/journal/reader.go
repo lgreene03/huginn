@@ -31,7 +31,7 @@ func RecoverPortfolio(path string, initialCash float64) (*portfolio.Portfolio, e
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	// Strategy-state blobs can be larger than the default 64KB scanner buffer
@@ -68,7 +68,7 @@ func ReadFills(path string) ([]model.Fill, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -100,7 +100,7 @@ func LoadStrategyStateFromJSONL(path, key string) ([]byte, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)

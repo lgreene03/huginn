@@ -21,10 +21,7 @@ linters:
     - unconvert
     - unparam
     - unused
-    # errcheck disabled: ~25 unchecked Close()/w.Write() across cmd/ and
-    # internal/. Re-enable in a dedicated clean-up phase once all defer-close
-    # and http.ResponseWriter.Write() paths are audited.
-    # - errcheck
+    - errcheck
 
   settings:
     staticcheck:

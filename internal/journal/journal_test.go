@@ -42,7 +42,7 @@ func TestJournalRecovery(t *testing.T) {
 	if err := w.Append(fill2); err != nil {
 		t.Fatalf("Failed to append fill2: %v", err)
 	}
-	w.Close()
+	_ = w.Close()
 
 	port, err := RecoverPortfolio(path, 100_000.0)
 	if err != nil {

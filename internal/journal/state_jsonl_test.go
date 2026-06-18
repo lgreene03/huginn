@@ -55,7 +55,7 @@ func TestJSONLState_OtherKeysIgnored(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "trades.jsonl")
 	w, _ := NewJSONLWriter(path)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	_ = w.AppendStrategyState("vpin", []byte(`{"version":1,"fields":{"last_trade":"2026-05-19T00:00:00Z"}}`))
 	_ = w.AppendStrategyState("obi", []byte(`{"version":1,"fields":{"net_position":3.0}}`))
@@ -109,7 +109,7 @@ func TestJSONLState_EmptyBlobIsNoOp(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "trades.jsonl")
 	w, _ := NewJSONLWriter(path)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	if err := w.AppendStrategyState("obi", nil); err != nil {
 		t.Fatalf("AppendStrategyState(nil) should be a no-op, got: %v", err)

@@ -117,8 +117,8 @@ func TestDecodeFeatureEvent_Malformed(t *testing.T) {
 // reads it immediately rather than at connection close.
 func writeFeatureFrame(t *testing.T, w http.ResponseWriter, name string, value float64) {
 	t.Helper()
-	fmt.Fprintf(w, "event: feature\n")
-	fmt.Fprintf(w, "data: {\"eventId\":\"id-%s\",\"eventTime\":\"2026-06-04T12:00:00Z\",\"featureName\":\"%s\",\"featureVersion\":\"v1\",\"value\":%v,\"windowStart\":\"2026-06-04T11:59:00Z\",\"windowEnd\":\"2026-06-04T12:00:00Z\"}\n\n", name, name, value)
+	_, _ = fmt.Fprintf(w, "event: feature\n")
+	_, _ = fmt.Fprintf(w, "data: {\"eventId\":\"id-%s\",\"eventTime\":\"2026-06-04T12:00:00Z\",\"featureName\":\"%s\",\"featureVersion\":\"v1\",\"value\":%v,\"windowStart\":\"2026-06-04T11:59:00Z\",\"windowEnd\":\"2026-06-04T12:00:00Z\"}\n\n", name, name, value)
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -129,7 +129,7 @@ func TestSSESource_StreamsFeatureEvents(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		// A keepalive comment, then two feature frames.
-		fmt.Fprintf(w, ": keepalive\n\n")
+		_, _ = fmt.Fprintf(w, ": keepalive\n\n")
 		writeFeatureFrame(t, w, "obi.1m", 0.7)
 		writeFeatureFrame(t, w, "vpin.1m", 0.5)
 		// Hold the connection open like a real stream until the client leaves.
@@ -200,7 +200,7 @@ func TestSSESource_Reconnects(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go src.Run(ctx)
+	go func() { _ = src.Run(ctx) }()
 
 	select {
 	case ev := <-events:

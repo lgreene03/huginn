@@ -6,6 +6,7 @@
 
 > *Named after Odin's raven of "thought."*
 > *Huginn* consumes deterministic features from **Muninn** ("memory") and executes paper-trading strategies.
+> Part of the **[Norse Stack](https://github.com/lgreene03/norse-stack)**.
 
 **[Full documentation →](https://lgreene03.github.io/huginn)**
 

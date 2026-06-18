@@ -46,7 +46,7 @@ func GenerateHTMLReport(p ReportParams, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("create report file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return htmlReportTemplate().Execute(f, data)
 }

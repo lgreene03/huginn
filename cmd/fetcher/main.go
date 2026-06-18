@@ -100,7 +100,7 @@ func main() {
 		slog.Error("Failed to create output file", "error", err)
 		os.Exit(1)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	// Fetch trades & aggregate them
 	err = fetchAndProcess(outFile, *symbolFlag, startTime, endTime, windowDuration)
@@ -169,12 +169,12 @@ func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, wind
 			return fmt.Errorf("failed to fetch trades after retries: %w", err)
 		}
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return fmt.Errorf("unexpected HTTP status code: %d", resp.StatusCode)
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return fmt.Errorf("failed to read response body: %w", err)
 		}

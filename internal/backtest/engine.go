@@ -54,7 +54,7 @@ func (e *Engine) Run(dataPath string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	slog.Info("Starting backtest", "data", dataPath, "strategies", len(e.execs))
 	start := time.Now()

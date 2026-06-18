@@ -64,7 +64,7 @@ func main() {
 		slog.Error("Failed to initialize journal writer", "error", err)
 		os.Exit(1)
 	}
-	defer jWriter.Close()
+	defer func() { _ = jWriter.Close() }()
 
 	// Initialize risk manager
 	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)

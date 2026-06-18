@@ -191,7 +191,7 @@ func loadEvents(path string) ([]model.FeatureEvent, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var events []model.FeatureEvent
 	scanner := bufio.NewScanner(f)
@@ -524,7 +524,7 @@ func writeWalkForwardCSV(path, stratName string, folds []foldResult) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	w := csv.NewWriter(f)
 	defer w.Flush()
@@ -580,7 +580,7 @@ func writeCSV(path, stratName string, results []result) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	w := csv.NewWriter(f)
 	defer w.Flush()

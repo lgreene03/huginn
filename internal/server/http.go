@@ -172,10 +172,10 @@ func (s *Server) readyzHandler(w http.ResponseWriter, r *http.Request) {
 
 	if ready {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("Not Ready"))
+		_, _ = w.Write([]byte("Not Ready"))
 	}
 }
 
@@ -218,7 +218,7 @@ func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			fmt.Fprintf(w, "data: %s\n\n", string(data))
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(data))
 			flusher.Flush()
 		}
 	}
@@ -233,7 +233,7 @@ func (s *Server) breakerTriggerHandler(w http.ResponseWriter, r *http.Request) {
 	s.riskMgr.Halt()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"halted","message":"Strategy execution manually halted."}`))
+	_, _ = w.Write([]byte(`{"status":"halted","message":"Strategy execution manually halted."}`))
 }
 
 // breakerResetHandler manually resumes trading.
@@ -245,7 +245,7 @@ func (s *Server) breakerResetHandler(w http.ResponseWriter, r *http.Request) {
 	s.riskMgr.Resume()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"running","message":"Strategy execution manually resumed."}`))
+	_, _ = w.Write([]byte(`{"status":"running","message":"Strategy execution manually resumed."}`))
 }
 
 // mockFillHandler manually submits a mock fill.
@@ -317,7 +317,7 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
 		"message": "Mock fill executed",
 		"fill":    fill,
@@ -327,7 +327,7 @@ func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
 // versionHandler returns the build identity as JSON.
 func (s *Server) versionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(version.Get())
+	_ = json.NewEncoder(w).Encode(version.Get())
 }
 
 // strategyConfigHandler handles GET and PUT for /api/strategy/config.
@@ -337,7 +337,7 @@ func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg := s.executor.GetConfig()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cfg)
+		_ = json.NewEncoder(w).Encode(cfg)
 
 	case http.MethodPut:
 		// Auth check for mutating operation.
@@ -352,7 +352,7 @@ func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		s.executor.UpdateConfig(sc)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -362,7 +362,7 @@ func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
 // snapshotHistoryHandler returns the last N equity samples from the ring buffer.
 func (s *Server) snapshotHistoryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.equity.snapshot())
+	_ = json.NewEncoder(w).Encode(s.equity.snapshot())
 }
 
 func (s *Server) Start() error {
