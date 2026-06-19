@@ -89,7 +89,7 @@ func main() {
 	)
 
 	// Ensure output directory exists
-	if err := os.MkdirAll("data", 0755); err != nil {
+	if err := os.MkdirAll("data", 0o750); err != nil {
 		slog.Error("Failed to create data directory", "error", err)
 		os.Exit(1)
 	}

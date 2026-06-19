@@ -380,8 +380,9 @@ func (s *Server) Start() error {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.srv = &http.Server{
-		Addr:    s.addr,
-		Handler: mux,
+		Addr:              s.addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	slog.Info("Starting HTTP server", "addr", s.addr)
