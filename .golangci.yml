@@ -22,6 +22,7 @@ linters:
     - unparam
     - unused
     - errcheck
+    - gosec
 
   settings:
     staticcheck:
@@ -43,6 +44,13 @@ linters:
       - path: "_test\\.go"
         linters:
           - revive
+          - gosec
+      # G304: file-inclusion-via-variable -- all flagged sites are internal CLI
+      # tools or config loaders reading user-supplied local paths, not external
+      # input. Suppressing globally is cleaner than sprinkling nolint comments.
+      - linters:
+          - gosec
+        text: "G304" 
 
 formatters:
   enable:

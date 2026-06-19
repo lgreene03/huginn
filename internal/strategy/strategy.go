@@ -54,5 +54,8 @@ type Strategy interface {
 	// OnFeature processes a single computed feature event and returns
 	// zero or more orders to be paper-executed (or, in live mode,
 	// forwarded to Sleipnir as intents).
+	//
+	// OnFeature may be called from concurrent goroutines; implementations
+	// must be safe for concurrent use.
 	OnFeature(event model.FeatureEvent) []model.Order
 }

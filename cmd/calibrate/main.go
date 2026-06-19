@@ -112,7 +112,7 @@ func main() {
 		resultPath = filepath.Join("data", "calibration",
 			fmt.Sprintf("%s-%d.csv", *strategyName, ts))
 	}
-	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(resultPath), 0o750); err != nil {
 		slog.Error("Failed to create output dir", "error", err)
 		os.Exit(1)
 	}
