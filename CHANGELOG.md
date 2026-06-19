@@ -6,15 +6,24 @@ All notable changes to Huginn are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+---
+
+## [0.8.0] — 2026-06-19
+
 ### Added
 - **Phase 8 — Muninn SSE feature-stream consumer.** New `feed.source=stream` mode connects to Muninn's `GET /api/v1/features/stream` (SSE) endpoint as an alternative to Kafka topic consumption. Configured via `FEED_SOURCE`, `FEED_STREAM_URL`, `FEED_STREAM_FEATURE`. See [ADR-0009](https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md) on the Muninn side.
 - **Standalone smoke test** (`scripts/smoke.sh`) — boots Docker, pushes a synthetic OBI event, verifies the strategy fires and portfolio updates.
 - **CLAUDE.md** — agent-oriented project context for AI assistants.
+- `gosec` linter enabled in golangci-lint with G304 suppressed globally (internal CLI paths only) and all gosec rules suppressed in test files.
+- Documented concurrency contract on the `Strategy.OnFeature` interface method.
 
 ### Fixed
 - Dockerfile now copies `configs/` directory into the image (was missing, causing container crash on startup).
 - README GitHub links corrected from `github.com/lgreene/` to `github.com/lgreene03/`.
 - `/api/fills/mock` now routes through the executor for full journal parity with real Sleipnir fills.
+- Directory permissions tightened from `0755` to `0750` (gosec G301) in calibrate, fetcher, and journal writer.
+- Journal file permissions tightened from `0644` to `0600` (gosec G302).
+- `ReadHeaderTimeout` added to HTTP server to prevent Slowloris attacks (gosec G112).
 
 ---
 

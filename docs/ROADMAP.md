@@ -44,7 +44,7 @@ _All items from the original audit have been addressed:_
 - **No documented failure mode per strategy.** What happens to OBI mean-reversion in a regime change? When does EMA crossover whipsaw? Not in docstrings.
 - **State leaks between backtest runs.** `NewOBIThreshold` etc. start `netPosition=0`, but the live process re-uses an in-memory strategy across recoveries — strategy `netPosition` is **not** recovered from the journal, only the portfolio is. After a restart, OBI/EMA/VWAP will happily re-build position past the throttle limit.
 - ~~**EMA warmup logic is off-by-one.**~~ Fixed — guard changed to `s.count <= s.SlowPeriod` so the first post-warmup tick has stable prev values. Regression test `TestEMACrossover_NoFalseSignalAtWarmupBoundary` added.
-- **Concurrency contract is inconsistent.** `OBIThreshold`, `VPINBreakout`, `VWAPDeviation` mutate `netPosition`/`lastTrade` with no lock. The executor calls `OnFeature` from a single goroutine today (the dispatcher in `consumer.go`), but the interface doesn't document that.
+- ~~**Concurrency contract is inconsistent.**~~ Fixed — all four strategies have `sync.Mutex` on `OnFeature`, `MarshalState`, and `RestoreState`. The `Strategy.OnFeature` docstring now documents the concurrency contract.
 
 ### Risk management gaps
 
@@ -75,7 +75,7 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 - **Postgres migrations:** schema is inline `CREATE TABLE IF NOT EXISTS` (`postgres.go:51`). No versioning, no `goose`/`atlas`/`golang-migrate`.
 - **Restart-from-journal correctness:** portfolio recovers, **strategies do not**, **risk peak does not**, **daily loss reset does not**. See gaps above.
 - ~~**No `internal/strategy/vpin_breakout.go`** — code colocated in `obi_threshold.go`~~ — resolved: VPIN extracted to its own `vpin_breakout.go` in Phase 2; README and assessment now reference it.
-- **No race detector in CI**, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).
+- ~~**No race detector in CI**, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).~~ Fixed — CI runs `go test -race`, coverage reports, golangci-lint v2 with errcheck + gosec + staticcheck.
 
 ### Web UI assessment
 
