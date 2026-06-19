@@ -1257,7 +1257,7 @@
 <li><strong>No documented failure mode per strategy.</strong> What happens to OBI mean-reversion in a regime change? When does EMA crossover whipsaw? Not in docstrings.</li>
 <li><strong>State leaks between backtest runs.</strong> <code>NewOBIThreshold</code> etc. start <code>netPosition=0</code>, but the live process re-uses an in-memory strategy across recoveries — strategy <code>netPosition</code> is <strong>not</strong> recovered from the journal, only the portfolio is. After a restart, OBI/EMA/VWAP will happily re-build position past the throttle limit.</li>
 <li>~~<strong>EMA warmup logic is off-by-one.</strong>~~ Fixed — guard changed to <code>s.count &lt;= s.SlowPeriod</code> so the first post-warmup tick has stable prev values. Regression test <code>TestEMACrossover_NoFalseSignalAtWarmupBoundary</code> added.</li>
-<li><strong>Concurrency contract is inconsistent.</strong> <code>OBIThreshold</code>, <code>VPINBreakout</code>, <code>VWAPDeviation</code> mutate <code>netPosition</code>/<code>lastTrade</code> with no lock. The executor calls <code>OnFeature</code> from a single goroutine today (the dispatcher in <code>consumer.go</code>), but the interface doesn't document that.</li>
+<li>~~<strong>Concurrency contract is inconsistent.</strong>~~ Fixed — all four strategies have <code>sync.Mutex</code> on <code>OnFeature</code>, <code>MarshalState</code>, and <code>RestoreState</code>. The <code>Strategy.OnFeature</code> docstring now documents the concurrency contract.</li>
 </ul>
 <h3 id="risk-management-gaps">Risk management gaps<a class="headerlink" href="#risk-management-gaps" title="Permanent link">&para;</a></h3>
 <p><em>Several items from the original audit were addressed in Phases 1 and 5:</em>
@@ -1286,7 +1286,7 @@
 <li><strong>Postgres migrations:</strong> schema is inline <code>CREATE TABLE IF NOT EXISTS</code> (<code>postgres.go:51</code>). No versioning, no <code>goose</code>/<code>atlas</code>/<code>golang-migrate</code>.</li>
 <li><strong>Restart-from-journal correctness:</strong> portfolio recovers, <strong>strategies do not</strong>, <strong>risk peak does not</strong>, <strong>daily loss reset does not</strong>. See gaps above.</li>
 <li>~~<strong>No <code>internal/strategy/vpin_breakout.go</code></strong> — code colocated in <code>obi_threshold.go</code>~~ — resolved: VPIN extracted to its own <code>vpin_breakout.go</code> in Phase 2; README and assessment now reference it.</li>
-<li><strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).</li>
+<li>~~<strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).~~ Fixed — CI runs <code>go test -race</code>, coverage reports, golangci-lint v2 with errcheck + gosec + staticcheck.</li>
 </ul>
 <h3 id="web-ui-assessment">Web UI assessment<a class="headerlink" href="#web-ui-assessment" title="Permanent link">&para;</a></h3>
 <p><em>This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated.</em>
