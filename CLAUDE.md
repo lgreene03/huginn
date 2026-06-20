@@ -50,13 +50,14 @@ Redpanda (features.obi.v1) → Kafka Consumer → Executor
 - `cmd/huginn/` — Main entry point. Loads config, wires everything.
 - `cmd/backtest/` — Offline JSONL replay with Sharpe/MDD report.
 - `cmd/calibrate/` — Grid-search over strategy parameters.
-- `internal/strategy/` — Four strategies: `obi_threshold.go`, `vpin_breakout.go`, `ema_crossover.go`, `vwap_deviation.go`.
-- `internal/executor/` — Dual-mode executor (paper/live). Owns the OnFeature dispatch loop.
+- `cmd/walkforward/` — Anchored walk-forward validation (expanding train window, sliding test window).
+- `internal/strategy/` — Four strategies: `obi_threshold.go`, `vpin_breakout.go`, `ema_crossover.go`, `vwap_deviation.go`. OBI strategy includes regime-aware threshold adaptation.
+- `internal/executor/` — Dual-mode executor (paper/live). Owns the OnFeature dispatch loop. Tracks signal-to-decision latency via Prometheus histogram.
 - `internal/risk/` — Pre-trade risk: drawdown, daily loss, position limits, staleness watchdog.
 - `internal/portfolio/` — Thread-safe position tracker with realized/unrealized PnL.
-- `internal/journal/` — Pluggable persistence: JSONL writer or Postgres with migrations.
-- `internal/kafka/` — Consumer (multi-topic fan-in), intent producer, fills consumer.
-- `internal/server/` — HTTP: `/healthz`, `/readyz`, `/metrics`, `/api/snapshot`, `/api/stream` (SSE), `/api/breaker/*`.
+- `internal/journal/` — Pluggable persistence: JSONL writer, Postgres with migrations, NullWriter (for walk-forward isolation).
+- `internal/kafka/` — Consumer (multi-topic fan-in), intent producer, fills consumer, price tick consumer (sub-second exit monitoring).
+- `internal/server/` — HTTP: `/healthz`, `/readyz`, `/metrics`, `/api/snapshot`, `/api/stream` (SSE), `/api/breaker/*`. gRPC: `huginn.HuginnService/GetSnapshot` on port 50051 with reflection.
 - `internal/config/` — YAML + envconfig. All fields have `envconfig` tags for env-var override.
 - `web/` — React operator dashboard (equity curve, positions, fills, halt/resume).
 
@@ -68,6 +69,8 @@ YAML profiles live in `configs/`. Every YAML key has a corresponding env var (vi
 - `STRATEGY_NAME` (`obi`, `vpin`, `ema_crossover`, `vwap_deviation`)
 - `STRATEGY_THRESHOLD`, `STRATEGY_ORDER_SIZE`
 - `LIVE_EXECUTION` — publish intents to Sleipnir instead of paper-filling
+- `KAFKA_PRICE_TOPIC` — enable real-time price feed for sub-second exit monitoring
+- `GRPC_PORT` — enable gRPC server (default unset = disabled)
 - `DATABASE_ENABLED`, `DATABASE_URL` — Postgres journal (recommended default)
 - `SERVER_PORT` (default `8081`)
 
@@ -78,8 +81,10 @@ Muninn (features) → Huginn (strategy) → Sleipnir (execution) → Fill → Hu
 ```
 
 - Huginn consumes: `features.obi.v1` (or any `features.*` topic)
+- Huginn consumes: `prices.realtime.v1` (sub-second price ticks for exit monitoring)
 - Huginn produces: `executions.intents.v1` (when `LIVE_EXECUTION=true`)
 - Huginn consumes: `executions.fills.v1` (fills back from Sleipnir)
+- Huginn exposes: gRPC `huginn.HuginnService/GetSnapshot` on port 50051
 
 ## Testing
 
