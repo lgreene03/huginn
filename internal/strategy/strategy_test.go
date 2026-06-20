@@ -63,19 +63,20 @@ func TestOBIThreshold_NoSignalInDeadZone(t *testing.T) {
 
 func TestOBIThreshold_MaxPositionThrottle(t *testing.T) {
 	s := NewOBIThreshold(0.7, 0.05, 0.1)
+	t0 := time.Now()
 
-	// Buy twice (0.05 * 2 = 0.10 = max position)
+	// Buy twice (0.05 * 2 = 0.10 = max position), spacing by 2 min for cooldown
 	for i := 0; i < 2; i++ {
 		s.OnFeature(model.FeatureEvent{
-			EventTime:  time.Now(),
+			EventTime:  t0.Add(time.Duration(i) * 2 * time.Minute),
 			Instrument: "BTC-USDT",
 			Values:     map[string]float64{"obi": -0.85},
 		})
 	}
 
-	// Third buy should be throttled
+	// Third buy should be throttled (well after cooldown)
 	orders := s.OnFeature(model.FeatureEvent{
-		EventTime:  time.Now(),
+		EventTime:  t0.Add(5 * time.Minute),
 		Instrument: "BTC-USDT",
 		Values:     map[string]float64{"obi": -0.90},
 	})

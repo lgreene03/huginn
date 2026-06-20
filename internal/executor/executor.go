@@ -182,6 +182,12 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 		metrics.FeatureEventAgeSeconds.Observe(time.Since(event.EventTime).Seconds())
 	}
 
+	// End-to-end latency: bridge signal creation → huginn receipt
+	if event.SignalTimeMs > 0 {
+		bridgeToHuginnMs := time.Now().UnixMilli() - event.SignalTimeMs
+		metrics.SignalToDecisionMs.Observe(float64(bridgeToHuginnMs))
+	}
+
 	// Notify the risk manager that a fresh event arrived — feeds the
 	// staleness watchdog and the auto-resume-from-staleness path.
 	if e.riskManager != nil {

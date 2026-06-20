@@ -97,6 +97,16 @@ var (
 		},
 	)
 
+	// SignalToDecisionMs tracks end-to-end latency from bridge signal
+	// creation to huginn strategy dispatch, in milliseconds.
+	SignalToDecisionMs = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "huginn_signal_to_decision_ms",
+			Help:    "Bridge signal creation to huginn receipt latency (ms)",
+			Buckets: prometheus.ExponentialBuckets(1, 2, 12), // 1ms … 4s
+		},
+	)
+
 	// SignalToFillLatencySeconds is the wall-clock delay between strategy
 	// signal and fill application. For paper mode this is small (in-process);
 	// for live mode it captures the round-trip to sleipnir.

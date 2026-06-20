@@ -217,6 +217,13 @@ func main() {
 		fillsConsumer = kafka.NewFillsConsumer(cfg.Kafka.Brokers, cfg.Kafka.FillsTopic, cfg.Kafka.GroupID, exec.OnExecutionFill)
 	}
 
+	// Initialize real-time price tick consumer for sub-second exit monitoring
+	var priceConsumer *kafka.PriceConsumer
+	if cfg.Kafka.PriceTopic != "" {
+		slog.Info("Real-time price feed enabled", "topic", cfg.Kafka.PriceTopic)
+		priceConsumer = kafka.NewPriceConsumer(cfg.Kafka.Brokers, cfg.Kafka.PriceTopic, cfg.Kafka.GroupID, exec.OnFeature)
+	}
+
 	// Initialize HTTP server
 	srv := server.New(":"+cfg.Server.Port, port, riskManager, exec)
 	go func() {
@@ -224,6 +231,22 @@ func main() {
 			slog.Info("HTTP server stopped", "error", err)
 		}
 	}()
+
+	// Initialize gRPC server for programmatic access
+	var grpcSrv *server.GRPCServer
+	if cfg.Server.GRPCPort != "" {
+		grpcSrv = server.NewGRPCServer(cfg.Server.GRPCPort, func() map[string]interface{} {
+			snap := port.Snapshot()
+			return map[string]interface{}{
+				"portfolio": snap,
+				"strategy":  activeStrategy.Name(),
+				"halted":    riskManager.IsHalted(),
+			}
+		})
+		if err := grpcSrv.Start(); err != nil {
+			slog.Error("gRPC server failed to start", "error", err)
+		}
+	}
 
 	// Graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -278,6 +301,14 @@ func main() {
 		}()
 	}
 
+	if priceConsumer != nil {
+		go func() {
+			if err := priceConsumer.Run(ctx); err != nil {
+				slog.Error("Price consumer error", "error", err)
+			}
+		}()
+	}
+
 	// Select the feature-event source. "kafka" (default) consumes Muninn's
 	// Redpanda topics; "stream" tails Muninn's SSE feature stream (ADR-0009).
 	// Both dispatch through exec.OnFeature, so the staleness watchdog and all
@@ -308,8 +339,14 @@ func main() {
 	if fillsConsumer != nil {
 		_ = fillsConsumer.Close()
 	}
+	if priceConsumer != nil {
+		_ = priceConsumer.Close()
+	}
 	if producer != nil {
 		_ = producer.Close()
+	}
+	if grpcSrv != nil {
+		grpcSrv.Stop()
 	}
 	_ = srv.Stop(context.Background())
 	_ = jWriter.Close()

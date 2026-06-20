@@ -15,6 +15,7 @@ type FeatureEvent struct {
 	Instrument     string             `json:"instrument"`
 	WindowStart    time.Time          `json:"windowStart"`
 	WindowEnd      time.Time          `json:"windowEnd"`
+	SignalTimeMs   int64              `json:"signalTimeMs,omitempty"`
 	Values         map[string]float64 `json:"values"`
 }
 

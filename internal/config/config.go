@@ -42,6 +42,7 @@ type KafkaConfig struct {
 	GroupID      string   `yaml:"group_id" envconfig:"KAFKA_GROUP_ID"`
 	IntentsTopic string   `yaml:"intents_topic" envconfig:"KAFKA_INTENTS_TOPIC"`
 	FillsTopic   string   `yaml:"fills_topic" envconfig:"KAFKA_FILLS_TOPIC"`
+	PriceTopic   string   `yaml:"price_topic" envconfig:"KAFKA_PRICE_TOPIC"`
 }
 
 type StrategyConfig struct {
@@ -62,7 +63,8 @@ type ExecutorConfig struct {
 }
 
 type ServerConfig struct {
-	Port string `yaml:"port" envconfig:"SERVER_PORT"`
+	Port     string `yaml:"port" envconfig:"SERVER_PORT"`
+	GRPCPort string `yaml:"grpc_port" envconfig:"GRPC_PORT"`
 }
 
 type CapitalConfig struct {

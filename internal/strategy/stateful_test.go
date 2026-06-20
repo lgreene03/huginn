@@ -64,13 +64,14 @@ func obiEvents(n int, threshold float64) []model.FeatureEvent {
 	t0 := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
 	for i := range events {
 		// Alternate +0.9 / -0.9 OBI to ping-pong positions through the threshold.
+		// Space events 2 minutes apart to clear the 60s cooldown.
 		obi := 0.9
 		if i%2 == 1 {
 			obi = -0.9
 		}
 		_ = threshold
 		events[i] = model.FeatureEvent{
-			EventTime:  t0.Add(time.Duration(i) * time.Second),
+			EventTime:  t0.Add(time.Duration(i) * 2 * time.Minute),
 			Instrument: "BTC-USD",
 			Values:     map[string]float64{"obi": obi},
 		}
