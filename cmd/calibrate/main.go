@@ -9,6 +9,12 @@
 // committing a strategy to a long backtest or live paper run; do not use it
 // to hill-climb on noise.
 //
+// RISK — by DEFAULT the sweep is risk-unconstrained: drawdown, daily-loss, and
+// position limits are set so high they never trip, so each combo reveals the
+// strategy's raw behaviour rather than being clipped by the production risk
+// gate. Pass --apply-risk (with --config) to evaluate the grid under the same
+// RiskConfig live trading would face; combos may then be throttled or halted.
+//
 // # Usage
 //
 //	muninn-calibrate \
@@ -21,7 +27,8 @@
 //
 // Strategies and their supported grid keys:
 //
-//	obi             — threshold, order_size
+//	obi             — threshold, order_size, stop_loss_pct, take_profit_pct,
+//	                  max_hold_ms, cooldown_ms, max_notional
 //	vpin            — threshold, order_size, cooldown_ms
 //	vwap_deviation  — threshold_pct, order_size
 //	ema_crossover   — fast_period, slow_period, order_size
@@ -67,7 +74,15 @@ func main() {
 		out          = flag.String("out", "", "Output CSV path (default: data/calibration/<strategy>-<unixsec>.csv)")
 		workers      = flag.Int("workers", 4, "Parallel goroutines")
 		initialCash  = flag.Float64("cash", 100_000, "Starting paper-trading cash")
-		walkForward  = flag.Int("walk-forward", 0,
+		applyRisk    = flag.Bool("apply-risk", false,
+			"Apply the production RiskConfig (from --config) during the sweep. "+
+				"DEFAULT false: the sweep runs risk-unconstrained (drawdown/daily-loss/"+
+				"position limits effectively disabled) so each combo exposes the raw "+
+				"strategy behaviour. Set true to see how the grid behaves once the "+
+				"production risk gate is applied — combos may then be throttled or halted.")
+		configPath = flag.String("config", "configs/default.yaml",
+			"YAML config supplying the production RiskConfig; only consulted when --apply-risk is set.")
+		walkForward = flag.Int("walk-forward", 0,
 			"Walk-forward fold count. 0 = single full-sample sweep (default). "+
 				"N≥1 splits events chronologically into N+1 equal windows; "+
 				"for each of N folds the grid is evaluated on the train prefix, "+
@@ -106,6 +121,26 @@ func main() {
 	}
 	slog.Info("Loaded events", "count", len(events), "path", *dataPath)
 
+	// Risk policy for the sweep. By default the sweep is risk-unconstrained
+	// (limits effectively disabled) so each combo exposes the strategy's raw
+	// behaviour; --apply-risk swaps in the production RiskConfig from --config
+	// so the grid is evaluated under the same gate live trading would face.
+	riskCfg := unconstrainedRiskConfig()
+	if *applyRisk {
+		cfg, cerr := config.Load(*configPath)
+		if cerr != nil {
+			slog.Error("Failed to load config for --apply-risk", "error", cerr, "path", *configPath)
+			os.Exit(1)
+		}
+		riskCfg = cfg.Risk
+		slog.Info("Applying production RiskConfig to sweep", "config", *configPath,
+			"max_drawdown_pct", riskCfg.MaxDrawdownPct,
+			"daily_loss_limit", riskCfg.DailyLossLimit,
+			"position_limit_hard", riskCfg.PositionLimitHard)
+	} else {
+		slog.Info("Sweep is risk-unconstrained (default); pass --apply-risk to apply production RiskConfig")
+	}
+
 	resultPath := *out
 	if resultPath == "" {
 		ts := time.Now().UTC().Unix()
@@ -118,7 +153,7 @@ func main() {
 	}
 
 	if *walkForward > 0 {
-		folds, err := runWalkForward(*strategyName, combos, events, *walkForward, *initialCash, *workers)
+		folds, err := runWalkForward(*strategyName, combos, events, *walkForward, *initialCash, *workers, riskCfg)
 		if err != nil {
 			slog.Error("Walk-forward failed", "error", err)
 			os.Exit(1)
@@ -127,13 +162,14 @@ func main() {
 			slog.Error("Failed to write walk-forward CSV", "error", err)
 			os.Exit(1)
 		}
+		printWalkForwardSummary(folds, len(combos))
 		slog.Info("Walk-forward calibration complete",
 			"folds", len(folds), "combos_per_fold", len(combos), "out", resultPath,
 		)
 		return
 	}
 
-	results := runSweep(*strategyName, combos, events, *initialCash, *workers)
+	results := runSweep(*strategyName, combos, events, *initialCash, *workers, riskCfg)
 	if err := writeCSV(resultPath, *strategyName, results); err != nil {
 		slog.Error("Failed to write CSV", "error", err)
 		os.Exit(1)
@@ -218,7 +254,7 @@ type result struct {
 	AvgHoldSec  float64
 }
 
-func runSweep(stratName string, combos []map[string]string, events []model.FeatureEvent, initialCash float64, workers int) []result {
+func runSweep(stratName string, combos []map[string]string, events []model.FeatureEvent, initialCash float64, workers int, riskCfg config.RiskConfig) []result {
 	if workers < 1 {
 		workers = 1
 	}
@@ -233,7 +269,7 @@ func runSweep(stratName string, combos []map[string]string, events []model.Featu
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			r, err := runOne(stratName, combo, events, initialCash)
+			r, err := runOne(stratName, combo, events, initialCash, riskCfg)
 			if err != nil {
 				slog.Warn("Combo failed", "combo", combo, "error", err)
 				results[i] = result{Params: combo}
@@ -247,21 +283,18 @@ func runSweep(stratName string, combos []map[string]string, events []model.Featu
 }
 
 // runOne runs a single parameter combination through the existing executor +
-// portfolio pipeline. No journal IO (paper-mode handles nil), permissive risk
-// (we want the strategy to expose its own behaviour, not be gated by the
-// sweep's risk config).
-func runOne(stratName string, params map[string]string, events []model.FeatureEvent, initialCash float64) (result, error) {
+// portfolio pipeline. No journal IO (paper-mode handles nil). The risk policy
+// is supplied by the caller: by default it is unconstrained (see
+// unconstrainedRiskConfig) so the strategy exposes its own behaviour, but
+// --apply-risk substitutes the production RiskConfig so the sweep is gated
+// exactly as live trading would be.
+func runOne(stratName string, params map[string]string, events []model.FeatureEvent, initialCash float64, riskCfg config.RiskConfig) (result, error) {
 	strategy, err := buildStrategy(stratName, params)
 	if err != nil {
 		return result{}, err
 	}
 
 	port := portfolio.New(initialCash)
-	riskCfg := config.RiskConfig{
-		MaxDrawdownPct:    0.99, // effectively disabled for the sweep
-		DailyLossLimit:    1e18, // disabled
-		PositionLimitHard: 1e18, // disabled
-	}
 	rm := risk.NewManager(riskCfg, initialCash)
 	exec := executor.New(strategy, port, nil, rm, executor.Config{
 		TransactionCostBps: 5,
@@ -295,6 +328,19 @@ func runOne(stratName string, params map[string]string, events []model.FeatureEv
 	}, nil
 }
 
+// unconstrainedRiskConfig is the default sweep risk policy: drawdown, daily
+// loss, and position limits are set so high they never trip. This is
+// deliberate — the default calibrate sweep is RISK-UNCONSTRAINED so each combo
+// reveals the strategy's raw behaviour rather than being clipped by the
+// production risk gate. Pass --apply-risk to swap in the production RiskConfig.
+func unconstrainedRiskConfig() config.RiskConfig {
+	return config.RiskConfig{
+		MaxDrawdownPct:    0.99, // effectively disabled for the sweep
+		DailyLossLimit:    1e18, // disabled
+		PositionLimitHard: 1e18, // disabled
+	}
+}
+
 func buildStrategy(name string, p map[string]string) (strategy.Strategy, error) {
 	switch name {
 	case "obi":
@@ -306,10 +352,41 @@ func buildStrategy(name string, p map[string]string) (strategy.Strategy, error) 
 		if err != nil {
 			return nil, err
 		}
-		if err := rejectUnknown(p, "threshold", "order_size"); err != nil {
+		// Exit/throttle grid keys (quant-12). Defaults equal the historical
+		// hardcoded values via DefaultOBIParams, so omitting them reproduces
+		// the pre-config sweep behaviour exactly.
+		def := strategy.DefaultOBIParams()
+		stopLoss, err := mustFloat(p, "stop_loss_pct", def.StopLossPct)
+		if err != nil {
 			return nil, err
 		}
-		return strategy.NewOBIThreshold(th, size, size*10), nil
+		takeProfit, err := mustFloat(p, "take_profit_pct", def.TakeProfitPct)
+		if err != nil {
+			return nil, err
+		}
+		holdMs, err := mustInt(p, "max_hold_ms", int(def.MaxHoldTime/time.Millisecond))
+		if err != nil {
+			return nil, err
+		}
+		cooldownMs, err := mustInt(p, "cooldown_ms", int(def.Cooldown/time.Millisecond))
+		if err != nil {
+			return nil, err
+		}
+		maxNotional, err := mustFloat(p, "max_notional", def.MaxNotional)
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectUnknown(p, "threshold", "order_size",
+			"stop_loss_pct", "take_profit_pct", "max_hold_ms", "cooldown_ms", "max_notional"); err != nil {
+			return nil, err
+		}
+		return strategy.NewOBIThresholdWithParams(th, size, size*10, strategy.OBIParams{
+			StopLossPct:   stopLoss,
+			TakeProfitPct: takeProfit,
+			MaxHoldTime:   time.Duration(holdMs) * time.Millisecond,
+			Cooldown:      time.Duration(cooldownMs) * time.Millisecond,
+			MaxNotional:   maxNotional,
+		}), nil
 
 	case "vpin":
 		th, err := mustFloat(p, "threshold", 0.5)
@@ -430,7 +507,7 @@ type foldResult struct {
 //
 // This is the canonical guard against in-sample overfit: parameter choice
 // happens on train, evaluation happens on never-before-seen test data.
-func runWalkForward(stratName string, combos []map[string]string, events []model.FeatureEvent, windows int, initialCash float64, workers int) ([]foldResult, error) {
+func runWalkForward(stratName string, combos []map[string]string, events []model.FeatureEvent, windows int, initialCash float64, workers int, riskCfg config.RiskConfig) ([]foldResult, error) {
 	n := len(events)
 	if windows < 1 {
 		return nil, fmt.Errorf("--walk-forward must be ≥ 1, got %d", windows)
@@ -455,13 +532,13 @@ func runWalkForward(stratName string, combos []map[string]string, events []model
 			"fold", k, "train_events", len(train), "test_events", len(test),
 		)
 
-		trainResults := runSweep(stratName, combos, train, initialCash, workers)
+		trainResults := runSweep(stratName, combos, train, initialCash, workers, riskCfg)
 		best, err := pickBestSharpe(trainResults)
 		if err != nil {
 			return nil, fmt.Errorf("fold %d: %w", k, err)
 		}
 
-		testR, err := runOne(stratName, best.Params, test, initialCash)
+		testR, err := runOne(stratName, best.Params, test, initialCash, riskCfg)
 		if err != nil {
 			return nil, fmt.Errorf("fold %d test eval: %w", k, err)
 		}
@@ -506,6 +583,96 @@ func pickBestSharpe(rs []result) (result, error) {
 	return rs[bestIdx], nil
 }
 
+// sharpeDecayRatio is OOS Sharpe / IS Sharpe — the fraction of in-sample edge
+// that survived out of sample. ~1.0 means the edge held; <<1 (or negative)
+// signals overfit. Returns NaN when the IS Sharpe is non-positive (the ratio is
+// undefined: there was no in-sample edge to decay from).
+func sharpeDecayRatio(isSharpe, oosSharpe float64) float64 {
+	if isSharpe <= 0 {
+		return math.NaN()
+	}
+	return oosSharpe / isSharpe
+}
+
+func meanStd(xs []float64) (mean, std float64) {
+	if len(xs) == 0 {
+		return 0, 0
+	}
+	var sum float64
+	for _, x := range xs {
+		sum += x
+	}
+	mean = sum / float64(len(xs))
+	var variance float64
+	for _, x := range xs {
+		variance += (x - mean) * (x - mean)
+	}
+	std = math.Sqrt(variance / float64(len(xs)))
+	return mean, std
+}
+
+// printWalkForwardSummary emits a confidence-aware walk-forward summary to
+// stdout. It deliberately does NOT collapse the run into a binary PASS/FAIL:
+// with numCombos parameter combinations searched per fold, the best in-sample
+// Sharpe is subject to multiple-testing selection bias, so the honest output is
+// the IS→OOS decay per fold plus the distribution of OOS metrics across folds,
+// leaving the judgement call to the reader.
+func printWalkForwardSummary(folds []foldResult, numCombos int) {
+	if len(folds) == 0 {
+		return
+	}
+
+	oosSharpes := make([]float64, 0, len(folds))
+	oosPnLs := make([]float64, 0, len(folds))
+	for _, f := range folds {
+		oosSharpes = append(oosSharpes, f.TestSharpe)
+		oosPnLs = append(oosPnLs, f.TestPnL)
+	}
+	meanOOS, stdOOS := meanStd(oosSharpes)
+	meanPnL, stdPnL := meanStd(oosPnLs)
+
+	fmt.Println("\n═══ Walk-Forward Summary ═══")
+	fmt.Printf("Folds:            %d\n", len(folds))
+	fmt.Printf("Combos/fold:      %d  (best-of-%d selected in-sample → multiple-testing bias)\n",
+		numCombos, numCombos)
+	fmt.Println("─── Per-fold IS→OOS Sharpe decay ───")
+	for _, f := range folds {
+		decay := sharpeDecayRatio(f.TrainSharpe, f.TestSharpe)
+		decayStr := "n/a (IS≤0)"
+		if !math.IsNaN(decay) {
+			decayStr = fmt.Sprintf("%.2f", decay)
+		}
+		fmt.Printf("  Fold %d: IS Sharpe %+.4f  OOS Sharpe %+.4f  decay %s\n",
+			f.Idx, f.TrainSharpe, f.TestSharpe, decayStr)
+	}
+	fmt.Println("─── OOS distribution across folds ───")
+	fmt.Printf("OOS Sharpe:  mean %+.4f  std %.4f\n", meanOOS, stdOOS)
+	fmt.Printf("OOS PnL:     mean %+.4f  std %.4f\n", meanPnL, stdPnL)
+
+	// Confidence-aware read: how many folds held a positive OOS Sharpe, and
+	// whether the mean OOS Sharpe clears its own cross-fold dispersion (a rough
+	// signal-to-noise check). No verdict — context for the reader.
+	positive := 0
+	for _, s := range oosSharpes {
+		if s > 0 {
+			positive++
+		}
+	}
+	snr := math.NaN()
+	if stdOOS > 0 {
+		snr = meanOOS / stdOOS
+	}
+	fmt.Println("─── Confidence ───")
+	fmt.Printf("OOS folds with positive Sharpe: %d/%d\n", positive, len(folds))
+	if math.IsNaN(snr) {
+		fmt.Println("Mean/std (OOS Sharpe SNR):      n/a (zero cross-fold dispersion)")
+	} else {
+		fmt.Printf("Mean/std (OOS Sharpe SNR):      %+.2f  (higher = more consistent edge)\n", snr)
+	}
+	fmt.Printf("Reminder: %d combos searched/fold — treat the best as upward-biased.\n", numCombos)
+	fmt.Println("════════════════════════════")
+}
+
 func writeWalkForwardCSV(path, stratName string, folds []foldResult) error {
 	// Stable header: union of param keys across all folds.
 	keySet := map[string]struct{}{}
@@ -532,7 +699,7 @@ func writeWalkForwardCSV(path, stratName string, folds []foldResult) error {
 	header := []string{"strategy", "fold"}
 	header = append(header, keys...)
 	header = append(header,
-		"train_sharpe", "test_sharpe", "test_max_drawdown",
+		"train_sharpe", "test_sharpe", "sharpe_decay_ratio", "test_max_drawdown",
 		"test_fills", "test_realized_pnl",
 		"test_hit_rate", "test_turnover", "test_avg_hold_seconds",
 	)
@@ -548,6 +715,7 @@ func writeWalkForwardCSV(path, stratName string, folds []foldResult) error {
 		row = append(row,
 			strconv.FormatFloat(fold.TrainSharpe, 'f', 4, 64),
 			strconv.FormatFloat(fold.TestSharpe, 'f', 4, 64),
+			strconv.FormatFloat(sharpeDecayRatio(fold.TrainSharpe, fold.TestSharpe), 'f', 4, 64),
 			strconv.FormatFloat(fold.TestMDD, 'f', 6, 64),
 			strconv.Itoa(fold.TestFills),
 			strconv.FormatFloat(fold.TestPnL, 'f', 4, 64),

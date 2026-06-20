@@ -7,16 +7,56 @@ import (
 	"github.com/lgreene03/huginn/internal/model"
 )
 
-// CalculateSharpeRatio computes the annualized Sharpe ratio from a series of equity curve points.
+// CryptoPeriodsPerYear is the default annualization cadence for this engine.
+//
+// Equity is sampled once per calendar day from a 24/7 crypto market — there are
+// no weekends or exchange holidays, so a year contains 365 return periods, not
+// the 252 trading days used for traditional equities. Using 252 here would
+// understate the annualized volatility (and inflate Sharpe) by sqrt(365/252).
+//
+// TODO(quant-1): confirm odin.py uses the same 365 convention; if it annualizes
+// with 252 (or a different cadence) the two systems' Sharpe figures are not
+// directly comparable. odin is owned by another agent — coordinate before
+// changing this default.
+const CryptoPeriodsPerYear = 365.0
+
+// CalculateSharpeRatio computes the annualized Sharpe ratio from a series of
+// per-day equity-curve points, using the crypto sampling cadence (365
+// periods/year). For a non-default cadence, call CalculateSharpeRatioWithPeriods.
 func CalculateSharpeRatio(equity []float64, riskFreeRate float64) float64 {
+	return CalculateSharpeRatioWithPeriods(equity, riskFreeRate, CryptoPeriodsPerYear)
+}
+
+// CalculateSharpeRatioWithPeriods computes the annualized Sharpe ratio from a
+// series of equity-curve points, annualizing by an explicit periodsPerYear that
+// must match the sampling cadence of the equity series (e.g. 365 for once-daily
+// samples of a 24/7 crypto market, 252 for once-per-trading-day equities).
+//
+// The annualization factor is applied as: annualized return = mean * periodsPerYear,
+// annualized stddev = stddev * sqrt(periodsPerYear).
+func CalculateSharpeRatioWithPeriods(equity []float64, riskFreeRate, periodsPerYear float64) float64 {
 	if len(equity) < 2 {
+		return 0.0
+	}
+	if periodsPerYear <= 0 {
 		return 0.0
 	}
 
 	var returns []float64
 	for i := 1; i < len(equity); i++ {
-		ret := (equity[i] - equity[i-1]) / equity[i-1]
+		prev := equity[i-1]
+		// Guard the denominator: returns mix realized P&L jumps with
+		// mark-to-market, so a prior equity of zero or negative would yield
+		// Inf/NaN. Skip those steps rather than poison the whole series.
+		if prev <= 0 {
+			continue
+		}
+		ret := (equity[i] - prev) / prev
 		returns = append(returns, ret)
+	}
+
+	if len(returns) == 0 {
+		return 0.0
 	}
 
 	var sum float64
@@ -35,9 +75,8 @@ func CalculateSharpeRatio(equity []float64, riskFreeRate float64) float64 {
 		return 0.0
 	}
 
-	// Assuming daily returns, annualized factor is sqrt(252)
-	annualizedReturn := mean * 252
-	annualizedStdDev := stdDev * math.Sqrt(252)
+	annualizedReturn := mean * periodsPerYear
+	annualizedStdDev := stdDev * math.Sqrt(periodsPerYear)
 
 	return (annualizedReturn - riskFreeRate) / annualizedStdDev
 }

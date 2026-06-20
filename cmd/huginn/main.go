@@ -196,11 +196,23 @@ func main() {
 		producer = kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.IntentsTopic)
 	}
 
+	// Resolve the opt-in sizing mode (default fixed = keep strategy OrderSize).
+	sizingMode, ok := strategy.ParseSizingMode(cfg.Executor.SizingMode)
+	if !ok {
+		slog.Warn("Unknown executor.sizing_mode; falling back to fixed OrderSize", "value", cfg.Executor.SizingMode)
+	}
+
 	// Initialize executor
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
-		TransactionCostBps: cfg.Executor.TransactionCostBps,
-		SlippageBps:        cfg.Executor.SlippageBps,
-		FillLatencyMs:      cfg.Executor.FillLatencyMs,
+		TransactionCostBps:        cfg.Executor.TransactionCostBps,
+		SlippageBps:               cfg.Executor.SlippageBps,
+		SlippageImpactK:           cfg.Executor.SlippageImpactK,
+		SlippageImpactScale:       cfg.Executor.SlippageImpactScale,
+		FillLatencyMs:             cfg.Executor.FillLatencyMs,
+		Sizing:                    sizingMode,
+		SizingKellyFraction:       cfg.Executor.SizingKellyFraction,
+		SizingVolTarget:           cfg.Executor.SizingVolTarget,
+		SizingMaxNotionalFraction: cfg.Executor.SizingMaxNotionalFraction,
 	}, cfg.LiveExecution, producer, strategyKey)
 
 	// Initialize Kafka consumer for incoming feature events

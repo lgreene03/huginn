@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,6 +14,7 @@ import (
 	"github.com/lgreene03/huginn/internal/executor"
 	"github.com/lgreene03/huginn/internal/journal"
 	"github.com/lgreene03/huginn/internal/metrics"
+	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/strategy"
@@ -71,9 +74,11 @@ func main() {
 
 	// Initialize executor
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
-		TransactionCostBps: cfg.Executor.TransactionCostBps,
-		SlippageBps:        cfg.Executor.SlippageBps,
-		FillLatencyMs:      cfg.Executor.FillLatencyMs,
+		TransactionCostBps:  cfg.Executor.TransactionCostBps,
+		SlippageBps:         cfg.Executor.SlippageBps,
+		SlippageImpactK:     cfg.Executor.SlippageImpactK,
+		SlippageImpactScale: cfg.Executor.SlippageImpactScale,
+		FillLatencyMs:       cfg.Executor.FillLatencyMs,
 	}, false, nil, "") // empty key — backtest doesn't persist strategy state
 
 	// Initialize and run backtest engine
@@ -99,6 +104,23 @@ func main() {
 	turnover := metrics.Turnover(fills)
 	avgHold := metrics.AvgHoldTimeSeconds(fills)
 
+	// Buy-and-hold benchmark over the same window. Re-load the event stream
+	// (cheap second pass) so we can mark an equal-notional basket of every
+	// priceable instrument to market and compare the strategy against simply
+	// buying and holding. A load failure must not fail the backtest itself, so
+	// we degrade to "no benchmark" on error.
+	strategyReturn := backtest.StrategyTotalReturn(snap.TotalValue, cfg.Capital.InitialCash)
+	var bench backtest.Benchmark
+	var benchValid bool
+	if benchEvents, berr := loadEvents(*dataPath); berr != nil {
+		slog.Warn("Could not load events for buy-and-hold benchmark", "error", berr)
+	} else {
+		bench = backtest.BenchmarkBuyHold(benchEvents, cfg.Capital.InitialCash)
+		benchValid = bench.Instruments > 0
+	}
+	excess := strategyReturn - bench.TotalReturn
+	infoRatio := backtest.InformationRatio(equity, bench)
+
 	// Print terminal summary
 	fmt.Println("\n═══ Backtest Summary ═══")
 	fmt.Printf("Strategy:        %s\n", activeStrategy.Name())
@@ -111,6 +133,15 @@ func main() {
 	fmt.Printf("Hit Rate:        %.1f%%\n", hitRate*100)
 	fmt.Printf("Turnover:        %.2fx\n", turnover)
 	fmt.Printf("Avg Hold:        %.0fs\n", avgHold)
+	fmt.Println("─── vs Buy-and-Hold ───")
+	if benchValid {
+		fmt.Printf("Strategy Return: %+.2f%%\n", strategyReturn*100)
+		fmt.Printf("Buy-Hold Return: %+.2f%%  (%d instrument(s))\n", bench.TotalReturn*100, bench.Instruments)
+		fmt.Printf("Excess Return:   %+.2f%%\n", excess*100)
+		fmt.Printf("Info Ratio:      %.4f\n", infoRatio)
+	} else {
+		fmt.Println("Buy-Hold Return: n/a (no priceable instruments in stream)")
+	}
 	fmt.Println("════════════════════════")
 
 	// Optionally generate an HTML report.
@@ -131,6 +162,13 @@ func main() {
 			Equity:      equity,
 			Fills:       fills,
 			GeneratedAt: time.Now().UTC(),
+
+			BenchmarkValid:       benchValid,
+			BenchmarkInstruments: bench.Instruments,
+			StrategyTotalReturn:  strategyReturn,
+			BenchmarkTotalReturn: bench.TotalReturn,
+			ExcessReturn:         excess,
+			InformationRatio:     infoRatio,
 		}
 		if err := backtest.GenerateHTMLReport(params, *reportPath); err != nil {
 			slog.Error("Failed to write HTML report", "error", err)
@@ -138,4 +176,28 @@ func main() {
 		}
 		fmt.Printf("Report written to %s\n", *reportPath)
 	}
+}
+
+// loadEvents reads a FeatureEvent JSONL file into memory for the buy-and-hold
+// benchmark pass. Malformed lines are skipped (matching the engine's lenient
+// replay), so a single bad row never aborts the benchmark.
+func loadEvents(path string) ([]model.FeatureEvent, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	var events []model.FeatureEvent
+	scanner := bufio.NewScanner(f)
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+	for scanner.Scan() {
+		var ev model.FeatureEvent
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	return events, scanner.Err()
 }

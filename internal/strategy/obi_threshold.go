@@ -60,18 +60,81 @@ type positionEntry struct {
 	Side       model.Side
 }
 
+// Default OBI risk-management parameters. These are the historical hardcoded
+// values; DefaultOBIParams() reproduces them so the 3-arg NewOBIThreshold
+// constructor (and any caller that doesn't override) behaves identically to
+// before this became configurable.
+const (
+	defaultOBIStopLossPct   = 0.005
+	defaultOBITakeProfitPct = 0.003
+	defaultOBIMaxHoldTime   = 30 * time.Minute
+	defaultOBICooldown      = 60 * time.Second
+	defaultOBIMaxNotional   = 500.0 // $500 max total notional exposure across all instruments
+)
+
+// OBIParams bundles the exit/throttle parameters that used to be hardcoded in
+// the constructor. Promote-to-config (quant-12): these are now overridable via
+// NewOBIThresholdWithParams and swept as calibrate grid keys. A zero-value
+// OBIParams is NOT valid — always start from DefaultOBIParams() and override
+// the fields you want, so unspecified fields keep today's defaults.
+type OBIParams struct {
+	StopLossPct   float64
+	TakeProfitPct float64
+	MaxHoldTime   time.Duration
+	Cooldown      time.Duration
+	MaxNotional   float64
+}
+
+// DefaultOBIParams returns the historical hardcoded exit/throttle parameters.
+// Using these yields behaviour identical to the pre-config OBIThreshold.
+func DefaultOBIParams() OBIParams {
+	return OBIParams{
+		StopLossPct:   defaultOBIStopLossPct,
+		TakeProfitPct: defaultOBITakeProfitPct,
+		MaxHoldTime:   defaultOBIMaxHoldTime,
+		Cooldown:      defaultOBICooldown,
+		MaxNotional:   defaultOBIMaxNotional,
+	}
+}
+
+// NewOBIThreshold constructs an OBIThreshold with the default exit/throttle
+// parameters (DefaultOBIParams). Kept as the back-compat constructor; callers
+// wanting to tune stop-loss / take-profit / hold-time / cooldown / max-notional
+// should use NewOBIThresholdWithParams.
 func NewOBIThreshold(threshold, orderSize, maxPosition float64) *OBIThreshold {
+	return NewOBIThresholdWithParams(threshold, orderSize, maxPosition, DefaultOBIParams())
+}
+
+// NewOBIThresholdWithParams constructs an OBIThreshold with explicit
+// exit/throttle parameters. Any field left at its zero value in p falls back to
+// the corresponding default, so partial overrides are safe.
+func NewOBIThresholdWithParams(threshold, orderSize, maxPosition float64, p OBIParams) *OBIThreshold {
+	if p.StopLossPct <= 0 {
+		p.StopLossPct = defaultOBIStopLossPct
+	}
+	if p.TakeProfitPct <= 0 {
+		p.TakeProfitPct = defaultOBITakeProfitPct
+	}
+	if p.MaxHoldTime <= 0 {
+		p.MaxHoldTime = defaultOBIMaxHoldTime
+	}
+	if p.Cooldown <= 0 {
+		p.Cooldown = defaultOBICooldown
+	}
+	if p.MaxNotional <= 0 {
+		p.MaxNotional = defaultOBIMaxNotional
+	}
 	return &OBIThreshold{
 		Threshold:     threshold,
 		OrderSize:     orderSize,
 		maxPosition:   maxPosition,
-		maxNotional:   500.0, // $500 max total notional exposure across all instruments
+		maxNotional:   p.MaxNotional,
 		positions:     make(map[string]*positionEntry),
 		lastTradeTime: make(map[string]time.Time),
-		stopLossPct:   0.005,
-		takeProfitPct: 0.003,
-		maxHoldTime:   30 * time.Minute,
-		cooldown:      60 * time.Second,
+		stopLossPct:   p.StopLossPct,
+		takeProfitPct: p.TakeProfitPct,
+		maxHoldTime:   p.MaxHoldTime,
+		cooldown:      p.Cooldown,
 	}
 }
 
@@ -488,6 +551,15 @@ func (s *OBIThreshold) RestoreState(data []byte) error {
 // using the Kelly criterion: f* = (bp - q) / b
 // where b = win/loss ratio, p = win rate, q = 1 - p.
 // Returns half-Kelly (f*/2) for safety, clamped to [0, 0.25].
+//
+// quant-4 / quant-11 status: this is no longer dead code. The fraction it
+// returns feeds the OPT-IN Kelly sizing mode (strategy.SizingKelly, wired in
+// executor.applySizing) — pass it as Config.SizingKellyFraction. It remains a
+// pure stateless helper: huginn does NOT yet track live win-rate / avg-win /
+// avg-loss, so the fraction is supplied statically from offline stats. There is
+// deliberately no VaR/CVaR throttle in huginn — quant-11's lighter non-breaking
+// option was chosen, so VaR/CVaR are simply not implemented (nothing here is a
+// silent observability-only stub), and Kelly is exercised via the sizing mode.
 func KellyFraction(winRate, avgWin, avgLoss float64) float64 {
 	if avgLoss <= 0 || winRate <= 0 || winRate >= 1 {
 		return 0

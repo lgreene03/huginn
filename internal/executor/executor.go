@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -29,13 +30,71 @@ type Config struct {
 	// TransactionCostBps is the simulated fee in basis points per fill.
 	TransactionCostBps float64
 
-	// SlippageBps is the simulated slippage in basis points per fill.
+	// SlippageBps is the simulated slippage in basis points per fill. This is
+	// the base (size-independent) component of the slippage model.
 	SlippageBps float64
+
+	// SlippageImpactK is the coefficient of the optional square-root market
+	// impact term. The effective slippage in bps is:
+	//
+	//	effective_slip_bps = SlippageBps + SlippageImpactK * sqrt(qty / SlippageImpactScale)
+	//
+	// Zero (default) disables the impact term entirely, so the model collapses
+	// to the original flat-constant SlippageBps behaviour. Positive values make
+	// slippage grow with order size, modelling the price impact of consuming
+	// successively worse levels of the book. Exposed in config so calibrate can
+	// sweep it.
+	SlippageImpactK float64
+
+	// SlippageImpactScale normalises order quantity inside the square-root
+	// impact term (the order size at which the impact term contributes exactly
+	// SlippageImpactK bps). Only consulted when SlippageImpactK > 0. Must be
+	// > 0 when the impact term is active; a non-positive value falls back to 1.0.
+	SlippageImpactScale float64
 
 	// FillLatencyMs defers the fill timestamp by this many milliseconds in
 	// paper-trading mode. Zero (default) uses the raw event timestamp.
 	// Positive values model realistic signal-to-fill delays in backtests.
 	FillLatencyMs int64
+
+	// Sizing is the OPT-IN equity-aware position-sizing mode (quant-4). The
+	// zero value (strategy.SizingFixed) preserves the historical behaviour —
+	// every order ships at the strategy's own OrderSize, unchanged. The kelly /
+	// inverse-vol modes rescale each emitted order's quantity from account
+	// equity *after* the strategy returns it, so strategies stay untouched.
+	Sizing strategy.SizingMode
+
+	// SizingKellyFraction is the Kelly fraction of equity to allocate when
+	// Sizing == SizingKelly. Static here (no live win-rate tracking yet); a
+	// caller can derive it via strategy.KellyFraction(winRate, avgWin, avgLoss)
+	// from offline stats. Zero falls back to the strategy's OrderSize.
+	SizingKellyFraction float64
+
+	// SizingVolTarget is the per-position volatility budget for inverse-vol
+	// sizing (target_notional = VolTarget/volatility * equity). Only consulted
+	// when Sizing == SizingInverseVol and the event carries a volatility
+	// feature. Zero disables the mode (falls back to OrderSize).
+	SizingVolTarget float64
+
+	// SizingMaxNotionalFraction caps any sized order at this fraction of equity
+	// (e.g. 0.25 = never above 25% of equity in one order). Zero disables the cap.
+	SizingMaxNotionalFraction float64
+}
+
+// effectiveSlippageBps returns the slippage in basis points for an order of the
+// given quantity. With SlippageImpactK == 0 (the default) this is exactly the
+// flat config.SlippageBps — preserving the original constant-slippage model.
+// With a positive impact coefficient it adds a square-root market-impact term
+// k*sqrt(qty/scale), so larger orders incur more slippage.
+func (c Config) effectiveSlippageBps(qty float64) float64 {
+	if c.SlippageImpactK <= 0 {
+		return c.SlippageBps
+	}
+	scale := c.SlippageImpactScale
+	if scale <= 0 {
+		scale = 1.0
+	}
+	return c.SlippageBps + c.SlippageImpactK*math.Sqrt(math.Abs(qty)/scale)
 }
 
 // Executor receives feature events, delegates to a strategy, simulates fills,
@@ -189,12 +248,19 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 	}
 
 	// Notify the risk manager that a fresh event arrived — feeds the
-	// staleness watchdog and the auto-resume-from-staleness path.
+	// staleness watchdog and the auto-resume-from-staleness path. The market
+	// volatility feature (when present) drives the vol-scaled position limit
+	// (quant-14); absent it, the manager falls back to fill-price dispersion.
 	if e.riskManager != nil {
-		e.riskManager.OnFeatureSeen(event.EventTime)
+		e.riskManager.OnFeatureSeen(event.EventTime, event.Values["volatility"])
 	}
 
 	orders := e.strategy.OnFeature(event)
+
+	// Opt-in equity-aware sizing (quant-4). Default SizingFixed is a no-op, so
+	// orders keep the strategy's own OrderSize unless a sizing mode is configured.
+	e.applySizing(orders, event)
+
 	for _, order := range orders {
 		metrics.OrdersGeneratedTotal.WithLabelValues(e.strategy.Name(), order.Side.String()).Inc()
 	}
@@ -352,12 +418,47 @@ func (e *Executor) OnExecutionFill(ctx context.Context, fill model.Fill) {
 	metrics.PortfolioTotalValue.Set(snap.TotalValue)
 }
 
+// applySizing rescales each order's quantity in place according to the
+// configured sizing mode (quant-4). With Config.Sizing == strategy.SizingFixed
+// (the default) it is a no-op, so the strategy's own OrderSize is preserved.
+//
+// Equity comes from the live portfolio snapshot; the reference price is the
+// order's limit price when set, else the event's estimated price. Any
+// degenerate input makes SizeOrder fall back to the original quantity, so this
+// can never zero out or invert an order.
+func (e *Executor) applySizing(orders []model.Order, event model.FeatureEvent) {
+	if e.config.Sizing == strategy.SizingFixed || len(orders) == 0 {
+		return
+	}
+	equity := e.portfolio.Snapshot().TotalValue
+	vol := event.Values["volatility"]
+	for i := range orders {
+		price := orders[i].LimitPrice
+		if price <= 0 {
+			price = e.estimatePrice(event)
+		}
+		newQty := strategy.SizeOrder(e.config.Sizing, strategy.SizingParams{
+			BaseQty:             orders[i].Quantity,
+			Equity:              equity,
+			Price:               price,
+			Volatility:          vol,
+			KellyFraction:       e.config.SizingKellyFraction,
+			VolTarget:           e.config.SizingVolTarget,
+			MaxNotionalFraction: e.config.SizingMaxNotionalFraction,
+		})
+		orders[i].Quantity = newQty
+	}
+}
+
 // simulateFill models execution with configurable slippage, transaction costs,
 // an optional order-book-aware fill price, and an optional latency offset.
 func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) model.Fill {
 	e.fillCount++
 
-	slippageMultiplier := e.config.SlippageBps / 10_000.0
+	// Size-dependent slippage: base bps plus an optional square-root market
+	// impact term (disabled by default; see Config.effectiveSlippageBps).
+	effectiveSlipBps := e.config.effectiveSlippageBps(order.Quantity)
+	slippageMultiplier := effectiveSlipBps / 10_000.0
 
 	// Order-book-aware pricing: when the feature event carries bid/ask from
 	// features.book.v1, fill buys at the ask touch and sells at the bid touch.
@@ -394,7 +495,7 @@ func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) mod
 		Quantity:        order.Quantity,
 		FillPrice:       fillPrice,
 		TransactionCost: txCost,
-		SlippageBps:     e.config.SlippageBps,
+		SlippageBps:     effectiveSlipBps,
 		Timestamp:       fillTime,
 	}
 }

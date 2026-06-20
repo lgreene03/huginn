@@ -46,6 +46,14 @@ nav:
       - Calibration Workflow: calibration.md
   - Risk Model: risk-model.md
   - Operations Runbook: OPERATIONS.md
+  - Architecture Decisions:
+      - Overview: adr/0001-record-architecture-decisions.md
+      - 0002 Pluggable strategy interface: adr/0002-pluggable-strategy-interface.md
+      - 0003 Dual-mode executor: adr/0003-dual-mode-paper-live-executor.md
+      - 0004 Pre-trade risk & kill switch: adr/0004-pre-trade-risk-model-and-kill-switch.md
+      - 0005 Multi-topic fan-in: adr/0005-single-goroutine-dispatch-multi-topic-fanin.md
+      - 0006 Dynamic-proto gRPC: adr/0006-dynamic-proto-grpc-without-protoc.md
+      - 0007 Walk-forward workflow: adr/0007-walk-forward-calibration-workflow.md
   - Roadmap: ROADMAP.md
 
 extra:

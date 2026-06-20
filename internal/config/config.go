@@ -56,10 +56,36 @@ type StrategyConfig struct {
 type ExecutorConfig struct {
 	TransactionCostBps float64 `yaml:"transaction_cost_bps" envconfig:"EXECUTOR_TX_COST_BPS"`
 	SlippageBps        float64 `yaml:"slippage_bps" envconfig:"EXECUTOR_SLIPPAGE_BPS"`
+
+	// SlippageImpactK is the coefficient of an optional square-root market
+	// impact term added on top of SlippageBps:
+	//   effective_slip_bps = SlippageBps + SlippageImpactK*sqrt(qty/SlippageImpactScale)
+	// Zero (default) keeps the original flat-constant slippage behaviour.
+	SlippageImpactK float64 `yaml:"slippage_impact_k" envconfig:"EXECUTOR_SLIPPAGE_IMPACT_K"`
+	// SlippageImpactScale normalises order quantity in the impact term (the
+	// quantity at which the term contributes exactly SlippageImpactK bps).
+	// Only used when SlippageImpactK > 0; non-positive falls back to 1.0.
+	SlippageImpactScale float64 `yaml:"slippage_impact_scale" envconfig:"EXECUTOR_SLIPPAGE_IMPACT_SCALE"`
+
 	// FillLatencyMs defers the fill timestamp by this many milliseconds in
 	// paper-trading mode. Zero (default) uses the raw event timestamp.
 	// Positive values model realistic signal-to-fill delays in backtests.
 	FillLatencyMs int64 `yaml:"fill_latency_ms" envconfig:"EXECUTOR_FILL_LATENCY_MS"`
+
+	// SizingMode selects the OPT-IN equity-aware position-sizing rule (quant-4):
+	// "fixed" (default — keep the strategy's OrderSize), "kelly", or
+	// "inverse_vol". Any other / empty value is treated as "fixed".
+	SizingMode string `yaml:"sizing_mode" envconfig:"EXECUTOR_SIZING_MODE"`
+	// SizingKellyFraction is the Kelly fraction of equity per order when
+	// SizingMode == "kelly" (e.g. from strategy.KellyFraction offline). Zero
+	// falls back to the strategy's OrderSize.
+	SizingKellyFraction float64 `yaml:"sizing_kelly_fraction" envconfig:"EXECUTOR_SIZING_KELLY_FRACTION"`
+	// SizingVolTarget is the per-position volatility budget for inverse-vol
+	// sizing. Zero disables that mode (falls back to OrderSize).
+	SizingVolTarget float64 `yaml:"sizing_vol_target" envconfig:"EXECUTOR_SIZING_VOL_TARGET"`
+	// SizingMaxNotionalFraction caps any sized order at this fraction of equity.
+	// Zero disables the cap.
+	SizingMaxNotionalFraction float64 `yaml:"sizing_max_notional_fraction" envconfig:"EXECUTOR_SIZING_MAX_NOTIONAL_FRACTION"`
 }
 
 type ServerConfig struct {

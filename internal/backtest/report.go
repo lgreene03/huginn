@@ -28,6 +28,16 @@ type ReportParams struct {
 	Equity      []float64
 	Fills       []model.Fill
 	GeneratedAt time.Time
+
+	// Buy-and-hold benchmark over the same window. BenchmarkValid is false
+	// when no instrument in the stream was priceable (nothing to hold), in
+	// which case the benchmark section is omitted from the report.
+	BenchmarkValid       bool
+	BenchmarkInstruments int
+	StrategyTotalReturn  float64 // fractional, e.g. 0.05 = +5%
+	BenchmarkTotalReturn float64 // fractional
+	ExcessReturn         float64 // strategy − benchmark, fractional
+	InformationRatio     float64 // mean active return / stddev of active return
 }
 
 // GenerateHTMLReport writes a self-contained HTML report to outputPath.
@@ -244,6 +254,18 @@ tr:hover td{background:#141414}
   <div class="stat"><div class="stat-label">Avg Hold</div><div class="stat-value">{{fmtDuration .AvgHoldSec}}</div></div>
 </div>
 </section>
+
+{{if .BenchmarkValid}}
+<section>
+<h2>Buy-and-Hold Benchmark ({{.BenchmarkInstruments}} instrument{{if gt .BenchmarkInstruments 1}}s{{end}})</h2>
+<div class="stats-grid">
+  <div class="stat"><div class="stat-label">Strategy Return</div><div class="stat-value {{if ge .StrategyTotalReturn 0.0}}pos{{else}}neg{{end}}">{{printf "%+.2f" (mulF .StrategyTotalReturn 100.0)}}%</div></div>
+  <div class="stat"><div class="stat-label">Buy &amp; Hold Return</div><div class="stat-value {{if ge .BenchmarkTotalReturn 0.0}}pos{{else}}neg{{end}}">{{printf "%+.2f" (mulF .BenchmarkTotalReturn 100.0)}}%</div></div>
+  <div class="stat"><div class="stat-label">Excess Return</div><div class="stat-value {{if ge .ExcessReturn 0.0}}pos{{else}}neg{{end}}">{{printf "%+.2f" (mulF .ExcessReturn 100.0)}}%</div></div>
+  <div class="stat"><div class="stat-label">Information Ratio</div><div class="stat-value {{if ge .InformationRatio 0.0}}pos{{else}}neg{{end}}">{{printf "%.4f" .InformationRatio}}</div></div>
+</div>
+</section>
+{{end}}
 
 <section>
 <h2>Equity Curve ({{len .Equity}} daily samples)</h2>

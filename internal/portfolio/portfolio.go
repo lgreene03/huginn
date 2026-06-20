@@ -66,10 +66,18 @@ func (p *Portfolio) ApplyFill(fill model.Fill) {
 
 	cost := fill.FillPrice * fill.Quantity
 
+	// executedCost / executedSlippage track the portion of the fill that
+	// actually applied. For a buy that is the whole fill; for a sell that has
+	// been clipped to available inventory (long-only), it is the scaled share.
+	executedCost := fill.TransactionCost
+	executedSlippage := fill.SlippageBps
+
 	switch fill.Side {
 	case model.Buy:
-		// Update average cost
-		totalCost := pos.AverageCost*pos.Quantity + cost
+		// Cost basis is held INCLUSIVE of the buy-side transaction cost, so
+		// realized PnL on a later sell is automatically net of the entry fee
+		// (quant-5). AverageCost therefore represents the all-in per-unit cost.
+		totalCost := pos.AverageCost*pos.Quantity + cost + fill.TransactionCost
 		pos.Quantity += fill.Quantity
 		if pos.Quantity > 0 {
 			pos.AverageCost = totalCost / pos.Quantity
@@ -77,14 +85,40 @@ func (p *Portfolio) ApplyFill(fill model.Fill) {
 		p.cash -= cost + fill.TransactionCost
 
 	case model.Sell:
-		if pos.Quantity > 0 {
-			realized := (fill.FillPrice - pos.AverageCost) * fill.Quantity
+		// Long-only invariant (quant-6): never realize PnL on quantity we do
+		// not hold and never drive the position negative (no shorting in this
+		// spot sim). Clip an over-sell to available inventory and warn.
+		sellQty := fill.Quantity
+		if sellQty > pos.Quantity {
+			slog.Warn("Sell clipped to available inventory (long-only)",
+				"instrument", fill.Instrument,
+				"requested_qty", fmt.Sprintf("%.8f", fill.Quantity),
+				"available_qty", fmt.Sprintf("%.8f", pos.Quantity),
+			)
+			sellQty = pos.Quantity
+		}
+
+		// Scale the executed economics to the (possibly clipped) quantity so
+		// cash, costs and slippage reflect only what actually filled.
+		var fillFraction float64
+		if fill.Quantity > 0 {
+			fillFraction = sellQty / fill.Quantity
+		}
+		executedCost = fill.TransactionCost * fillFraction
+		executedSlippage = fill.SlippageBps * fillFraction
+		proceeds := fill.FillPrice * sellQty
+
+		if sellQty > 0 {
+			// Realized PnL is NET of both legs' transaction costs: the entry
+			// fee is already embedded in AverageCost, and the exit fee
+			// (executedCost) is subtracted here (quant-5).
+			realized := (fill.FillPrice-pos.AverageCost)*sellQty - executedCost
 			p.realizedPnL += realized
 		}
-		pos.Quantity -= fill.Quantity
-		p.cash += cost - fill.TransactionCost
+		pos.Quantity -= sellQty
+		p.cash += proceeds - executedCost
 
-		// Reset average cost if position is flat
+		// Reset average cost if position is flat.
 		if pos.Quantity <= 1e-12 {
 			pos.Quantity = 0
 			pos.AverageCost = 0
@@ -93,8 +127,8 @@ func (p *Portfolio) ApplyFill(fill model.Fill) {
 
 	pos.LastMarkPrice = fill.FillPrice
 	p.totalFills++
-	p.totalCosts += fill.TransactionCost
-	p.totalSlippage += fill.SlippageBps
+	p.totalCosts += executedCost
+	p.totalSlippage += executedSlippage
 	p.fills = append(p.fills, fill)
 
 	// Demoted from Info → Debug in Phase 3: at production event rates this
@@ -128,17 +162,31 @@ func (p *Portfolio) Snapshot() Snapshot {
 	}
 
 	var unrealized float64
+	var positionsValue float64
 	for inst, pos := range p.positions {
 		pCopy := *pos
-		if pCopy.Quantity > 0 && pCopy.LastMarkPrice > 0 {
-			pCopy.UnrealizedPnL = (pCopy.LastMarkPrice - pCopy.AverageCost) * pCopy.Quantity
+		if pCopy.Quantity > 0 {
+			// Mark to last fill price; fall back to cost basis if a position
+			// somehow has no mark yet (every fill sets LastMarkPrice).
+			mark := pCopy.LastMarkPrice
+			if mark <= 0 {
+				mark = pCopy.AverageCost
+			}
+			pCopy.UnrealizedPnL = (mark - pCopy.AverageCost) * pCopy.Quantity
+			positionsValue += pCopy.Quantity * mark
 		}
 		unrealized += pCopy.UnrealizedPnL
 		snap.Positions[inst] = pCopy
 	}
 
 	snap.UnrealizedPnL = unrealized
-	snap.TotalValue = snap.Cash + unrealized
+	// Total equity = cash + MARKET VALUE of open positions (qty * mark), NOT
+	// cash + unrealized. Cash already paid out each position's cost basis on the
+	// buy, so adding back only the unrealized PnL drops that cost basis and
+	// understates equity by it whenever inventory is open — which silently
+	// corrupts TotalValue, the equity curve, drawdown, and every return derived
+	// from them. (When flat, positionsValue == 0 and TotalValue == cash.)
+	snap.TotalValue = snap.Cash + positionsValue
 
 	return snap
 }

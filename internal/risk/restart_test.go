@@ -112,7 +112,7 @@ func TestStalenessWatchdog_HaltsAndAutoResumes(t *testing.T) {
 	cfg.AutoResumeAfterStaleness = true
 
 	m := newManagerWithClock(cfg, 100_000, func() time.Time { return clock })
-	m.OnFeatureSeen(clock)
+	m.OnFeatureSeen(clock, 0)
 
 	// Advance the clock past the threshold and run one watchdog tick manually
 	// rather than spinning the timer — keeps the test deterministic.
@@ -131,7 +131,7 @@ func TestStalenessWatchdog_HaltsAndAutoResumes(t *testing.T) {
 	}
 
 	// Fresh feature should auto-clear.
-	m.OnFeatureSeen(clock)
+	m.OnFeatureSeen(clock, 0)
 	if m.IsHalted() {
 		t.Fatalf("expected auto-resume on fresh feature event")
 	}
@@ -147,7 +147,7 @@ func TestStalenessWatchdog_ManualHaltNotAutoCleared(t *testing.T) {
 	m := newManagerWithClock(cfg, 100_000, func() time.Time { return clock })
 	m.Halt() // manual breaker
 
-	m.OnFeatureSeen(clock.Add(time.Second))
+	m.OnFeatureSeen(clock.Add(time.Second), 0)
 	if !m.IsHalted() {
 		t.Fatalf("manual halt must not be cleared by a fresh feature event")
 	}

@@ -47,6 +47,13 @@ type Manager struct {
 	dayStart             time.Time
 	dayStartRealizedPnL  float64
 	lastFeatureEventTime time.Time // event-time (from Muninn), not wall-clock
+
+	// marketVolatility is the most recent market volatility feature observed on
+	// a feature event (event.Values["volatility"]), updated by OnFeatureSeen.
+	// Zero means "not observed" — the vol-scaled position limit then falls back
+	// to deriving vol from the strategy's own fill prices (the legacy path).
+	// See the position-limit scaling note in Evaluate (quant-14).
+	marketVolatility float64
 }
 
 // NewManager creates a new Risk Manager.
@@ -118,10 +125,19 @@ func (m *Manager) UpdateLimits(positionLimit float64) {
 // staleness watchdog and the auto-resume-from-staleness path both consult
 // this. Pass event time, not wall time — consistent with the rest of the
 // engine's event-time semantics.
-func (m *Manager) OnFeatureSeen(eventTime time.Time) {
+//
+// marketVolatility is the market volatility feature carried by the event
+// (event.Values["volatility"], or 0 when absent). It is stored for the
+// vol-scaled position limit in Evaluate (quant-14); a non-positive value
+// leaves the last observed value untouched so a single event missing the
+// feature doesn't wipe the scaling input.
+func (m *Manager) OnFeatureSeen(eventTime time.Time, marketVolatility float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastFeatureEventTime = eventTime
+	if marketVolatility > 0 {
+		m.marketVolatility = marketVolatility
+	}
 	if m.halted && m.haltReason == HaltStaleness && m.config.AutoResumeAfterStaleness {
 		m.halted = false
 		m.haltReason = HaltNone
@@ -235,28 +251,47 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 		return false
 	}
 
-	// 3. Volatility tracking and Volatility-adjusted Position Limit
+	// 3. Volatility tracking and Volatility-adjusted Position Limit.
+	//
+	// volPct is a fractional volatility (std/mean ≈ a per-step return sigma).
+	// Source preference (quant-14):
+	//   a. The market volatility feature from Muninn (event.Values["volatility"],
+	//      captured via OnFeatureSeen) when present — a forward-looking, fill-
+	//      independent measure of regime risk.
+	//   b. Fallback: realized dispersion of the strategy's own recent fill
+	//      prices (the legacy behaviour) — only meaningful once ≥10 fills exist.
+	//
+	// The scaling itself is unchanged: volScale = 1/(1 + 100*volPct), so the
+	// effective position limit shrinks as volatility rises (100 bps of vol
+	// halves the limit), clamped implicitly to (0,1].
 	m.recentPrices = append(m.recentPrices, fill.FillPrice)
 	if len(m.recentPrices) > 30 {
 		m.recentPrices = m.recentPrices[1:]
 	}
 
 	var volPct float64
-	n := len(m.recentPrices)
-	if n >= 10 {
-		sum := 0.0
-		for _, p := range m.recentPrices {
-			sum += p
-		}
-		mean := sum / float64(n)
-		varianceSum := 0.0
-		for _, p := range m.recentPrices {
-			diff := p - mean
-			varianceSum += diff * diff
-		}
-		stdDev := math.Sqrt(varianceSum / float64(n))
-		if mean > 0 {
-			volPct = stdDev / mean
+	volSource := "none"
+	if m.marketVolatility > 0 {
+		volPct = m.marketVolatility
+		volSource = "market_feature"
+	} else {
+		n := len(m.recentPrices)
+		if n >= 10 {
+			sum := 0.0
+			for _, p := range m.recentPrices {
+				sum += p
+			}
+			mean := sum / float64(n)
+			varianceSum := 0.0
+			for _, p := range m.recentPrices {
+				diff := p - mean
+				varianceSum += diff * diff
+			}
+			stdDev := math.Sqrt(varianceSum / float64(n))
+			if mean > 0 {
+				volPct = stdDev / mean
+				volSource = "fill_prices"
+			}
 		}
 	}
 	volScale := 1.0
@@ -300,6 +335,7 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 				"effective_limit", effectivePositionLimit,
 				"volScale", fmt.Sprintf("%.4f", volScale),
 				"volPct", fmt.Sprintf("%.4f%%", volPct*100.0),
+				"volSource", volSource,
 				"order_id", fill.OrderID,
 			)
 			metrics.OrdersRejectedTotal.WithLabelValues("position_limit").Inc()
