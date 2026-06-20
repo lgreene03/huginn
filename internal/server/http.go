@@ -65,20 +65,47 @@ type Server struct {
 	isReady    bool
 	readyMutex sync.RWMutex
 	srv        *http.Server
-	// apiToken gates mutating endpoints. Read from HUGINN_API_TOKEN env var;
-	// empty string disables auth (backward-compatible default).
+	// apiToken gates mutating endpoints. Read from HUGINN_API_TOKEN env var.
+	// When empty, mutating control endpoints FAIL CLOSED (503) rather than
+	// passing through — an unconfigured token must never leave the breaker
+	// and mock-fill controls open. Read-only endpoints are unaffected.
 	apiToken string
-	equity   *equityRing
+	// corsOrigin is the single allowed dashboard origin echoed in
+	// Access-Control-Allow-Origin. Read from HUGINN_DASHBOARD_ORIGIN;
+	// defaults to http://localhost:8084. Never "*" on token-gated routes.
+	corsOrigin string
+	equity     *equityRing
+	// readinessProbe, when set, is an extra gate on /readyz: it returns a
+	// non-nil error when the consumer loop has not advanced within the
+	// staleness window, making /readyz return 503 even though liveness
+	// (/healthz) stays green. Nil (the default) means /readyz only reflects
+	// SetReady — fully backward-compatible.
+	readinessProbe func() error
+}
+
+// ReadinessProbe registers a deep-readiness check consulted by /readyz in
+// addition to the SetReady flag. Pass nil to disable (default). Typically
+// wired to a kafka.Progress staleness check so a wedged consumer loop trips
+// readiness without affecting liveness.
+func (s *Server) ReadinessProbe(probe func() error) {
+	s.readyMutex.Lock()
+	defer s.readyMutex.Unlock()
+	s.readinessProbe = probe
 }
 
 func New(addr string, portf *portfolio.Portfolio, riskMgr *risk.Manager, exec *executor.Executor) *Server {
+	origin := os.Getenv("HUGINN_DASHBOARD_ORIGIN")
+	if origin == "" {
+		origin = "http://localhost:8084"
+	}
 	return &Server{
-		addr:      addr,
-		portfolio: portf,
-		riskMgr:   riskMgr,
-		executor:  exec,
-		apiToken:  os.Getenv("HUGINN_API_TOKEN"),
-		equity:    newEquityRing(720),
+		addr:       addr,
+		portfolio:  portf,
+		riskMgr:    riskMgr,
+		executor:   exec,
+		apiToken:   os.Getenv("HUGINN_API_TOKEN"),
+		corsOrigin: origin,
+		equity:     newEquityRing(720),
 	}
 }
 
@@ -108,10 +135,14 @@ func (s *Server) RunEquitySampler(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// corsMiddleware adds standard CORS headers to allow frontend integration.
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// corsMiddleware adds CORS headers scoped to the configured dashboard origin.
+// Access-Control-Allow-Origin is set to s.corsOrigin (default
+// http://localhost:8084), never "*", so token-gated endpoints are not exposed
+// to arbitrary cross-origin callers.
+func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", s.corsOrigin)
+		w.Header().Set("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -124,12 +155,25 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authMiddleware enforces bearer-token auth when HUGINN_API_TOKEN is set.
-// A missing or incorrect token returns 401. When the env var is empty,
-// all requests pass through (backward-compatible).
+// authMiddleware enforces bearer-token auth on mutating control endpoints.
+//
+// It FAILS CLOSED: when HUGINN_API_TOKEN is unset the mutation is refused with
+// 503 rather than passing through, so an unconfigured deployment can never
+// expose the breaker/mock-fill controls open. When the token is set, a missing
+// or incorrect bearer token returns 401. Read-only endpoints do not use this
+// middleware and stay open.
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.apiToken != "" && r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+		// Preflight requests carry no credentials; let CORS handle them.
+		if r.Method == http.MethodOptions {
+			next(w, r)
+			return
+		}
+		if s.apiToken == "" {
+			http.Error(w, "Control plane locked: HUGINN_API_TOKEN not configured", http.StatusServiceUnavailable)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+s.apiToken {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -168,15 +212,27 @@ func (s *Server) snapshotHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) readyzHandler(w http.ResponseWriter, r *http.Request) {
 	s.readyMutex.RLock()
 	ready := s.isReady
+	probe := s.readinessProbe
 	s.readyMutex.RUnlock()
 
-	if ready {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	} else {
+	if !ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = w.Write([]byte("Not Ready"))
+		return
 	}
+
+	// Deep readiness: a wedged/stale consumer loop trips 503 even though the
+	// process is live. /healthz stays liveness-only and is unaffected.
+	if probe != nil {
+		if err := probe(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("Not Ready: " + err.Error()))
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // streamHandler implements Server-Sent Events (SSE) to push live engine state to the web UI.
@@ -184,7 +240,8 @@ func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Origin", s.corsOrigin)
+	w.Header().Set("Vary", "Origin")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -340,8 +397,13 @@ func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(cfg)
 
 	case http.MethodPut:
-		// Auth check for mutating operation.
-		if s.apiToken != "" && r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+		// Auth check for mutating operation. Fails closed: an unset token
+		// refuses the mutation rather than allowing it through.
+		if s.apiToken == "" {
+			http.Error(w, "Control plane locked: HUGINN_API_TOKEN not configured", http.StatusServiceUnavailable)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+s.apiToken {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -367,16 +429,16 @@ func (s *Server) snapshotHistoryHandler(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", corsMiddleware(s.healthzHandler))
-	mux.HandleFunc("/readyz", corsMiddleware(s.readyzHandler))
-	mux.HandleFunc("/api/snapshot", corsMiddleware(s.snapshotHandler))
-	mux.HandleFunc("/api/snapshot/history", corsMiddleware(s.snapshotHistoryHandler))
+	mux.HandleFunc("/healthz", s.corsMiddleware(s.healthzHandler))
+	mux.HandleFunc("/readyz", s.corsMiddleware(s.readyzHandler))
+	mux.HandleFunc("/api/snapshot", s.corsMiddleware(s.snapshotHandler))
+	mux.HandleFunc("/api/snapshot/history", s.corsMiddleware(s.snapshotHistoryHandler))
 	mux.HandleFunc("/api/stream", s.streamHandler)
-	mux.HandleFunc("/api/breaker/trigger", corsMiddleware(s.authMiddleware(s.breakerTriggerHandler)))
-	mux.HandleFunc("/api/breaker/reset", corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
-	mux.HandleFunc("/api/fills/mock", corsMiddleware(s.authMiddleware(s.mockFillHandler)))
-	mux.HandleFunc("/api/strategy/config", corsMiddleware(s.strategyConfigHandler))
-	mux.HandleFunc("/version", corsMiddleware(s.versionHandler))
+	mux.HandleFunc("/api/breaker/trigger", s.corsMiddleware(s.authMiddleware(s.breakerTriggerHandler)))
+	mux.HandleFunc("/api/breaker/reset", s.corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
+	mux.HandleFunc("/api/fills/mock", s.corsMiddleware(s.authMiddleware(s.mockFillHandler)))
+	mux.HandleFunc("/api/strategy/config", s.corsMiddleware(s.strategyConfigHandler))
+	mux.HandleFunc("/version", s.corsMiddleware(s.versionHandler))
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.srv = &http.Server{

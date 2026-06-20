@@ -7,9 +7,15 @@
 # Exit 0 on success, 1 on failure.
 #
 # Env overrides:
-#   SKIP_COMPOSE=1   — skip docker-compose up (assume stack is already running)
-#   APP_URL          — override Huginn base URL  (default: http://localhost:8083)
-#   BROKER           — override Redpanda address  (default: localhost:9092)
+#   SKIP_COMPOSE=1     — skip docker-compose up (assume stack is already running)
+#   APP_URL            — override Huginn base URL  (default: http://localhost:8083)
+#   BROKER             — override Redpanda address  (default: localhost:9092)
+#   HUGINN_API_TOKEN   — bearer token for mutating control endpoints. Mutating
+#                        endpoints (/api/breaker/*, /api/fills/mock,
+#                        PUT /api/strategy/config) FAIL CLOSED (503) when the
+#                        server has no token configured, so this must match the
+#                        token set in the norse-stack compose for those calls.
+#                        Read-only checks below do not require it.
 #
 # Requirements:
 #   - Docker Compose
@@ -20,7 +26,17 @@ set -euo pipefail
 
 APP_URL="${APP_URL:-http://localhost:8083}"
 BROKER="${BROKER:-localhost:9092}"
+HUGINN_API_TOKEN="${HUGINN_API_TOKEN:-}"
 TOPIC="features.obi.v1"
+
+# AUTH_HEADER carries the bearer token for mutating control-plane calls.
+# Empty when no token is configured; read-only probes ignore it. Use as:
+#   curl "${AUTH_HEADER[@]}" -X POST "${APP_URL}/api/breaker/trigger"
+if [ -n "$HUGINN_API_TOKEN" ]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${HUGINN_API_TOKEN}")
+else
+  AUTH_HEADER=()
+fi
 TIMEOUT=30
 PASSED=0
 FAILED=0
@@ -200,7 +216,32 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 10: Summary
+# Step 10: Control-plane auth (mutating endpoint)
+# ---------------------------------------------------------------------------
+info "Step 10: Checking control-plane auth on /api/breaker/reset..."
+
+# /api/breaker/reset is mutating and fails closed (503) when the server has no
+# token. With a matching token it returns 200; with none configured it is 503.
+BREAKER_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  "${AUTH_HEADER[@]}" -X POST "${APP_URL}/api/breaker/reset" 2>/dev/null || echo "000")
+
+if [ -n "$HUGINN_API_TOKEN" ]; then
+  if [ "$BREAKER_CODE" = "200" ]; then
+    pass "/api/breaker/reset returned 200 with bearer token"
+  else
+    fail "/api/breaker/reset returned HTTP ${BREAKER_CODE} with token (expected 200)"
+  fi
+else
+  # No token configured locally: endpoint must fail closed, never pass through.
+  if [ "$BREAKER_CODE" = "503" ] || [ "$BREAKER_CODE" = "401" ]; then
+    pass "/api/breaker/reset failed closed (HTTP ${BREAKER_CODE}) with no token"
+  else
+    fail "/api/breaker/reset returned HTTP ${BREAKER_CODE} with no token (expected 503/401)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 11: Summary
 # ---------------------------------------------------------------------------
 echo ""
 TOTAL=$((PASSED + FAILED))

@@ -91,6 +91,13 @@ type ExecutorConfig struct {
 type ServerConfig struct {
 	Port     string `yaml:"port" envconfig:"SERVER_PORT"`
 	GRPCPort string `yaml:"grpc_port" envconfig:"GRPC_PORT"`
+	// ReadyzStaleness is how long the feature consumer loop may go without
+	// advancing before /readyz returns 503 (deep readiness). It does NOT
+	// affect /healthz liveness. Zero (default) disables the check, so
+	// behavior is unchanged unless explicitly configured. Default applied in
+	// main.go is generous (5m) when the field is left at zero AND a feature
+	// consumer is active — see cmd/huginn/main.go.
+	ReadyzStaleness time.Duration `yaml:"readyz_staleness" envconfig:"SERVER_READYZ_STALENESS"`
 }
 
 type CapitalConfig struct {

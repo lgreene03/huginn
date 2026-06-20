@@ -15,8 +15,9 @@ import (
 // Consumer reads from one or more Muninn feature topics and dispatches
 // deserialized FeatureEvents to a handler function.
 type Consumer struct {
-	readers []*kgo.Reader
-	handler func(model.FeatureEvent)
+	readers  []*kgo.Reader
+	handler  func(model.FeatureEvent)
+	progress *Progress
 }
 
 // Config holds the Kafka consumer configuration.
@@ -41,10 +42,15 @@ func NewConsumer(cfg Config, handler func(model.FeatureEvent)) *Consumer {
 	}
 
 	return &Consumer{
-		readers: readers,
-		handler: handler,
+		readers:  readers,
+		handler:  handler,
+		progress: NewProgress(),
 	}
 }
+
+// Progress exposes the consumer's last-advance tracker so a readiness probe
+// can detect a wedged loop. Never nil for a Consumer built via NewConsumer.
+func (c *Consumer) Progress() *Progress { return c.progress }
 
 // Run starts the consumption loop. It blocks until the context is cancelled.
 func (c *Consumer) Run(ctx context.Context) error {
@@ -53,60 +59,74 @@ func (c *Consumer) Run(ctx context.Context) error {
 	)
 
 	var wg sync.WaitGroup
-	eventCh := make(chan model.FeatureEvent, 1000)
 
-	// Start a goroutine for each topic reader
+	// One goroutine per topic reader. Each fetches, dispatches synchronously,
+	// then commits the offset ONLY after the handler has run — at-least-once
+	// delivery (mirrors the sleipnir gateway pattern) so an in-flight message
+	// is not lost if the process crashes mid-handler. The handler dispatch is
+	// wrapped in safeDispatch so a panic logs + counts and the loop survives
+	// instead of silently killing the consumer.
 	for _, r := range c.readers {
 		wg.Add(1)
 		go func(reader *kgo.Reader) {
 			defer wg.Done()
+			bo := newBackoff()
+			topic := reader.Config().Topic
 			for {
-				msg, err := reader.ReadMessage(ctx)
+				msg, err := reader.FetchMessage(ctx)
 				if err != nil {
 					if ctx.Err() != nil {
 						return // Normal shutdown
 					}
-					slog.Error("Failed to read message", "topic", reader.Config().Topic, "error", err)
+					// Bounded jittered backoff so a Redpanda outage does not
+					// peg a core or flood logs with retry spam.
+					slog.Error("Failed to read feature message", "topic", topic, "error", err)
+					bo.sleep(ctx)
 					continue
 				}
+				bo.reset()
+				c.progress.Mark()
 
 				var event model.FeatureEvent
 				if err := json.Unmarshal(msg.Value, &event); err != nil {
+					metrics.DeserializeFailedTotal.WithLabelValues("feature").Inc()
 					slog.Warn("Failed to deserialize feature event",
-						"topic", reader.Config().Topic,
+						"topic", topic,
 						"error", err,
 						"offset", msg.Offset,
 					)
+					// Malformed frame: nothing to apply, but commit so we do
+					// not redeliver the poison message forever.
+					c.commit(ctx, reader, msg, topic)
 					continue
 				}
 
-				select {
-				case eventCh <- event:
-				case <-ctx.Done():
-					return
-				}
+				metrics.FeaturesConsumedTotal.WithLabelValues(event.FeatureName).Inc()
+				safeDispatch("feature", func() { c.handler(event) })
+
+				// Commit AFTER the handler applied the event.
+				c.commit(ctx, reader, msg, topic)
+				c.progress.Mark()
 			}
 		}(r)
 	}
 
-	// Dispatcher goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case event := <-eventCh:
-				metrics.FeaturesConsumedTotal.WithLabelValues(event.FeatureName).Inc()
-				c.handler(event)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
 	wg.Wait()
 	slog.Info("Kafka consumer shutting down")
 	return nil
+}
+
+// commit acknowledges a processed message. A commit failure is logged but not
+// fatal: the offset stays uncommitted, so the message redelivers (handlers are
+// idempotent — feature dispatch is stateless replay-safe, fills dedup by
+// ExecutionID), which is the correct at-least-once behavior.
+func (c *Consumer) commit(ctx context.Context, reader *kgo.Reader, msg kgo.Message, topic string) {
+	if err := reader.CommitMessages(ctx, msg); err != nil {
+		if ctx.Err() != nil {
+			return // shutting down
+		}
+		slog.Error("Failed to commit feature offset", "topic", topic, "offset", msg.Offset, "error", err)
+	}
 }
 
 // Close releases the consumer's resources.

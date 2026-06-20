@@ -101,7 +101,27 @@ Huginn is configured via YAML profiles (e.g., `configs/default.yaml`). You can o
 | `risk.staleness_timeout` | `RISK_STALENESS_TIMEOUT` | Auto-halt if no feature event within this duration |
 | `risk.auto_resume_after_staleness` | `RISK_AUTO_RESUME_AFTER_STALENESS` | Auto-resume when a fresh event arrives after staleness halt |
 | `server.port` | `SERVER_PORT` | Port for observability server (default `8081`) |
-| _(env only)_ | `HUGINN_API_TOKEN` | Bearer token for mutating HTTP endpoints; empty = auth disabled |
+| _(env only)_ | `HUGINN_API_TOKEN` | Bearer token for mutating control endpoints. **Fails closed:** when unset, those endpoints return `503` (the control plane is locked); set it to enable them. Read-only endpoints are always open. |
+| _(env only)_ | `HUGINN_DASHBOARD_ORIGIN` | Allowed CORS origin echoed in `Access-Control-Allow-Origin` (default `http://localhost:8084`). Never `*`. |
+
+### Control-plane security
+
+Mutating HTTP endpoints — `POST /api/breaker/trigger`, `POST /api/breaker/reset`,
+`POST /api/fills/mock`, and `PUT /api/strategy/config` — require a bearer token:
+
+```
+Authorization: Bearer <HUGINN_API_TOKEN>
+```
+
+These endpoints **fail closed**. With no `HUGINN_API_TOKEN` configured they return
+`503 Control plane locked`, so an unconfigured deployment can never leave the
+breaker or mock-fill controls open. Read-only endpoints (`/healthz`, `/readyz`,
+`/api/snapshot`, `/api/snapshot/history`, `/api/stream`, `/version`, `/metrics`)
+stay open and unauthenticated.
+
+CORS is scoped to a single dashboard origin via `HUGINN_DASHBOARD_ORIGIN`
+(default `http://localhost:8084`); the wildcard `*` is never sent. In the Norse
+stack the token is provided by the `norse-stack` compose file.
 
 You can specify a config file via the CLI:
 ```bash

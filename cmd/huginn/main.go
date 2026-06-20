@@ -238,6 +238,27 @@ func main() {
 
 	// Initialize HTTP server
 	srv := server.New(":"+cfg.Server.Port, port, riskManager, exec)
+
+	// Deep /readyz: when consuming from Kafka, report 503 if the feature
+	// consumer loop has not advanced within the staleness window. A generous
+	// default (5m) applies when SERVER_READYZ_STALENESS is unset, so a normal
+	// quiet market never trips it; set the env var to tighten. /healthz stays
+	// liveness-only and is unaffected. The SSE "stream" feed has no kafka
+	// Progress, so the deep check is only wired for the Kafka path.
+	if cfg.Feed.Source != "stream" {
+		staleness := cfg.Server.ReadyzStaleness
+		if staleness <= 0 {
+			staleness = 5 * time.Minute
+		}
+		prog := consumer.Progress()
+		srv.ReadinessProbe(func() error {
+			if prog.Stale(staleness) {
+				return fmt.Errorf("feature consumer stale: no progress in %s", staleness)
+			}
+			return nil
+		})
+	}
+
 	go func() {
 		if err := srv.Start(); err != nil {
 			slog.Info("HTTP server stopped", "error", err)

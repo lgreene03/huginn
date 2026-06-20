@@ -23,8 +23,14 @@ WORKDIR /app
 
 RUN apk --no-cache add ca-certificates tzdata
 
-COPY --from=builder /app/huginn .
-COPY --from=builder /app/configs ./configs
+# Run as an unprivileged user rather than root. Create a dedicated app user
+# and own the working dir so the binary and configs are readable at runtime.
+RUN addgroup -S huginn && adduser -S -G huginn -H -h /app huginn
+
+COPY --from=builder --chown=huginn:huginn /app/huginn .
+COPY --from=builder --chown=huginn:huginn /app/configs ./configs
+
+USER huginn
 
 EXPOSE 8081
 

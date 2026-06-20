@@ -181,4 +181,32 @@ var (
 			Help: "Total successful SSE feature-stream reconnections after a drop",
 		},
 	)
+
+	// ─── Resilience / data-ops additions ────────────────────────────────
+
+	// ConsumerPanicsTotal counts panics recovered in a consumer's per-message
+	// handler dispatch, labeled by which consumer loop caught it. A non-zero
+	// value means a handler threw but the consumer goroutine survived (instead
+	// of dying and causing a silent total trading outage). Any increment is an
+	// alertable bug in the handler.
+	ConsumerPanicsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_consumer_panics_total",
+			Help: "Panics recovered in consumer handler dispatch (consumer survived)",
+		},
+		[]string{"consumer"}, // feature | fills | price
+	)
+
+	// DeserializeFailedTotal counts messages dropped because their payload
+	// failed to deserialize, labeled by consumer. A spike means an upstream
+	// producer changed its wire format or is emitting corrupt frames; the
+	// message is skipped (offset still advances) rather than silently lost
+	// without a trace.
+	DeserializeFailedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_deserialize_failed_total",
+			Help: "Messages dropped because their payload failed to deserialize",
+		},
+		[]string{"consumer"}, // feature | fills | price
+	)
 )

@@ -9,6 +9,7 @@ import (
 	kgo "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel/attribute"
 
+	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/tracing"
 )
@@ -34,9 +35,10 @@ type FillHandler func(context.Context, model.Fill)
 
 // FillsConsumer reads execution fills from Sleipnir and dispatches them to a handler.
 type FillsConsumer struct {
-	reader  *kgo.Reader
-	handler FillHandler
-	topic   string
+	reader   *kgo.Reader
+	handler  FillHandler
+	topic    string
+	progress *Progress
 }
 
 // NewFillsConsumer creates a consumer for Sleipnir fills.
@@ -50,11 +52,15 @@ func NewFillsConsumer(brokers []string, topic, groupID string, handler FillHandl
 	})
 
 	return &FillsConsumer{
-		reader:  r,
-		handler: handler,
-		topic:   topic,
+		reader:   r,
+		handler:  handler,
+		topic:    topic,
+		progress: NewProgress(),
 	}
 }
+
+// Progress exposes the consumer's last-advance tracker for readiness probes.
+func (c *FillsConsumer) Progress() *Progress { return c.progress }
 
 // Run starts the fills consumption loop. It blocks until the context is cancelled.
 //
@@ -63,23 +69,31 @@ func NewFillsConsumer(brokers []string, topic, groupID string, handler FillHandl
 func (c *FillsConsumer) Run(ctx context.Context) error {
 	slog.Info("Fills consumer started", "topic", c.topic)
 
+	bo := newBackoff()
 	for {
-		msg, err := c.reader.ReadMessage(ctx)
+		msg, err := c.reader.FetchMessage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil // Graceful shutdown
 			}
+			// Bounded jittered backoff replaces the fixed 1s sleep so a
+			// Redpanda outage neither pegs a core nor floods logs.
 			slog.Error("Fills consumer error reading message", "error", err)
-			time.Sleep(1 * time.Second)
+			bo.sleep(ctx)
 			continue
 		}
+		bo.reset()
+		c.progress.Mark()
 
 		var gatewayFill GatewayFill
 		if err := json.Unmarshal(msg.Value, &gatewayFill); err != nil {
+			metrics.DeserializeFailedTotal.WithLabelValues("fills").Inc()
 			slog.Warn("Failed to deserialize execution fill event",
 				"error", err,
 				"offset", msg.Offset,
 			)
+			// Poison frame: commit so it does not redeliver forever.
+			c.commit(ctx, msg)
 			continue
 		}
 
@@ -117,9 +131,29 @@ func (c *FillsConsumer) Run(ctx context.Context) error {
 			attribute.String("instrument", fill.Instrument),
 		)
 
-		// Dispatch back into execution engine
-		c.handler(fillCtx, fill)
+		// Dispatch back into execution engine. Wrapped so a panic in the
+		// executor (dedup → journal → portfolio) cannot kill the consumer
+		// goroutine and silently halt fill ingestion.
+		safeDispatch("fills", func() { c.handler(fillCtx, fill) })
 		span.End()
+
+		// Commit AFTER OnExecutionFill has journaled/applied the fill, so a
+		// crash mid-handler redelivers the fill (dedup by ExecutionID makes
+		// the replay safe) instead of losing it.
+		c.commit(ctx, msg)
+		c.progress.Mark()
+	}
+}
+
+// commit acknowledges a processed fill message. Failures are logged, not
+// fatal: the offset stays uncommitted and the fill redelivers (idempotent via
+// ExecutionID dedup).
+func (c *FillsConsumer) commit(ctx context.Context, msg kgo.Message) {
+	if err := c.reader.CommitMessages(ctx, msg); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		slog.Error("Failed to commit fill offset", "offset", msg.Offset, "error", err)
 	}
 }
 
