@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://lgreene03.github.io/huginn/">
+        <link rel="canonical" href="https://lgreene03.github.io/huginn/adr/0003-dual-mode-paper-live-executor/">
       
       
+        <link rel="prev" href="../0002-pluggable-strategy-interface/">
       
-        <link rel="next" href="architecture/">
+      
+        <link rel="next" href="../0004-pre-trade-risk-model-and-kill-switch/">
       
       
         
       
       
-      <link rel="icon" href="assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Huginn</title>
+        <title>0003 Dual-mode executor - Huginn</title>
       
     
     
-      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -76,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#huginn" class="md-skip">
+        <a href="#0003-one-executor-two-modes-paper-and-live" class="md-skip">
           Skip to content
         </a>
       
@@ -90,7 +92,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="." title="Huginn" class="md-header__button md-logo" aria-label="Huginn" data-md-component="logo">
+    <a href="../.." title="Huginn" class="md-header__button md-logo" aria-label="Huginn" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -110,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Home
+              0003 Dual-mode executor
             
           </span>
         </div>
@@ -219,11 +221,9 @@
   
   
   
-    
   
-  
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="." class="md-tabs__link">
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
         
   
   
@@ -242,7 +242,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="architecture/" class="md-tabs__link">
+      <a href="../../architecture/" class="md-tabs__link">
         
   
   
@@ -263,7 +263,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="strategies/" class="md-tabs__link">
+        <a href="../../strategies/" class="md-tabs__link">
           
   
   
@@ -281,7 +281,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="risk-model/" class="md-tabs__link">
+      <a href="../../risk-model/" class="md-tabs__link">
         
   
   
@@ -300,7 +300,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="OPERATIONS/" class="md-tabs__link">
+      <a href="../../OPERATIONS/" class="md-tabs__link">
         
   
   
@@ -317,11 +317,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="adr/0001-record-architecture-decisions/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../0001-record-architecture-decisions/" class="md-tabs__link">
           
   
   
@@ -339,7 +341,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="ROADMAP/" class="md-tabs__link">
+      <a href="../../ROADMAP/" class="md-tabs__link">
         
   
   
@@ -374,7 +376,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="." title="Huginn" class="md-nav__button md-logo" aria-label="Huginn" data-md-component="logo">
+    <a href="../.." title="Huginn" class="md-nav__button md-logo" aria-label="Huginn" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -401,37 +403,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Home
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="." class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -447,81 +422,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#why-huginn-exists" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why Huginn exists
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-you-can-do-with-it" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What you can do with it
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#companion-services" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Companion services
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#current-status" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Current status
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -533,7 +433,7 @@
   
   
     <li class="md-nav__item">
-      <a href="architecture/" class="md-nav__link">
+      <a href="../../architecture/" class="md-nav__link">
         
   
   
@@ -612,7 +512,7 @@
   
   
     <li class="md-nav__item">
-      <a href="strategies/" class="md-nav__link">
+      <a href="../../strategies/" class="md-nav__link">
         
   
   
@@ -640,7 +540,7 @@
   
   
     <li class="md-nav__item">
-      <a href="calibration/" class="md-nav__link">
+      <a href="../../calibration/" class="md-nav__link">
         
   
   
@@ -675,7 +575,7 @@
   
   
     <li class="md-nav__item">
-      <a href="risk-model/" class="md-nav__link">
+      <a href="../../risk-model/" class="md-nav__link">
         
   
   
@@ -702,7 +602,7 @@
   
   
     <li class="md-nav__item">
-      <a href="OPERATIONS/" class="md-nav__link">
+      <a href="../../OPERATIONS/" class="md-nav__link">
         
   
   
@@ -726,26 +626,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
             
   
   
@@ -763,7 +668,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -781,7 +686,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0001-record-architecture-decisions/" class="md-nav__link">
+      <a href="../0001-record-architecture-decisions/" class="md-nav__link">
         
   
   
@@ -809,7 +714,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0002-pluggable-strategy-interface/" class="md-nav__link">
+      <a href="../0002-pluggable-strategy-interface/" class="md-nav__link">
         
   
   
@@ -834,10 +739,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="adr/0003-dual-mode-paper-live-executor/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Dual-mode executor
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -853,6 +785,81 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives-considered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives Considered
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -865,7 +872,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0004-pre-trade-risk-model-and-kill-switch/" class="md-nav__link">
+      <a href="../0004-pre-trade-risk-model-and-kill-switch/" class="md-nav__link">
         
   
   
@@ -893,7 +900,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0005-single-goroutine-dispatch-multi-topic-fanin/" class="md-nav__link">
+      <a href="../0005-single-goroutine-dispatch-multi-topic-fanin/" class="md-nav__link">
         
   
   
@@ -921,7 +928,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0006-dynamic-proto-grpc-without-protoc/" class="md-nav__link">
+      <a href="../0006-dynamic-proto-grpc-without-protoc/" class="md-nav__link">
         
   
   
@@ -949,7 +956,7 @@
   
   
     <li class="md-nav__item">
-      <a href="adr/0007-walk-forward-calibration-workflow/" class="md-nav__link">
+      <a href="../0007-walk-forward-calibration-workflow/" class="md-nav__link">
         
   
   
@@ -984,7 +991,7 @@
   
   
     <li class="md-nav__item">
-      <a href="ROADMAP/" class="md-nav__link">
+      <a href="../../ROADMAP/" class="md-nav__link">
         
   
   
@@ -1031,10 +1038,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#why-huginn-exists" class="md-nav__link">
+  <a href="#context" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why Huginn exists
+        Context
       
     </span>
   </a>
@@ -1042,10 +1049,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-you-can-do-with-it" class="md-nav__link">
+  <a href="#decision" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What you can do with it
+        Decision
       
     </span>
   </a>
@@ -1053,10 +1060,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
+  <a href="#consequences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quick start
+        Consequences
       
     </span>
   </a>
@@ -1064,10 +1071,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#companion-services" class="md-nav__link">
+  <a href="#alternatives-considered" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Companion services
+        Alternatives Considered
       
     </span>
   </a>
@@ -1075,10 +1082,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#current-status" class="md-nav__link">
+  <a href="#references" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Current status
+        References
       
     </span>
   </a>
@@ -1105,107 +1112,49 @@
   
 
 
-<h1 id="huginn">Huginn<a class="headerlink" href="#huginn" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p><em>Named after Odin's raven of "thought."</em></p>
-</blockquote>
-<p>Huginn is a <strong>quantitative strategy execution engine</strong> that consumes deterministic features from <a href="https://github.com/lgreene03/muninn">Muninn</a> and executes paper-trading strategies with full crash-recovery, risk controls, and live operator tooling.</p>
-<hr />
-<h2 id="why-huginn-exists">Why Huginn exists<a class="headerlink" href="#why-huginn-exists" title="Permanent link">&para;</a></h2>
-<p><a href="https://github.com/lgreene03/muninn">Muninn</a> solves the <em>computation</em> problem: one deterministic pipeline that works identically live and in replay. Huginn solves the <em>decision</em> problem: what to do with those features.</p>
-<p>The split is deliberate. Huginn never recomputes OBI, VPIN, or VWAP from raw trades — that is Muninn's job. Huginn treats every feature event as an immutable fact about the market and applies a strategy to it.</p>
-<hr />
-<h2 id="what-you-can-do-with-it">What you can do with it<a class="headerlink" href="#what-you-can-do-with-it" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Goal</th>
-<th>How</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Run a bundled strategy on live features</td>
-<td><code>configs/default.yaml</code> + <code>docker-compose up</code></td>
-</tr>
-<tr>
-<td>Backtest a strategy on historical features</td>
-<td><code>cmd/backtest --strategy obi --data data/historical.jsonl</code></td>
-</tr>
-<tr>
-<td>Calibrate strategy parameters</td>
-<td><code>cmd/calibrate --strategy obi --data data/historical.jsonl --threshold 0.5,0.6,0.7</code></td>
-</tr>
-<tr>
-<td>Watch equity, PnL, and fills live</td>
-<td>Dashboard at <code>http://localhost:8081</code> (SSE-driven)</td>
-</tr>
-<tr>
-<td>Tune parameters without restarting</td>
-<td><code>PUT /api/strategy/config</code> (auth-gated)</td>
-</tr>
-<tr>
-<td>Halt/resume the engine</td>
-<td>Dashboard buttons or <code>POST /api/breaker/trigger</code></td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="quick-start">Quick start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Clone and bring up the full stack (Huginn + Redpanda + Postgres)</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/lgreene03/huginn.git
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>huginn
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>docker-compose<span class="w"> </span>up<span class="w"> </span>-d
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># Verify the engine is healthy</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>curl<span class="w"> </span>http://localhost:8081/healthz
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Tail logs</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>huginn
-</code></pre></div>
-<p>Build and run directly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>go<span class="w"> </span>build<span class="w"> </span>-o<span class="w"> </span>huginn<span class="w"> </span>./cmd/huginn
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./huginn<span class="w"> </span>--config<span class="w"> </span>configs/default.yaml
-</code></pre></div>
-<hr />
-<h2 id="companion-services">Companion services<a class="headerlink" href="#companion-services" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Service</th>
-<th>Role</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><a href="https://github.com/lgreene03/muninn">Muninn</a></td>
-<td>Feature engine — computes OBI, VPIN, VWAP from Binance feeds</td>
-</tr>
-<tr>
-<td><a href="https://github.com/lgreene03/sleipnir">Sleipnir</a></td>
-<td>Order gateway — bridges Huginn's order intents to the venue</td>
-</tr>
-<tr>
-<td><a href="https://github.com/lgreene03/muninn-py">muninn-py</a></td>
-<td>Python research SDK — analytics and notebooks</td>
-</tr>
-</tbody>
-</table>
-<p>Huginn occupies the middle tier: it receives features from Muninn over Redpanda and optionally sends order intents to Sleipnir over Kafka. In paper mode (default), fills are simulated locally.</p>
-<hr />
-<h2 id="current-status">Current status<a class="headerlink" href="#current-status" title="Permanent link">&para;</a></h2>
-<p><strong>Phase 7 complete.</strong> Phases 0–7 are fully delivered:</p>
+<h1 id="0003-one-executor-two-modes-paper-and-live">0003. One executor, two modes (paper and live)<a class="headerlink" href="#0003-one-executor-two-modes-paper-and-live" title="Permanent link">&para;</a></h1>
 <ul>
-<li>Strategies: OBI Threshold, VPIN Breakout, EMA Crossover, VWAP Deviation</li>
-<li>Risk controls: drawdown, daily loss, position limits, staleness watchdog</li>
-<li>Persistence: Postgres-backed journal with versioned migrations and crash recovery</li>
-<li>Backtest engine: parity-tested against live executor, HTML report output</li>
-<li>Calibration CLI: parameter grid sweep with CSV output</li>
-<li>Observability: Prometheus metrics, Grafana dashboard JSON, SSE equity stream</li>
-<li>Web UI: live operator console (halt/resume, manual fill, strategy tuning, equity chart)</li>
-<li>Release engineering: multi-arch Docker images, versioned builds, lint CI</li>
+<li><strong>Status:</strong> Accepted</li>
+<li><strong>Date:</strong> 2026-06-20</li>
+<li><strong>Deciders:</strong> Project maintainer</li>
+<li><strong>Related:</strong> <a href="../0002-pluggable-strategy-interface/">ADR-0002 — Pluggable strategy interface</a>, <a href="../0004-pre-trade-risk-model-and-kill-switch/">ADR-0004 — Pre-trade risk &amp; kill switch</a>, <a href="../../architecture/">architecture.md</a></li>
 </ul>
-<p>See <a href="ROADMAP/">Roadmap</a> for phase details and <a href="architecture/">Architecture</a> for internals.</p>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<p>Huginn must do two things that look superficially different. In <strong>paper mode</strong> (the default, and the only mode used in backtest, calibrate, and walk-forward) it simulates a fill locally — applying slippage, transaction cost, and an optional latency offset — and books it straight into the portfolio. In <strong>live mode</strong> it publishes an order intent to Sleipnir over Kafka (<code>executions.intents.v1</code>) and later receives the real fill asynchronously on <code>executions.fills.v1</code>.</p>
+<p>The temptation is two code paths, or even two binaries. But the two modes must share everything that matters for correctness: the strategy dispatch, the pre-trade risk check, the portfolio accounting, the journal, and the metrics. If paper and live diverge, then a strategy validated in backtest is not the strategy that trades real money — which defeats the entire research-to-production pipeline the Norse stack is built around.</p>
+<p>A subtlety: in paper mode the risk check and the fill are synchronous and local, so risk is evaluated against the <em>simulated</em> fill. In live mode the fill comes back from the venue later, so risk must be evaluated against a <em>prospective</em> fill built before publishing the intent, and the returned fill is booked on a separate inbound path.</p>
+<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">&para;</a></h2>
+<p>A single <code>Executor</code> type carries a <code>liveMode bool</code> and an optional <code>IntentPublisher</code>. <code>OnFeature</code> runs strategy dispatch, opt-in sizing, and metrics identically for both modes, then branches at the point of execution:</p>
+<ul>
+<li><strong>Paper:</strong> <code>simulateFill</code> → <code>riskManager.Evaluate(fill, snapshot)</code> → journal → <code>portfolio.ApplyFill</code> → metrics → persist state.</li>
+<li><strong>Live:</strong> build a <em>prospective</em> <code>model.Fill</code> at the estimated price → <code>riskManager.Evaluate(prospectiveFill, snapshot)</code> → <code>publisher.PublishIntent</code>. The real fill arrives later via <code>OnExecutionFill</code>, which journals and books it.</li>
+</ul>
+<p><code>IntentPublisher</code> is an interface (<code>PublishIntent(ctx, order, orderID) error</code>), so the executor depends on a capability, not on the Kafka producer. Tests inject a recording double; production injects <code>kafka.Producer</code>. Live mode is gated by the <code>LIVE_EXECUTION</code> env var / config flag and <strong>defaults to off</strong>, so the safe behaviour (simulate, never touch a venue) is the one you get by default.</p>
+<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">&para;</a></h2>
+<p><strong>Easier.</strong></p>
+<ul>
+<li>A strategy validated in paper/backtest runs byte-identically up to the execution branch in live — same strategy code, same risk check, same portfolio math.</li>
+<li>The offline tools (<code>backtest</code>, <code>calibrate</code>, <code>walkforward</code>) reuse the exact production executor with <code>liveMode=false</code> and a <code>NullWriter</code>, so their results reflect the real engine, not a reimplementation.</li>
+<li>Swapping the publisher (e.g. a different gateway) is a one-interface change.</li>
+</ul>
+<p><strong>Harder / cost.</strong></p>
+<ul>
+<li>The risk check is <em>structurally</em> the same in both modes but semantically asymmetric: paper risks the simulated fill, live risks a prospective fill at <code>estimatePrice(event)</code> with zero cost/slippage. This is correct (the real cost is unknown until the venue responds) but is a place a careless edit could make the two modes diverge. It is called out in <code>executor.go</code> and here.</li>
+<li>The inbound live-fill path is asynchronous and can receive duplicates (Sleipnir's boot reconciliation can re-emit a fill the WebSocket already delivered). This forces the dedup cache that ADR otherwise wouldn't need — see <code>dedup.go</code> and <code>OnExecutionFill</code>, keyed on <code>Fill.ExecutionID</code>.</li>
+<li>Live mode with no publisher configured logs a warning and drops the intent rather than crashing — a deliberate fail-safe, but one that can silently no-op if misconfigured.</li>
+</ul>
+<h2 id="alternatives-considered">Alternatives Considered<a class="headerlink" href="#alternatives-considered" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Two separate binaries / packages.</strong> Rejected. Guarantees drift between the validated strategy and the live one, duplicates the risk and portfolio code, and breaks the "backtest runs the real executor" property.</li>
+<li><strong>A <code>FillEngine</code> strategy-pattern interface (PaperEngine / LiveEngine).</strong> Considered. Cleaner on paper, but the two modes share far more than they differ (everything up to the branch); a full Strategy-pattern split would scatter the shared dispatch/risk/metrics logic or duplicate it. The single-type branch keeps the shared path provably shared. Could be revisited if a third mode appears.</li>
+<li><strong>Evaluate risk only on the returned live fill.</strong> Rejected. That would publish an intent to the venue <em>before</em> the risk check — the kill switch must be able to stop an order from ever leaving Huginn.</li>
+</ul>
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../internal/executor/executor.go"><code>internal/executor/executor.go</code></a> — <code>OnFeature</code> branch, <code>simulateFill</code>, <code>OnExecutionFill</code>, <code>IntentPublisher</code>.</li>
+<li><a href="../../internal/executor/dedup.go"><code>internal/executor/dedup.go</code></a> — bounded LRU dedup on <code>ExecutionID</code> for the inbound live path.</li>
+<li><a href="../../internal/kafka/producer.go"><code>internal/kafka/producer.go</code></a> — the production <code>IntentPublisher</code> (publishes <code>GatewayOrder</code> to Sleipnir).</li>
+</ul>
 
 
 
@@ -1277,10 +1226,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>
