@@ -4,11 +4,30 @@ package portfolio
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
 	"github.com/lgreene03/huginn/internal/model"
 )
+
+// sign returns +1 for positive, -1 for negative, 0 for zero.
+func sign(x float64) float64 {
+	switch {
+	case x > 0:
+		return 1
+	case x < 0:
+		return -1
+	default:
+		return 0
+	}
+}
+
+// sameSign reports whether a and b are both strictly positive or both strictly
+// negative (a fill adds to a position in the same direction).
+func sameSign(a, b float64) bool {
+	return (a > 0 && b > 0) || (a < 0 && b < 0)
+}
 
 // Portfolio maintains the current state of a simulated trading account.
 // All methods are safe for concurrent access.
@@ -54,6 +73,15 @@ func New(initialCash float64) *Portfolio {
 }
 
 // ApplyFill records a simulated execution against the portfolio.
+//
+// Positions are SIGNED: Quantity > 0 is long, < 0 is short, 0 is flat.
+// AverageCost is the POSITIVE average entry price of the currently-open
+// position. The fill economics generalize the original long-only avg-cost
+// ledger: a same-direction fill adds at a fee-inclusive weighted average, an
+// opposing fill closes (realizing PnL net of the prorated closing fee) and may
+// flip through zero, opening a fresh position in the opposite direction at the
+// fill price (with the remaining fee portion embedded in the new cost basis).
+// A long-only fill sequence produces results identical to the prior code.
 func (p *Portfolio) ApplyFill(fill model.Fill) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -64,71 +92,63 @@ func (p *Portfolio) ApplyFill(fill model.Fill) {
 		p.positions[fill.Instrument] = pos
 	}
 
-	cost := fill.FillPrice * fill.Quantity
+	// signed is the signed quantity delta of this fill: +qty for a BUY,
+	// -qty for a SELL. fillQty is always the positive traded size.
+	fillQty := fill.Quantity
+	signed := fillQty
+	if fill.Side == model.Sell {
+		signed = -fillQty
+	}
+	fee := fill.TransactionCost
 
-	// executedCost / executedSlippage track the portion of the fill that
-	// actually applied. For a buy that is the whole fill; for a sell that has
-	// been clipped to available inventory (long-only), it is the scaled share.
-	executedCost := fill.TransactionCost
-	executedSlippage := fill.SlippageBps
+	// Cash: a BUY pays notional + fee; a SELL receives notional, minus fee.
+	// -signed*price covers both: BUY (signed>0) debits, SELL (signed<0) credits.
+	p.cash += -signed*fill.FillPrice - fee
 
-	switch fill.Side {
-	case model.Buy:
-		// Cost basis is held INCLUSIVE of the buy-side transaction cost, so
-		// realized PnL on a later sell is automatically net of the entry fee
-		// (quant-5). AverageCost therefore represents the all-in per-unit cost.
-		totalCost := pos.AverageCost*pos.Quantity + cost + fill.TransactionCost
-		pos.Quantity += fill.Quantity
-		if pos.Quantity > 0 {
-			pos.AverageCost = totalCost / pos.Quantity
-		}
-		p.cash -= cost + fill.TransactionCost
+	oldQty := pos.Quantity
+	avg := pos.AverageCost
 
-	case model.Sell:
-		// Long-only invariant (quant-6): never realize PnL on quantity we do
-		// not hold and never drive the position negative (no shorting in this
-		// spot sim). Clip an over-sell to available inventory and warn.
-		sellQty := fill.Quantity
-		if sellQty > pos.Quantity {
-			slog.Warn("Sell clipped to available inventory (long-only)",
-				"instrument", fill.Instrument,
-				"requested_qty", fmt.Sprintf("%.8f", fill.Quantity),
-				"available_qty", fmt.Sprintf("%.8f", pos.Quantity),
-			)
-			sellQty = pos.Quantity
-		}
+	switch {
+	case oldQty == 0 || sameSign(oldQty, signed):
+		// Opening, or adding in the SAME direction: fee-inclusive weighted
+		// average over the absolute sizes. The fee adjusts the basis in the
+		// position's OWN direction: a long pays price+fee (basis up), a short
+		// receives price−fee (effective entry down), so realized PnL on the
+		// eventual close is net of BOTH legs' fees for longs AND shorts.
+		newQty := oldQty + signed
+		avg = (avg*math.Abs(oldQty) + fill.FillPrice*fillQty + sign(newQty)*fee) / math.Abs(newQty)
+		pos.Quantity = newQty
+		pos.AverageCost = avg
 
-		// Scale the executed economics to the (possibly clipped) quantity so
-		// cash, costs and slippage reflect only what actually filled.
-		var fillFraction float64
-		if fill.Quantity > 0 {
-			fillFraction = sellQty / fill.Quantity
-		}
-		executedCost = fill.TransactionCost * fillFraction
-		executedSlippage = fill.SlippageBps * fillFraction
-		proceeds := fill.FillPrice * sellQty
+	default:
+		// Fill OPPOSES the position: it closes up to abs(oldQty), and any
+		// remainder flips through zero to open a new position.
+		closeQty := math.Min(math.Abs(oldQty), fillQty)
+		// Realized PnL on the closed portion, net of the prorated closing fee.
+		// sign(oldQty) = +1 closing a long (profit when price>avg),
+		//               -1 closing a short (profit when price<avg).
+		realized := sign(oldQty)*(fill.FillPrice-avg)*closeQty - fee*(closeQty/fillQty)
+		p.realizedPnL += realized
 
-		if sellQty > 0 {
-			// Realized PnL is NET of both legs' transaction costs: the entry
-			// fee is already embedded in AverageCost, and the exit fee
-			// (executedCost) is subtracted here (quant-5).
-			realized := (fill.FillPrice-pos.AverageCost)*sellQty - executedCost
-			p.realizedPnL += realized
-		}
-		pos.Quantity -= sellQty
-		p.cash += proceeds - executedCost
-
-		// Reset average cost if position is flat.
-		if pos.Quantity <= 1e-12 {
+		pos.Quantity = oldQty + signed
+		if math.Abs(pos.Quantity) < 1e-12 {
 			pos.Quantity = 0
 			pos.AverageCost = 0
+		} else if remainder := fillQty - closeQty; remainder > 0 {
+			// Flipped through zero: the remainder opens a NEW position at the
+			// fill price, with the still-unallocated fee portion embedded in the
+			// new position's own direction (raises a long's basis, lowers a
+			// short's) so the eventual close nets both fees correctly.
+			pos.AverageCost = fill.FillPrice + sign(pos.Quantity)*(fee*(remainder/fillQty))/remainder
 		}
+		// (No flip: position merely reduced; AverageCost of the surviving
+		// side is unchanged.)
 	}
 
 	pos.LastMarkPrice = fill.FillPrice
 	p.totalFills++
-	p.totalCosts += executedCost
-	p.totalSlippage += executedSlippage
+	p.totalCosts += fee
+	p.totalSlippage += fill.SlippageBps
 	p.fills = append(p.fills, fill)
 
 	// Demoted from Info → Debug in Phase 3: at production event rates this
@@ -165,13 +185,16 @@ func (p *Portfolio) Snapshot() Snapshot {
 	var positionsValue float64
 	for inst, pos := range p.positions {
 		pCopy := *pos
-		if pCopy.Quantity > 0 {
+		if pCopy.Quantity != 0 {
 			// Mark to last fill price; fall back to cost basis if a position
 			// somehow has no mark yet (every fill sets LastMarkPrice).
 			mark := pCopy.LastMarkPrice
 			if mark <= 0 {
 				mark = pCopy.AverageCost
 			}
+			// Signed: a short (Quantity<0) has positive unrealized PnL as the
+			// mark falls below AverageCost, and contributes a negative market
+			// value (a liability) to equity.
 			pCopy.UnrealizedPnL = (mark - pCopy.AverageCost) * pCopy.Quantity
 			positionsValue += pCopy.Quantity * mark
 		}
@@ -180,12 +203,13 @@ func (p *Portfolio) Snapshot() Snapshot {
 	}
 
 	snap.UnrealizedPnL = unrealized
-	// Total equity = cash + MARKET VALUE of open positions (qty * mark), NOT
-	// cash + unrealized. Cash already paid out each position's cost basis on the
-	// buy, so adding back only the unrealized PnL drops that cost basis and
-	// understates equity by it whenever inventory is open — which silently
-	// corrupts TotalValue, the equity curve, drawdown, and every return derived
-	// from them. (When flat, positionsValue == 0 and TotalValue == cash.)
+	// Total equity = cash + MARKET VALUE of open positions (signed qty * mark),
+	// NOT cash + unrealized. Cash already paid out each long position's cost
+	// basis on the buy (and took in a short's proceeds), so adding back only the
+	// unrealized PnL would drop that basis and corrupt TotalValue, the equity
+	// curve, drawdown, and every return derived from them. A short Quantity is
+	// negative, so it contributes negatively (a liability). When flat,
+	// positionsValue == 0 and TotalValue == cash.
 	snap.TotalValue = snap.Cash + positionsValue
 
 	return snap

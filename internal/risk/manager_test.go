@@ -79,6 +79,76 @@ func TestRiskManager(t *testing.T) {
 	})
 }
 
+// TestPositionLimitShortSymmetry verifies the pre-trade position/notional cap
+// applies to ABSOLUTE exposure (abs(Quantity)*price), so an over-cap SHORT is
+// rejected exactly like an over-cap long, and an in-cap short is approved.
+func TestPositionLimitShortSymmetry(t *testing.T) {
+	cfg := config.RiskConfig{
+		MaxDrawdownPct:    0.10,
+		DailyLossLimit:    5000.0,
+		PositionLimitHard: 200000.0,
+	}
+
+	baseSnap := portfolio.Snapshot{
+		Timestamp:   time.Now(),
+		Cash:        100_000.0,
+		Positions:   make(map[string]portfolio.Position),
+		RealizedPnL: 0.0,
+		TotalValue:  100_000.0,
+	}
+
+	t.Run("Over-cap short from flat is rejected like an over-cap long", func(t *testing.T) {
+		m := NewManager(cfg, 100_000.0)
+		// 5 * 50000 = 250k > 200k cap. Same magnitude as the long-rejection case.
+		buy := model.Fill{Instrument: "BTC", Side: model.Buy, Quantity: 5.0, FillPrice: 50000.0}
+		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 5.0, FillPrice: 50000.0}
+		if m.Evaluate(buy, baseSnap) {
+			t.Fatalf("over-cap long should be rejected")
+		}
+		if m.Evaluate(sell, baseSnap) {
+			t.Fatalf("over-cap short should be rejected just like the long")
+		}
+	})
+
+	t.Run("In-cap short from flat is approved", func(t *testing.T) {
+		m := NewManager(cfg, 100_000.0)
+		// 3 * 50000 = 150k < 200k cap.
+		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 3.0, FillPrice: 50000.0}
+		if !m.Evaluate(sell, baseSnap) {
+			t.Fatalf("in-cap short should be approved")
+		}
+	})
+
+	t.Run("Adding to an existing short past the cap is rejected", func(t *testing.T) {
+		m := NewManager(cfg, 100_000.0)
+		snap := baseSnap
+		snap.Positions = map[string]portfolio.Position{
+			"BTC": {Quantity: -3.0}, // already short 3 BTC
+		}
+		// Selling 2 more => newQty = -5 => abs 5 * 50000 = 250k > 200k.
+		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 2.0, FillPrice: 50000.0}
+		if m.Evaluate(sell, snap) {
+			t.Fatalf("growing a short beyond the absolute cap should be rejected")
+		}
+	})
+
+	t.Run("Per-instrument cap is symmetric for shorts", func(t *testing.T) {
+		perCfg := cfg
+		perCfg.PositionLimitPerInstrument = map[string]float64{"BTC": 100_000.0}
+		m := NewManager(perCfg, 100_000.0)
+		// 3 * 50000 = 150k > 100k per-instrument cap.
+		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 3.0, FillPrice: 50000.0}
+		if m.Evaluate(sell, baseSnap) {
+			t.Fatalf("over-cap short should be rejected by the per-instrument cap")
+		}
+		// 1 * 50000 = 50k < 100k is allowed.
+		okSell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 1.0, FillPrice: 50000.0}
+		if !m.Evaluate(okSell, baseSnap) {
+			t.Fatalf("in-cap short should be approved by the per-instrument cap")
+		}
+	})
+}
+
 func TestSeedFromBaseline(t *testing.T) {
 	cfg := config.RiskConfig{MaxDrawdownPct: 0.20, PositionLimitHard: 500_000}
 	m := NewManager(cfg, 100_000)

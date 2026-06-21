@@ -306,11 +306,17 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 	if pos, exists := snap.Positions[fill.Instrument]; exists {
 		currentPosQty = pos.Quantity
 	}
+	// Direction is carried by Side; Quantity is a positive magnitude. Normalize
+	// with Abs so a defensively signed Quantity can't flip a Sell into an add,
+	// keeping the cap symmetric for shorts and longs alike. The resulting newQty
+	// may be negative (a short position); grossNotional below applies the cap to
+	// the ABSOLUTE exposure so a short cannot exceed the same caps a long would.
+	fillQty := math.Abs(fill.Quantity)
 	var newQty float64
 	if fill.Side == model.Buy {
-		newQty = currentPosQty + fill.Quantity
+		newQty = currentPosQty + fillQty
 	} else {
-		newQty = currentPosQty - fill.Quantity
+		newQty = currentPosQty - fillQty
 	}
 	grossNotional := math.Abs(newQty) * fill.FillPrice
 
