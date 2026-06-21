@@ -51,6 +51,9 @@ type StrategyConfig struct {
 	OrderSize  float64 `yaml:"order_size" envconfig:"STRATEGY_ORDER_SIZE"`
 	FastPeriod int     `yaml:"fast_period" envconfig:"STRATEGY_FAST_PERIOD"`
 	SlowPeriod int     `yaml:"slow_period" envconfig:"STRATEGY_SLOW_PERIOD"`
+	// MLMinConfidence is the OBI strategy's ML-confidence floor (0 => use the
+	// 0.35 default). Lower it to trade while the ML model is undertrained.
+	MLMinConfidence float64 `yaml:"ml_min_confidence" envconfig:"STRATEGY_ML_MIN_CONFIDENCE"`
 }
 
 type ExecutorConfig struct {

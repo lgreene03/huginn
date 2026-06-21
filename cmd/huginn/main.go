@@ -112,7 +112,11 @@ func main() {
 	var activeStrategy strategy.Strategy
 	switch cfg.Strategy.Name {
 	case "obi":
-		activeStrategy = strategy.NewOBIThreshold(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
+		obiParams := strategy.DefaultOBIParams()
+		if cfg.Strategy.MLMinConfidence > 0 {
+			obiParams.MLMinConfidence = cfg.Strategy.MLMinConfidence
+		}
+		activeStrategy = strategy.NewOBIThresholdWithParams(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10, obiParams)
 	case "vpin":
 		activeStrategy = strategy.NewVPINBreakout(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, time.Minute)
 	case "vwap_deviation":

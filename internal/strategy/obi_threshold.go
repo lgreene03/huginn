@@ -53,6 +53,11 @@ type OBIThreshold struct {
 	maxHoldTime   time.Duration
 	cooldown      time.Duration
 
+	// mlMinConfidence is the ML-confidence floor: when the ML layer is trained
+	// (mlReady>0), an entry whose mlScore is below this is blocked. Configurable
+	// so it can be relaxed while the ML model is undertrained.
+	mlMinConfidence float64
+
 	// costHurdle is the OPT-IN net-of-cost signal gate (quant-alpha-1). Nil (the
 	// default) is inert — no entry is ever suppressed, so existing behaviour and
 	// all current tests are unchanged. SetCostHurdle attaches a configured
@@ -87,6 +92,11 @@ const (
 	defaultOBIMaxHoldTime   = 30 * time.Minute
 	defaultOBICooldown      = 60 * time.Second
 	defaultOBIMaxNotional   = 500.0 // $500 max total notional exposure across all instruments
+	// defaultOBIMLMinConfidence is the historical hardcoded ML-confidence floor:
+	// when the ML layer is trained (mlReady>0), a signal with mlScore below this
+	// is blocked. Lower it (e.g. while the ML model is undertrained and emitting
+	// a near-constant score) to let OBI signals trade on their own merit.
+	defaultOBIMLMinConfidence = 0.35
 )
 
 // OBIParams bundles the exit/throttle parameters that used to be hardcoded in
@@ -95,22 +105,24 @@ const (
 // OBIParams is NOT valid — always start from DefaultOBIParams() and override
 // the fields you want, so unspecified fields keep today's defaults.
 type OBIParams struct {
-	StopLossPct   float64
-	TakeProfitPct float64
-	MaxHoldTime   time.Duration
-	Cooldown      time.Duration
-	MaxNotional   float64
+	StopLossPct     float64
+	TakeProfitPct   float64
+	MaxHoldTime     time.Duration
+	Cooldown        time.Duration
+	MaxNotional     float64
+	MLMinConfidence float64
 }
 
 // DefaultOBIParams returns the historical hardcoded exit/throttle parameters.
 // Using these yields behaviour identical to the pre-config OBIThreshold.
 func DefaultOBIParams() OBIParams {
 	return OBIParams{
-		StopLossPct:   defaultOBIStopLossPct,
-		TakeProfitPct: defaultOBITakeProfitPct,
-		MaxHoldTime:   defaultOBIMaxHoldTime,
-		Cooldown:      defaultOBICooldown,
-		MaxNotional:   defaultOBIMaxNotional,
+		StopLossPct:     defaultOBIStopLossPct,
+		TakeProfitPct:   defaultOBITakeProfitPct,
+		MaxHoldTime:     defaultOBIMaxHoldTime,
+		Cooldown:        defaultOBICooldown,
+		MaxNotional:     defaultOBIMaxNotional,
+		MLMinConfidence: defaultOBIMLMinConfidence,
 	}
 }
 
@@ -141,17 +153,21 @@ func NewOBIThresholdWithParams(threshold, orderSize, maxPosition float64, p OBIP
 	if p.MaxNotional <= 0 {
 		p.MaxNotional = defaultOBIMaxNotional
 	}
+	if p.MLMinConfidence <= 0 {
+		p.MLMinConfidence = defaultOBIMLMinConfidence
+	}
 	return &OBIThreshold{
-		Threshold:     threshold,
-		OrderSize:     orderSize,
-		maxPosition:   maxPosition,
-		maxNotional:   p.MaxNotional,
-		positions:     make(map[string]*positionEntry),
-		lastTradeTime: make(map[string]time.Time),
-		stopLossPct:   p.StopLossPct,
-		takeProfitPct: p.TakeProfitPct,
-		maxHoldTime:   p.MaxHoldTime,
-		cooldown:      p.Cooldown,
+		Threshold:       threshold,
+		OrderSize:       orderSize,
+		maxPosition:     maxPosition,
+		maxNotional:     p.MaxNotional,
+		positions:       make(map[string]*positionEntry),
+		lastTradeTime:   make(map[string]time.Time),
+		stopLossPct:     p.StopLossPct,
+		takeProfitPct:   p.TakeProfitPct,
+		maxHoldTime:     p.MaxHoldTime,
+		cooldown:        p.Cooldown,
+		mlMinConfidence: p.MLMinConfidence,
 	}
 }
 
@@ -313,7 +329,7 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 	}
 
 	// ML filter: block low-confidence signals when model is trained
-	if mlReady > 0 && mlScore < 0.35 {
+	if mlReady > 0 && mlScore < s.mlMinConfidence {
 		return nil
 	}
 
