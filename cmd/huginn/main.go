@@ -215,6 +215,26 @@ func main() {
 		SizingMaxNotionalFraction: cfg.Executor.SizingMaxNotionalFraction,
 	}, cfg.LiveExecution, producer, strategyKey)
 
+	// Net-of-cost signal gate (quant-alpha-1). Inert by default: with
+	// COST_HURDLE_K == 0 the hurdle never suppresses, so behaviour is unchanged.
+	// Only attach it to the OBI strategy (the strategy with a real edge model);
+	// other strategies keep their existing behaviour. The cost primitives mirror
+	// the executor's fill-cost model so the gate's estimate matches actual cost.
+	if obi, ok := activeStrategy.(*strategy.OBIThreshold); ok && cfg.Executor.CostHurdleK > 0 {
+		obi.SetCostHurdle(&strategy.CostHurdle{
+			K:                   cfg.Executor.CostHurdleK,
+			TransactionCostBps:  cfg.Executor.TransactionCostBps,
+			SlippageBps:         cfg.Executor.SlippageBps,
+			SlippageImpactK:     cfg.Executor.SlippageImpactK,
+			SlippageImpactScale: cfg.Executor.SlippageImpactScale,
+			Edge:                strategy.OBIEdgeModel{BpsPerUnit: cfg.Executor.OBIEdgeBpsPerUnit},
+		})
+		slog.Info("Net-of-cost signal gate enabled",
+			"cost_hurdle_k", cfg.Executor.CostHurdleK,
+			"obi_edge_bps_per_unit", cfg.Executor.OBIEdgeBpsPerUnit,
+		)
+	}
+
 	// Initialize Kafka consumer for incoming feature events
 	consumer := kafka.NewConsumer(kafka.Config{
 		Brokers: cfg.Kafka.Brokers,

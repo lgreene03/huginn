@@ -234,3 +234,105 @@ func TestEMACrossover_NoFalseSignalAtWarmupBoundary(t *testing.T) {
 		t.Fatalf("first post-warmup event at constant price should not signal, got %d orders", len(orders))
 	}
 }
+
+// ── Net-of-cost signal gate (quant-alpha-1) integration ──────────────────────
+
+// obiBuyEvent builds a clean BUY-triggering OBI event. With threshold 0.7,
+// obi=-0.85 ⇒ effectiveThreshold 0.7, signalStrength = 0.85-0.7 = 0.15.
+func obiBuyEvent() model.FeatureEvent {
+	return model.FeatureEvent{
+		EventTime:  time.Now(),
+		Instrument: "BTC-USDT",
+		Values:     map[string]float64{"obi": -0.85, "midPrice": 100.0},
+	}
+}
+
+func TestOBIThreshold_CostHurdleKZeroIdentical(t *testing.T) {
+	// A K==0 hurdle attached must leave behaviour identical to no hurdle.
+	s := NewOBIThreshold(0.7, 0.01, 0.1)
+	s.SetCostHurdle(&CostHurdle{
+		K:                  0, // inert
+		TransactionCostBps: 5,
+		SlippageBps:        2,
+		Edge:               OBIEdgeModel{BpsPerUnit: 60},
+	})
+	orders := s.OnFeature(obiBuyEvent())
+	if len(orders) != 1 || orders[0].Side != model.Buy {
+		t.Fatalf("K==0 hurdle must not change behaviour; got %d orders", len(orders))
+	}
+}
+
+func TestOBIThreshold_NoHurdleStillFires(t *testing.T) {
+	// Baseline: no hurdle attached at all (the default) fires the entry.
+	s := NewOBIThreshold(0.7, 0.01, 0.1)
+	orders := s.OnFeature(obiBuyEvent())
+	if len(orders) != 1 || orders[0].Side != model.Buy {
+		t.Fatalf("default (no hurdle) must fire entry; got %d orders", len(orders))
+	}
+}
+
+func TestOBIThreshold_HighKSuppressesMarginalEntry(t *testing.T) {
+	// signalStrength 0.15 ⇒ edge 0.15*60 = 9 bps. Round-trip cost 14 bps.
+	// K=2 ⇒ hurdle 28 bps ⇒ 9 < 28 ⇒ suppressed, and NO state mutated.
+	s := NewOBIThreshold(0.7, 0.01, 0.1)
+	s.SetCostHurdle(&CostHurdle{
+		K:                  2,
+		TransactionCostBps: 5,
+		SlippageBps:        2,
+		Edge:               OBIEdgeModel{BpsPerUnit: 60},
+	})
+	orders := s.OnFeature(obiBuyEvent())
+	if len(orders) != 0 {
+		t.Fatalf("marginal entry must be suppressed by high-K hurdle, got %d orders", len(orders))
+	}
+	// State must be untouched: a subsequent unconstrained signal should still
+	// fire (proves the suppressed entry left no phantom position / cooldown).
+	s.SetCostHurdle(nil)
+	again := s.OnFeature(model.FeatureEvent{
+		EventTime:  time.Now().Add(2 * time.Minute),
+		Instrument: "BTC-USDT",
+		Values:     map[string]float64{"obi": -0.85, "midPrice": 100.0},
+	})
+	if len(again) != 1 {
+		t.Fatalf("suppressed entry must not mutate state; follow-up should fire, got %d", len(again))
+	}
+}
+
+func TestOBIThreshold_EntryClearingHurdleFires(t *testing.T) {
+	// Strong signal: obi=-1.0, threshold 0.7 ⇒ signalStrength 0.3 ⇒ edge 18 bps.
+	// Round-trip cost 14 bps, K=1 ⇒ hurdle 14 bps ⇒ 18 ≥ 14 ⇒ fires.
+	s := NewOBIThreshold(0.7, 0.01, 0.1)
+	s.SetCostHurdle(&CostHurdle{
+		K:                  1,
+		TransactionCostBps: 5,
+		SlippageBps:        2,
+		Edge:               OBIEdgeModel{BpsPerUnit: 60},
+	})
+	orders := s.OnFeature(model.FeatureEvent{
+		EventTime:  time.Now(),
+		Instrument: "BTC-USDT",
+		Values:     map[string]float64{"obi": -1.0, "midPrice": 100.0},
+	})
+	if len(orders) != 1 || orders[0].Side != model.Buy {
+		t.Fatalf("entry clearing the hurdle must fire, got %d orders", len(orders))
+	}
+}
+
+func TestOBIThreshold_HighKSuppressesSell(t *testing.T) {
+	// Mirror for the SELL branch: obi=0.85, signalStrength 0.15 ⇒ 9 bps.
+	s := NewOBIThreshold(0.7, 0.01, 0.1)
+	s.SetCostHurdle(&CostHurdle{
+		K:                  2,
+		TransactionCostBps: 5,
+		SlippageBps:        2,
+		Edge:               OBIEdgeModel{BpsPerUnit: 60},
+	})
+	orders := s.OnFeature(model.FeatureEvent{
+		EventTime:  time.Now(),
+		Instrument: "BTC-USDT",
+		Values:     map[string]float64{"obi": 0.85, "midPrice": 100.0},
+	})
+	if len(orders) != 0 {
+		t.Fatalf("marginal SELL must be suppressed by high-K hurdle, got %d orders", len(orders))
+	}
+}

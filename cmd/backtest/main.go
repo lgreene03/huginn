@@ -104,6 +104,13 @@ func main() {
 	turnover := metrics.Turnover(fills)
 	avgHold := metrics.AvgHoldTimeSeconds(fills)
 
+	// Cost-aware reporting: gross vs net. NetPnL = GrossPnL − fees − slippage is
+	// the true objective — a strategy can have a real gross edge yet bleed it all
+	// to costs by over-trading. NetSharpe is the Sharpe of the (net-of-cost)
+	// equity curve the engine sampled.
+	cost := metrics.ComputeCostBreakdown(fills)
+	netSharpe := metrics.NetSharpe(equity, 0.0)
+
 	// Buy-and-hold benchmark over the same window. Re-load the event stream
 	// (cheap second pass) so we can mark an equal-notional basket of every
 	// priceable instrument to market and compare the strategy against simply
@@ -142,6 +149,12 @@ func main() {
 	} else {
 		fmt.Println("Buy-Hold Return: n/a (no priceable instruments in stream)")
 	}
+	fmt.Println("─── Net of Costs ───")
+	fmt.Printf("Gross PnL:       %+.4f\n", cost.GrossPnL)
+	fmt.Printf("Fees:            %.4f\n", cost.Fees)
+	fmt.Printf("Slippage:        %.4f\n", cost.Slippage)
+	fmt.Printf("Net PnL:         %+.4f  (gross − fees − slippage)\n", cost.NetPnL)
+	fmt.Printf("Net Sharpe:      %.4f\n", netSharpe)
 	fmt.Println("════════════════════════")
 
 	// Optionally generate an HTML report.

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lgreene03/huginn/internal/metrics"
 	"github.com/lgreene03/huginn/internal/model"
 )
 
@@ -51,6 +52,22 @@ type OBIThreshold struct {
 	takeProfitPct float64
 	maxHoldTime   time.Duration
 	cooldown      time.Duration
+
+	// costHurdle is the OPT-IN net-of-cost signal gate (quant-alpha-1). Nil (the
+	// default) is inert — no entry is ever suppressed, so existing behaviour and
+	// all current tests are unchanged. SetCostHurdle attaches a configured
+	// hurdle; it only suppresses when its K > 0 and an EdgeModel is present.
+	costHurdle *CostHurdle
+}
+
+// SetCostHurdle attaches (or clears, with nil) the net-of-cost signal gate.
+// Guarded by the strategy mutex so it is safe to call from the boot path before
+// dispatch starts, or from a config-update goroutine. Passing nil restores the
+// inert default. See cost_hurdle.go for the gate's contract.
+func (s *OBIThreshold) SetCostHurdle(h *CostHurdle) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.costHurdle = h
 }
 
 type positionEntry struct {
@@ -339,6 +356,21 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 			return nil
 		}
 
+		// ── Net-of-cost signal gate (quant-alpha-1) ──────────────────────
+		// Suppress this entry unless its expected edge clears K * round-trip
+		// cost. Inert when no hurdle is configured or K == 0, so the default
+		// path is unchanged. Placed BEFORE any state mutation so a suppressed
+		// entry leaves netPosition / positions untouched.
+		signalStrength := obi - effectiveThreshold // ≥ 0 here (obi > effectiveThreshold)
+		if s.costHurdle.Suppress(signalStrength, s.OrderSize, model.Sell, event) {
+			metrics.OrdersCostSuppressedTotal.WithLabelValues(s.Name(), model.Sell.String()).Inc()
+			slog.Debug("Sell suppressed by net-of-cost hurdle",
+				"instrument", instrument,
+				"signal_strength", fmt.Sprintf("%.4f", signalStrength),
+			)
+			return nil
+		}
+
 		confidence := "normal"
 		if momentum1m < -0.001 {
 			confidence = "high"
@@ -405,6 +437,19 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 			return nil
 		}
 		if newsSentiment < -0.4 {
+			return nil
+		}
+
+		// ── Net-of-cost signal gate (quant-alpha-1) ──────────────────────
+		// See the SELL branch above. signalStrength is the distance of |obi|
+		// past the effective threshold; ≥ 0 here since obi < -effectiveThreshold.
+		signalStrength := -obi - effectiveThreshold
+		if s.costHurdle.Suppress(signalStrength, s.OrderSize, model.Buy, event) {
+			metrics.OrdersCostSuppressedTotal.WithLabelValues(s.Name(), model.Buy.String()).Inc()
+			slog.Debug("Buy suppressed by net-of-cost hurdle",
+				"instrument", instrument,
+				"signal_strength", fmt.Sprintf("%.4f", signalStrength),
+			)
 			return nil
 		}
 

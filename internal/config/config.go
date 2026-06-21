@@ -86,6 +86,21 @@ type ExecutorConfig struct {
 	// SizingMaxNotionalFraction caps any sized order at this fraction of equity.
 	// Zero disables the cap.
 	SizingMaxNotionalFraction float64 `yaml:"sizing_max_notional_fraction" envconfig:"EXECUTOR_SIZING_MAX_NOTIONAL_FRACTION"`
+
+	// CostHurdleK is the safety multiple of round-trip trading cost an entry's
+	// expected edge must clear before it is allowed through (quant-alpha-1, the
+	// net-of-cost signal gate). DEFAULT 0.0 is INERT: no entry is ever
+	// suppressed, so existing behaviour and all current tests are unchanged.
+	// Only K > 0 activates the gate. K == 1 requires the edge to break even on
+	// cost; K > 1 demands a margin. Swept as a calibrate grid key (cost_hurdle_k)
+	// to find the K that maximises NET realized PnL on the existing OBI edge.
+	CostHurdleK float64 `yaml:"cost_hurdle_k" envconfig:"COST_HURDLE_K"`
+
+	// OBIEdgeBpsPerUnit is the linear coefficient mapping OBI signal strength
+	// (|obi - effectiveThreshold|) to expected mean-reversion edge in basis
+	// points, used by the cost hurdle's OBI edge model. Zero falls back to
+	// strategy.DefaultEdgeBpsPerUnit. Only consulted when CostHurdleK > 0.
+	OBIEdgeBpsPerUnit float64 `yaml:"obi_edge_bps_per_unit" envconfig:"OBI_EDGE_BPS_PER_UNIT"`
 }
 
 type ServerConfig struct {

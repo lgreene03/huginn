@@ -28,7 +28,10 @@
 // Strategies and their supported grid keys:
 //
 //	obi             — threshold, order_size, stop_loss_pct, take_profit_pct,
-//	                  max_hold_ms, cooldown_ms, max_notional
+//	                  max_hold_ms, cooldown_ms, max_notional, cost_hurdle_k,
+//	                  obi_edge_bps_per_unit
+//	                  (cost_hurdle_k>0 enables the net-of-cost signal gate;
+//	                   sweep it to find the K that maximises NET realized PnL)
 //	vpin            — threshold, order_size, cooldown_ms
 //	vwap_deviation  — threshold_pct, order_size
 //	ema_crossover   — fast_period, slow_period, order_size
@@ -59,6 +62,15 @@ import (
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/strategy"
+)
+
+// Sweep fill-cost constants. These are the simulated per-fill costs every combo
+// is evaluated under; they're named so the net-of-cost gate (quant-alpha-1) can
+// reuse the identical numbers — the gate's cost estimate must match the cost the
+// simulated fills actually incur, or a swept cost_hurdle_k would be miscalibrated.
+const (
+	sweepTxCostBps   = 5.0
+	sweepSlippageBps = 2.0
 )
 
 // stringSliceFlag collects repeated `--grid key=v1,v2,...` flags.
@@ -289,16 +301,16 @@ func runSweep(stratName string, combos []map[string]string, events []model.Featu
 // --apply-risk substitutes the production RiskConfig so the sweep is gated
 // exactly as live trading would be.
 func runOne(stratName string, params map[string]string, events []model.FeatureEvent, initialCash float64, riskCfg config.RiskConfig) (result, error) {
-	strategy, err := buildStrategy(stratName, params)
+	strat, err := buildStrategy(stratName, params)
 	if err != nil {
 		return result{}, err
 	}
 
 	port := portfolio.New(initialCash)
 	rm := risk.NewManager(riskCfg, initialCash)
-	exec := executor.New(strategy, port, nil, rm, executor.Config{
-		TransactionCostBps: 5,
-		SlippageBps:        2,
+	exec := executor.New(strat, port, nil, rm, executor.Config{
+		TransactionCostBps: sweepTxCostBps,
+		SlippageBps:        sweepSlippageBps,
 	}, false, nil, "" /* no state persistence */)
 
 	// Replay daily equity for Sharpe/MDD.
@@ -376,17 +388,42 @@ func buildStrategy(name string, p map[string]string) (strategy.Strategy, error) 
 		if err != nil {
 			return nil, err
 		}
-		if err := rejectUnknown(p, "threshold", "order_size",
-			"stop_loss_pct", "take_profit_pct", "max_hold_ms", "cooldown_ms", "max_notional"); err != nil {
+		// Net-of-cost gate sweep keys (quant-alpha-1). cost_hurdle_k DEFAULTS to
+		// 0 ⇒ inert, so a grid that omits it reproduces the pre-gate sweep
+		// exactly. obi_edge_bps_per_unit defaults to 0 ⇒ the strategy's
+		// DefaultEdgeBpsPerUnit. Sweeping cost_hurdle_k finds the K that
+		// maximises NET realized PnL.
+		costHurdleK, err := mustFloat(p, "cost_hurdle_k", 0)
+		if err != nil {
 			return nil, err
 		}
-		return strategy.NewOBIThresholdWithParams(th, size, size*10, strategy.OBIParams{
+		edgeBpsPerUnit, err := mustFloat(p, "obi_edge_bps_per_unit", 0)
+		if err != nil {
+			return nil, err
+		}
+		if err := rejectUnknown(p, "threshold", "order_size",
+			"stop_loss_pct", "take_profit_pct", "max_hold_ms", "cooldown_ms", "max_notional",
+			"cost_hurdle_k", "obi_edge_bps_per_unit"); err != nil {
+			return nil, err
+		}
+		obiStrat := strategy.NewOBIThresholdWithParams(th, size, size*10, strategy.OBIParams{
 			StopLossPct:   stopLoss,
 			TakeProfitPct: takeProfit,
 			MaxHoldTime:   time.Duration(holdMs) * time.Millisecond,
 			Cooldown:      time.Duration(cooldownMs) * time.Millisecond,
 			MaxNotional:   maxNotional,
-		}), nil
+		})
+		if costHurdleK > 0 {
+			// Cost primitives match the sweep's executor.Config so the gate's
+			// cost estimate agrees with the fills the sweep actually simulates.
+			obiStrat.SetCostHurdle(&strategy.CostHurdle{
+				K:                  costHurdleK,
+				TransactionCostBps: sweepTxCostBps,
+				SlippageBps:        sweepSlippageBps,
+				Edge:               strategy.OBIEdgeModel{BpsPerUnit: edgeBpsPerUnit},
+			})
+		}
+		return obiStrat, nil
 
 	case "vpin":
 		th, err := mustFloat(p, "threshold", 0.5)

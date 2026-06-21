@@ -29,6 +29,21 @@ type ReportParams struct {
 	Fills       []model.Fill
 	GeneratedAt time.Time
 
+	// Cost-aware reporting (cost objective). GrossPnL is realized round-trip
+	// PnL on fill prices before fees; NetPnL = GrossPnL − Fees − Slippage and is
+	// the true objective. NetSharpe is the Sharpe of the (net-of-cost) equity
+	// curve, shown beside the headline Sharpe so over-trading relative to the
+	// edge is visible at a glance.
+	GrossPnL  float64
+	NetPnL    float64
+	Fees      float64
+	Slippage  float64
+	NetSharpe float64
+
+	// RegimePnL is per-regime gross/net round-trip attribution (quiet / trend /
+	// mean-revert / volatile). Empty when no events were available to classify.
+	RegimePnL []RegimePnL
+
 	// Buy-and-hold benchmark over the same window. BenchmarkValid is false
 	// when no instrument in the stream was priceable (nothing to hold), in
 	// which case the benchmark section is omitted from the report.
@@ -254,6 +269,35 @@ tr:hover td{background:#141414}
   <div class="stat"><div class="stat-label">Avg Hold</div><div class="stat-value">{{fmtDuration .AvgHoldSec}}</div></div>
 </div>
 </section>
+
+<section>
+<h2>Cost-Adjusted Performance (Gross vs Net)</h2>
+<div class="stats-grid">
+  <div class="stat"><div class="stat-label">Gross PnL</div><div class="stat-value {{if ge .GrossPnL 0.0}}pos{{else}}neg{{end}}">{{printf "%.4f" .GrossPnL}}</div></div>
+  <div class="stat"><div class="stat-label">Net PnL (− fees − slip)</div><div class="stat-value {{if ge .NetPnL 0.0}}pos{{else}}neg{{end}}">{{printf "%.4f" .NetPnL}}</div></div>
+  <div class="stat"><div class="stat-label">Fees</div><div class="stat-value neg">{{printf "%.4f" .Fees}}</div></div>
+  <div class="stat"><div class="stat-label">Slippage</div><div class="stat-value neg">{{printf "%.4f" .Slippage}}</div></div>
+  <div class="stat"><div class="stat-label">Sharpe (gross)</div><div class="stat-value {{if ge .Sharpe 0.0}}pos{{else}}neg{{end}}">{{printf "%.4f" .Sharpe}}</div></div>
+  <div class="stat"><div class="stat-label">Sharpe (net)</div><div class="stat-value {{if ge .NetSharpe 0.0}}pos{{else}}neg{{end}}">{{printf "%.4f" .NetSharpe}}</div></div>
+</div>
+</section>
+
+{{if .RegimePnL}}
+<section>
+<h2>Per-Regime Attribution (round-trip PnL by entry regime)</h2>
+<table>
+<thead><tr><th>Regime</th><th>Round Trips</th><th>Gross PnL</th><th>Net PnL</th></tr></thead>
+<tbody>
+{{range .RegimePnL}}<tr>
+  <td>{{.Regime}}</td>
+  <td>{{.RoundTrips}}</td>
+  <td class="{{if ge .GrossPnL 0.0}}buy{{else}}sell{{end}}">{{printf "%.4f" .GrossPnL}}</td>
+  <td class="{{if ge .NetPnL 0.0}}buy{{else}}sell{{end}}">{{printf "%.4f" .NetPnL}}</td>
+</tr>{{end}}
+</tbody>
+</table>
+</section>
+{{end}}
 
 {{if .BenchmarkValid}}
 <section>

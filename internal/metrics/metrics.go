@@ -30,6 +30,18 @@ var (
 		[]string{"strategy", "side"},
 	)
 
+	// OrdersCostSuppressedTotal counts candidate entries blocked by the
+	// net-of-cost signal gate (quant-alpha-1) because their expected edge did
+	// not clear K * round-trip cost. Labelled by strategy and side. Stays at 0
+	// while COST_HURDLE_K == 0 (the inert default).
+	OrdersCostSuppressedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_orders_cost_suppressed_total",
+			Help: "Total candidate entries suppressed by the net-of-cost signal gate",
+		},
+		[]string{"strategy", "side"},
+	)
+
 	// FillsExecutedTotal counts total simulated/live fills applied.
 	FillsExecutedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
