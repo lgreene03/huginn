@@ -22,6 +22,8 @@ web/build/
 # Local Data and Logs
 data/trades.jsonl
 data/btc_test.jsonl
+data/backtest_trades.jsonl
+data/costsweep_trades.jsonl
 data/walkforward_results.json
 data/pg_data/
 *.db
@@ -33,3 +35,4 @@ data/pg_data/
 ehthumbs.db
 Icon?
 Thumbs.db
+/costsweep

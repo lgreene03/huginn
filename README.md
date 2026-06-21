@@ -123,9 +123,53 @@ CORS is scoped to a single dashboard origin via `HUGINN_DASHBOARD_ORIGIN`
 (default `http://localhost:8084`); the wildcard `*` is never sent. In the Norse
 stack the token is provided by the `norse-stack` compose file.
 
+### HTTP API reference
+
+The full HTTP surface is documented as a static OpenAPI 3 spec at
+[`api/openapi.yaml`](api/openapi.yaml) — covering `/healthz`, `/readyz`,
+`/version`, `/metrics`, `/api/snapshot`, `/api/snapshot/history`, `/api/stream`,
+`/api/breaker/*`, `/api/fills/mock`, and `GET`/`PUT /api/strategy/config`,
+including the bearer-auth scheme on the mutating endpoints. Open it in any
+OpenAPI viewer (Swagger UI, Redocly, the Stoplight VS Code extension).
+
 You can specify a config file via the CLI:
 ```bash
 ./huginn --config configs/aggressive.yaml
+```
+
+## Building from source
+
+```bash
+# Plain build — binary reports VERSION=dev, GIT_SHA=unknown, BUILD_TIME=unknown
+go build -o huginn ./cmd/huginn
+
+# Stamped build — git SHA + UTC build time baked in via -ldflags -X.
+# The Makefile fills GIT_SHA/BUILD_TIME from git/date by default:
+make build
+
+# Or stamp manually:
+go build -ldflags "\
+  -X github.com/lgreene03/huginn/internal/version.Version=v0.1.0 \
+  -X github.com/lgreene03/huginn/internal/version.GitSHA=$(git rev-parse --short HEAD) \
+  -X github.com/lgreene03/huginn/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o huginn ./cmd/huginn
+```
+
+The stamped values surface in the startup log and at `GET /version`:
+
+```bash
+curl http://localhost:8081/version
+# {"version":"v0.1.0","git_sha":"e95e691","build_time":"2026-06-21T10:00:00Z"}
+```
+
+The container image stamps the same values from `--build-arg`:
+
+```bash
+make docker          # passes VERSION/GIT_SHA/BUILD_TIME through to the build
+# or, via compose:
+GIT_SHA=$(git rev-parse --short HEAD) \
+  BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  docker compose build huginn
 ```
 
 ## Testing

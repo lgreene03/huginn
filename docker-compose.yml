@@ -1,6 +1,15 @@
 services:
   huginn:
-    build: .
+    build:
+      context: .
+      # Build provenance: stamped into internal/version via -ldflags -X.
+      # Override at build time, e.g.
+      #   GIT_SHA=$(git rev-parse --short HEAD) docker compose build huginn
+      # Unset → graceful "dev"/"unknown" defaults (matches Dockerfile ARGs).
+      args:
+        VERSION: ${VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     ports:
       - "8083:8081"
     environment:

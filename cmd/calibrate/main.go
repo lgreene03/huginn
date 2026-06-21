@@ -165,7 +165,7 @@ func main() {
 	}
 
 	if *walkForward > 0 {
-		folds, err := runWalkForward(*strategyName, combos, events, *walkForward, *initialCash, *workers, riskCfg)
+		folds, oosMatrix, err := runWalkForward(*strategyName, combos, events, *walkForward, *initialCash, *workers, riskCfg)
 		if err != nil {
 			slog.Error("Walk-forward failed", "error", err)
 			os.Exit(1)
@@ -174,7 +174,7 @@ func main() {
 			slog.Error("Failed to write walk-forward CSV", "error", err)
 			os.Exit(1)
 		}
-		printWalkForwardSummary(folds, len(combos))
+		printWalkForwardSummary(folds, len(combos), oosMatrix)
 		slog.Info("Walk-forward calibration complete",
 			"folds", len(folds), "combos_per_fold", len(combos), "out", resultPath,
 		)
@@ -264,6 +264,12 @@ type result struct {
 	HitRate     float64
 	Turnover    float64
 	AvgHoldSec  float64
+	// Moments carries the per-observation return statistics of this combo's
+	// equity curve (per-obs Sharpe, skew, kurtosis, nObs) so the walk-forward
+	// path can compute a Deflated Sharpe Ratio for the selected config without
+	// re-deriving them. Populated by runOne; the annualized Sharpe field above
+	// remains the headline figure.
+	Moments metrics.ReturnMoments
 }
 
 func runSweep(stratName string, combos []map[string]string, events []model.FeatureEvent, initialCash float64, workers int, riskCfg config.RiskConfig) []result {
@@ -337,6 +343,7 @@ func runOne(stratName string, params map[string]string, events []model.FeatureEv
 		HitRate:     metrics.HitRate(fills),
 		Turnover:    metrics.Turnover(fills),
 		AvgHoldSec:  metrics.AvgHoldTimeSeconds(fills),
+		Moments:     metrics.EquityReturnMoments(equity),
 	}, nil
 }
 
@@ -532,6 +539,9 @@ type foldResult struct {
 	TestHitRate  float64
 	TestTurnover float64
 	TestHoldSec  float64
+	// TestMoments holds the selected config's out-of-sample per-observation
+	// return statistics, used to compute the Deflated Sharpe Ratio.
+	TestMoments metrics.ReturnMoments
 }
 
 // runWalkForward divides the event stream into N+1 chronological windows of
@@ -544,18 +554,23 @@ type foldResult struct {
 //
 // This is the canonical guard against in-sample overfit: parameter choice
 // happens on train, evaluation happens on never-before-seen test data.
-func runWalkForward(stratName string, combos []map[string]string, events []model.FeatureEvent, windows int, initialCash float64, workers int, riskCfg config.RiskConfig) ([]foldResult, error) {
+func runWalkForward(stratName string, combos []map[string]string, events []model.FeatureEvent, windows int, initialCash float64, workers int, riskCfg config.RiskConfig) ([]foldResult, [][]float64, error) {
 	n := len(events)
 	if windows < 1 {
-		return nil, fmt.Errorf("--walk-forward must be ≥ 1, got %d", windows)
+		return nil, nil, fmt.Errorf("--walk-forward must be ≥ 1, got %d", windows)
 	}
 	winSize := n / (windows + 1)
 	if winSize < 2 {
-		return nil, fmt.Errorf("dataset too small (%d events) for %d-fold walk-forward (need ≥ %d events)",
+		return nil, nil, fmt.Errorf("dataset too small (%d events) for %d-fold walk-forward (need ≥ %d events)",
 			n, windows, 2*(windows+1))
 	}
 
 	folds := make([]foldResult, windows)
+	// oosMatrix is the [fold][config] out-of-sample Sharpe matrix that feeds the
+	// Probability of Backtest Overfitting (CSCV) estimator. Each row is one
+	// fold's test slice scored across EVERY combo (not just the selected one),
+	// so PBO can ask whether the in-sample winner generalises.
+	oosMatrix := make([][]float64, windows)
 	for k := 0; k < windows; k++ {
 		trainEnd := (k + 1) * winSize
 		testEnd := (k + 2) * winSize
@@ -572,13 +587,28 @@ func runWalkForward(stratName string, combos []map[string]string, events []model
 		trainResults := runSweep(stratName, combos, train, initialCash, workers, riskCfg)
 		best, err := pickBestSharpe(trainResults)
 		if err != nil {
-			return nil, fmt.Errorf("fold %d: %w", k, err)
+			return nil, nil, fmt.Errorf("fold %d: %w", k, err)
 		}
 
-		testR, err := runOne(stratName, best.Params, test, initialCash, riskCfg)
-		if err != nil {
-			return nil, fmt.Errorf("fold %d test eval: %w", k, err)
+		// Score every combo out-of-sample on this fold's test slice for the PBO
+		// matrix. The selected config's OOS metrics are read back from this same
+		// sweep so we don't run it twice.
+		testResults := runSweep(stratName, combos, test, initialCash, workers, riskCfg)
+		oosRow := make([]float64, len(testResults))
+		for i, tr := range testResults {
+			s := tr.Sharpe
+			if math.IsNaN(s) {
+				// CSCV ranks higher-is-better; a failed/degenerate combo gets the
+				// worst possible score so it never inflates a rank.
+				s = math.Inf(-1)
+			}
+			oosRow[i] = s
 		}
+		oosMatrix[k] = oosRow
+
+		// Locate the selected (best-IS) combo within the OOS sweep to read its
+		// out-of-sample metrics + moments.
+		testR := testResults[indexOfParams(testResults, best.Params)]
 		folds[k] = foldResult{
 			Idx:          k,
 			BestParams:   best.Params,
@@ -590,9 +620,37 @@ func runWalkForward(stratName string, combos []map[string]string, events []model
 			TestHitRate:  testR.HitRate,
 			TestTurnover: testR.Turnover,
 			TestHoldSec:  testR.AvgHoldSec,
+			TestMoments:  testR.Moments,
 		}
 	}
-	return folds, nil
+	return folds, oosMatrix, nil
+}
+
+// indexOfParams returns the index of the result whose Params map equals target.
+// combos preserve order across sweeps of the same combo list, so the selected
+// in-sample winner maps to the same slot in the out-of-sample sweep; this scan
+// is a defensive lookup that also tolerates any future reordering. Returns 0 if
+// no exact match is found (the matrices are built from the same combos, so a
+// miss is not expected).
+func indexOfParams(rs []result, target map[string]string) int {
+	for i, r := range rs {
+		if sameParams(r.Params, target) {
+			return i
+		}
+	}
+	return 0
+}
+
+func sameParams(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // pickBestSharpe returns the result with the highest Sharpe. NaN Sharpe
@@ -654,7 +712,7 @@ func meanStd(xs []float64) (mean, std float64) {
 // Sharpe is subject to multiple-testing selection bias, so the honest output is
 // the IS→OOS decay per fold plus the distribution of OOS metrics across folds,
 // leaving the judgement call to the reader.
-func printWalkForwardSummary(folds []foldResult, numCombos int) {
+func printWalkForwardSummary(folds []foldResult, numCombos int, oosMatrix [][]float64) {
 	if len(folds) == 0 {
 		return
 	}
@@ -707,7 +765,51 @@ func printWalkForwardSummary(folds []foldResult, numCombos int) {
 		fmt.Printf("Mean/std (OOS Sharpe SNR):      %+.2f  (higher = more consistent edge)\n", snr)
 	}
 	fmt.Printf("Reminder: %d combos searched/fold — treat the best as upward-biased.\n", numCombos)
+
+	// ─── Overfitting-aware statistics (Bailey & López de Prado) ───
+	// Deflated Sharpe Ratio per fold: the selected config's OOS Sharpe, deflated
+	// by the number of trials (numCombos) searched in-sample, reported with the
+	// implied P(true Sharpe ≤ 0). The Sharpe is converted from the engine's
+	// annualized figure back to per-observation units via the OOS moments.
+	fmt.Println("─── Deflated Sharpe (selected config, deflated by trials) ───")
+	fmt.Printf("Trials (combos) per fold: %d\n", numCombos)
+	for _, f := range folds {
+		m := f.TestMoments
+		if math.IsNaN(m.PerObsSharpe) || m.NObs < 2 {
+			fmt.Printf("  Fold %d: DSR n/a (insufficient OOS return observations)\n", f.Idx)
+			continue
+		}
+		dsr := metrics.DeflatedSharpeRatio(m.PerObsSharpe, numCombos, m.Skew, m.Kurtosis, m.NObs)
+		if math.IsNaN(dsr) {
+			fmt.Printf("  Fold %d: DSR n/a (undefined: degenerate higher moments)\n", f.Idx)
+			continue
+		}
+		pNonPos := metrics.ImpliedPTrueSharpeNonPositive(dsr)
+		fmt.Printf("  Fold %d: DSR %.4f  P(true Sharpe ≤ 0) %.4f  (OOS obs %.0f)\n",
+			f.Idx, dsr, pNonPos, m.NObs)
+	}
+
+	// Probability of Backtest Overfitting across all folds, from the OOS Sharpe
+	// matrix (CSCV). High PBO ⇒ the in-sample winner tends to be a coin-flip (or
+	// worse) out of sample.
+	pbo := metrics.ProbabilityBacktestOverfitting(oosMatrix)
+	fmt.Println("─── Probability of Backtest Overfitting (CSCV) ───")
+	if math.IsNaN(pbo) {
+		fmt.Printf("PBO: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
+			len(oosMatrix), oosConfigCount(oosMatrix))
+	} else {
+		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
+	}
 	fmt.Println("════════════════════════════")
+}
+
+// oosConfigCount returns the config count (row width) of the OOS matrix, or 0
+// when the matrix is empty — used only for the PBO "n/a" diagnostic line.
+func oosConfigCount(m [][]float64) int {
+	if len(m) == 0 {
+		return 0
+	}
+	return len(m[0])
 }
 
 func writeWalkForwardCSV(path, stratName string, folds []foldResult) error {

@@ -1,0 +1,323 @@
+openapi: 3.0.3
+info:
+  title: Huginn HTTP API
+  description: >
+    HTTP surface of the Huginn quantitative strategy execution engine.
+
+    Read-only endpoints (`/healthz`, `/readyz`, `/metrics`, `/version`,
+    `/api/snapshot`, `/api/snapshot/history`, `/api/stream`, and `GET
+    /api/strategy/config`) are unauthenticated. Mutating control endpoints
+    (`POST /api/breaker/trigger`, `POST /api/breaker/reset`, `POST
+    /api/fills/mock`, and `PUT /api/strategy/config`) require a bearer token.
+
+    The mutating endpoints **fail closed**: when `HUGINN_API_TOKEN` is unset
+    they return `503` (control plane locked) rather than passing through.
+  version: 0.1.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8081
+    description: Default local HTTP server (SERVER_PORT, default 8081)
+
+tags:
+  - name: health
+    description: Liveness, readiness, and build identity
+  - name: observability
+    description: Metrics and portfolio snapshots
+  - name: control
+    description: Mutating control plane (bearer-token protected)
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: >
+        Liveness-only. Returns the current portfolio snapshot as JSON and a
+        200 whenever the process is up. Never reflects consumer staleness.
+      responses:
+        "200":
+          description: Process is live; body is the portfolio snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioSnapshot"
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: >
+        Returns 200 only when the server is marked ready AND (for the Kafka
+        feed) the feature consumer has advanced within the staleness window
+        (`SERVER_READYZ_STALENESS`, default 5m). A wedged/stale consumer trips
+        503 here without affecting `/healthz`.
+      responses:
+        "200":
+          description: Ready.
+          content:
+            text/plain:
+              schema: { type: string, example: "OK" }
+        "503":
+          description: Not ready (not started, or consumer stale).
+          content:
+            text/plain:
+              schema: { type: string, example: "Not Ready: feature consumer stale: no progress in 5m0s" }
+
+  /version:
+    get:
+      tags: [health]
+      summary: Build identity
+      description: >
+        Build provenance stamped at link time via `-ldflags -X`. Defaults to
+        `dev`/`unknown` when built without the stamping args.
+      responses:
+        "200":
+          description: Build identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+
+  /metrics:
+    get:
+      tags: [observability]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Prometheus text exposition format.
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /api/snapshot:
+    get:
+      tags: [observability]
+      summary: Engine snapshot
+      description: Plain-JSON equivalent of one `/api/stream` tick.
+      responses:
+        "200":
+          description: Current engine state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineSnapshot"
+
+  /api/snapshot/history:
+    get:
+      tags: [observability]
+      summary: Equity history
+      description: >
+        Last N equity samples from the server-side ring buffer (capacity 720,
+        ≈ 6 h at 30 s sampling), oldest first.
+      responses:
+        "200":
+          description: Equity samples.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EquityPoint"
+
+  /api/stream:
+    get:
+      tags: [observability]
+      summary: Server-Sent Events state stream
+      description: >
+        SSE stream pushing one `EngineSnapshot`-shaped payload every 500 ms as
+        a `data:` event. The connection stays open until the client
+        disconnects.
+      responses:
+        "200":
+          description: text/event-stream of snapshot payloads.
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /api/strategy/config:
+    get:
+      tags: [observability]
+      summary: Read live strategy/executor config
+      responses:
+        "200":
+          description: Current system config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfig"
+    put:
+      tags: [control]
+      summary: Update live strategy/executor config
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemConfig"
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/ControlPlaneLocked" }
+
+  /api/breaker/trigger:
+    post:
+      tags: [control]
+      summary: Manually halt trading (circuit breaker)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Halted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakerResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "503": { $ref: "#/components/responses/ControlPlaneLocked" }
+
+  /api/breaker/reset:
+    post:
+      tags: [control]
+      summary: Manually resume trading (circuit breaker)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BreakerResult"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "503": { $ref: "#/components/responses/ControlPlaneLocked" }
+
+  /api/fills/mock:
+    post:
+      tags: [control]
+      summary: Inject a mock fill
+      description: >
+        Submits a synthetic fill through the same path a live Sleipnir fill
+        takes (risk-gated, journaled, deduplicated). Useful for exercising the
+        portfolio/journal pipeline without a broker.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MockFillRequest"
+      responses:
+        "200":
+          description: Fill applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string }
+                  fill: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Rejected by the risk manager.
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "503": { $ref: "#/components/responses/ControlPlaneLocked" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Bearer token from the `HUGINN_API_TOKEN` env var. Sent as
+        `Authorization: Bearer <token>`. When the server has no token
+        configured, protected endpoints fail closed with 503.
+
+  responses:
+    BadRequest:
+      description: Malformed request body or parameters.
+    Unauthorized:
+      description: Missing or incorrect bearer token.
+    MethodNotAllowed:
+      description: HTTP method not allowed on this endpoint.
+    ControlPlaneLocked:
+      description: >
+        Control plane locked — `HUGINN_API_TOKEN` is not configured, so the
+        mutation is refused (fail-closed).
+
+  schemas:
+    VersionInfo:
+      type: object
+      properties:
+        version: { type: string, example: v0.1.0 }
+        git_sha: { type: string, example: e95e691 }
+        build_time: { type: string, example: "2026-06-21T10:00:00Z" }
+
+    PortfolioSnapshot:
+      type: object
+      description: Portfolio book state.
+      properties:
+        cash: { type: number, format: double }
+        realized_pnl: { type: number, format: double }
+        unrealized_pnl: { type: number, format: double }
+        total_value: { type: number, format: double }
+      additionalProperties: true
+
+    EquityPoint:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        total_value: { type: number, format: double }
+        cash: { type: number, format: double }
+
+    EngineSnapshot:
+      type: object
+      properties:
+        portfolio: { $ref: "#/components/schemas/PortfolioSnapshot" }
+        halted: { type: boolean }
+        halt_reason: { type: string }
+        fills:
+          type: array
+          items: { type: object }
+        timestamp: { type: string, format: date-time }
+
+    SystemConfig:
+      type: object
+      description: >
+        Live-tunable strategy/executor configuration as returned and accepted
+        by `/api/strategy/config`.
+      additionalProperties: true
+
+    BreakerResult:
+      type: object
+      properties:
+        status: { type: string, example: halted }
+        message: { type: string }
+
+    MockFillRequest:
+      type: object
+      required: [instrument, side, quantity, price]
+      properties:
+        instrument: { type: string, example: BTC-USDT }
+        side:
+          type: string
+          enum: [BUY, SELL]
+        quantity: { type: number, format: double, example: 0.01 }
+        price: { type: number, format: double, example: 65000 }

@@ -64,6 +64,12 @@ type foldResult struct {
 	SharpeDecay    float64 `json:"sharpe_decay_ratio"`
 	MaxDD          float64 `json:"max_dd"`
 	HitRate        float64 `json:"hit_rate"`
+	// DeflatedSharpe is the selected config's OOS Deflated Sharpe Ratio,
+	// deflating the per-observation OOS Sharpe by CombosSearched trials (Bailey &
+	// López de Prado). PTrueSharpeNonPositive = 1 − DeflatedSharpe. Both are NaN
+	// when the OOS window has too few return observations to define them.
+	DeflatedSharpe         float64 `json:"deflated_sharpe"`
+	PTrueSharpeNonPositive float64 `json:"p_true_sharpe_non_positive"`
 }
 
 func main() {
@@ -128,6 +134,9 @@ func main() {
 	results := make([]foldResult, 0, *folds)
 	var totalOOS float64
 	var oosWins int
+	// oosMatrix[fold][config] = that config's out-of-sample Sharpe on the fold's
+	// test window. Feeds the Probability of Backtest Overfitting (CSCV) estimator.
+	var oosMatrix [][]float64
 
 	step := (len(events) - testSize) / *folds
 	if step < testSize {
@@ -158,24 +167,48 @@ func main() {
 		// Apply ONLY the selected params to the out-of-sample TEST window.
 		testResult := runFold(cfg, testEvents, bestParams)
 
+		// Score EVERY grid combo out-of-sample on this test window for the PBO
+		// matrix (CSCV needs all configs' OOS performance, not just the winner).
+		oosRow := make([]float64, len(grid))
+		for i, p := range grid {
+			m := runFold(cfg, testEvents, p)
+			s := m.sharpe
+			if math.IsNaN(s) {
+				s = math.Inf(-1) // higher-is-better ranking; degenerate combo sinks
+			}
+			oosRow[i] = s
+		}
+		oosMatrix = append(oosMatrix, oosRow)
+
+		// Deflated Sharpe of the selected config out-of-sample, deflated by the
+		// number of grid combos searched in-sample (the trial count).
+		dsr := math.NaN()
+		pNonPos := math.NaN()
+		if mm := testResult.moments; !math.IsNaN(mm.PerObsSharpe) && mm.NObs >= 2 {
+			dsr = metrics.DeflatedSharpeRatio(mm.PerObsSharpe, len(grid), mm.Skew, mm.Kurtosis, mm.NObs)
+			pNonPos = metrics.ImpliedPTrueSharpeNonPositive(dsr)
+		}
+
 		r := foldResult{
-			Fold:           fold + 1,
-			TrainStart:     trainEvents[0].EventTime.Format("2006-01-02T15:04"),
-			TrainEnd:       trainEvents[len(trainEvents)-1].EventTime.Format("2006-01-02T15:04"),
-			TestStart:      testEvents[0].EventTime.Format("2006-01-02T15:04"),
-			TestEnd:        testEvents[len(testEvents)-1].EventTime.Format("2006-01-02T15:04"),
-			BestThreshold:  bestParams.threshold,
-			BestOrderSize:  bestParams.orderSize,
-			CombosSearched: len(grid),
-			TrainPnL:       best.pnl,
-			TestPnL:        testResult.pnl,
-			TrainFills:     best.fills,
-			TestFills:      testResult.fills,
-			TrainSharpe:    best.sharpe,
-			Sharpe:         testResult.sharpe,
-			SharpeDecay:    sharpeDecayRatio(best.sharpe, testResult.sharpe),
-			MaxDD:          testResult.maxDD,
-			HitRate:        testResult.hitRate,
+			Fold:                   fold + 1,
+			TrainStart:             trainEvents[0].EventTime.Format("2006-01-02T15:04"),
+			TrainEnd:               trainEvents[len(trainEvents)-1].EventTime.Format("2006-01-02T15:04"),
+			TestStart:              testEvents[0].EventTime.Format("2006-01-02T15:04"),
+			TestEnd:                testEvents[len(testEvents)-1].EventTime.Format("2006-01-02T15:04"),
+			BestThreshold:          bestParams.threshold,
+			BestOrderSize:          bestParams.orderSize,
+			CombosSearched:         len(grid),
+			TrainPnL:               best.pnl,
+			TestPnL:                testResult.pnl,
+			TrainFills:             best.fills,
+			TestFills:              testResult.fills,
+			TrainSharpe:            best.sharpe,
+			Sharpe:                 testResult.sharpe,
+			SharpeDecay:            sharpeDecayRatio(best.sharpe, testResult.sharpe),
+			MaxDD:                  testResult.maxDD,
+			HitRate:                testResult.hitRate,
+			DeflatedSharpe:         dsr,
+			PTrueSharpeNonPositive: pNonPos,
 		}
 		results = append(results, r)
 		totalOOS += testResult.pnl
@@ -199,9 +232,14 @@ func main() {
 		}
 		fmt.Printf("  OOS Sharpe: %.4f  IS→OOS decay: %s  MaxDD: %.2f%%  Hit: %.1f%%\n",
 			r.Sharpe, decayStr, r.MaxDD*100, r.HitRate*100)
+		dsrStr := "n/a (insufficient OOS obs)"
+		if !math.IsNaN(r.DeflatedSharpe) {
+			dsrStr = fmt.Sprintf("%.4f  P(true Sharpe ≤ 0): %.4f", r.DeflatedSharpe, r.PTrueSharpeNonPositive)
+		}
+		fmt.Printf("  Deflated Sharpe (deflated by %d trials): %s\n", len(grid), dsrStr)
 	}
 
-	printSummary(results, totalOOS, oosWins, len(grid))
+	printSummary(results, totalOOS, oosWins, len(grid), oosMatrix)
 
 	jsonOut, _ := json.MarshalIndent(results, "", "  ")
 	_ = os.WriteFile("data/walkforward_results.json", jsonOut, 0644)
@@ -214,6 +252,10 @@ type foldMetrics struct {
 	sharpe  float64
 	maxDD   float64
 	hitRate float64
+	// moments carries the per-observation return statistics of this fold's
+	// equity curve so the summary can compute a Deflated Sharpe Ratio for the
+	// selected config. The sharpe field above stays the annualized headline.
+	moments metrics.ReturnMoments
 }
 
 // buildGrid expands the threshold/order-size flag lists into the cartesian
@@ -296,7 +338,7 @@ func sharpeDecayRatio(isSharpe, oosSharpe float64) float64 {
 // fold, the best in-sample pick is upward-biased (multiple testing), so the
 // honest output is the OOS distribution and IS→OOS decay, leaving the call to
 // the reader.
-func printSummary(results []foldResult, totalOOS float64, oosWins, numCombos int) {
+func printSummary(results []foldResult, totalOOS float64, oosWins, numCombos int, oosMatrix [][]float64) {
 	fmt.Println("\n═══ Walk-Forward Summary ═══")
 	if len(results) == 0 {
 		fmt.Println("No folds produced — dataset too small for the requested split.")
@@ -330,6 +372,40 @@ func printSummary(results []foldResult, totalOOS float64, oosWins, numCombos int
 		fmt.Printf("Mean/std (OOS Sharpe SNR): %+.2f  (higher = more consistent edge)\n", snr)
 	}
 	fmt.Printf("Reminder: %d combos searched/fold — read the best as upward-biased.\n", numCombos)
+
+	// ─── Overfitting-aware statistics (Bailey & López de Prado) ───
+	// Mean Deflated Sharpe across folds (only over folds where it is defined),
+	// plus the Probability of Backtest Overfitting from the OOS Sharpe matrix.
+	var dsrSum float64
+	var dsrN int
+	for _, r := range results {
+		if !math.IsNaN(r.DeflatedSharpe) {
+			dsrSum += r.DeflatedSharpe
+			dsrN++
+		}
+	}
+	fmt.Println("─── Deflated Sharpe (selected config, deflated by trials) ───")
+	fmt.Printf("Trials (combos) per fold: %d\n", numCombos)
+	if dsrN == 0 {
+		fmt.Println("Mean OOS Deflated Sharpe: n/a (no fold had enough OOS observations)")
+	} else {
+		meanDSR := dsrSum / float64(dsrN)
+		fmt.Printf("Mean OOS Deflated Sharpe: %.4f over %d/%d folds  (implied mean P(true Sharpe ≤ 0): %.4f)\n",
+			meanDSR, dsrN, len(results), 1.0-meanDSR)
+	}
+
+	pbo := metrics.ProbabilityBacktestOverfitting(oosMatrix)
+	fmt.Println("─── Probability of Backtest Overfitting (CSCV) ───")
+	if math.IsNaN(pbo) {
+		nConfigs := 0
+		if len(oosMatrix) > 0 {
+			nConfigs = len(oosMatrix[0])
+		}
+		fmt.Printf("PBO: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
+			len(oosMatrix), nConfigs)
+	} else {
+		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
+	}
 	fmt.Println("════════════════════════════")
 }
 
@@ -412,6 +488,7 @@ func runFold(cfg *config.Config, events []model.FeatureEvent, p params) foldMetr
 		sharpe:  sharpe,
 		maxDD:   maxDD,
 		hitRate: 0,
+		moments: metrics.EquityReturnMoments(equity),
 	}
 }
 
