@@ -58,6 +58,13 @@ type OBIThreshold struct {
 	// so it can be relaxed while the ML model is undertrained.
 	mlMinConfidence float64
 
+	// makerEntries opts entry orders into MAKER liquidity (quant-alpha-2, the
+	// spread-capture fee lever). DEFAULT false keeps entries as takers, so the
+	// historical behaviour and all current tests are unchanged. When true, the
+	// SELL and BUY entry orders set Order.Liquidity = model.Maker; exits/closes
+	// always stay taker so the strategy can cross to get out.
+	makerEntries bool
+
 	// costHurdle is the OPT-IN net-of-cost signal gate (quant-alpha-1). Nil (the
 	// default) is inert — no entry is ever suppressed, so existing behaviour and
 	// all current tests are unchanged. SetCostHurdle attaches a configured
@@ -111,6 +118,11 @@ type OBIParams struct {
 	Cooldown        time.Duration
 	MaxNotional     float64
 	MLMinConfidence float64
+
+	// MakerEntries opts entry orders into MAKER liquidity. DEFAULT false (the
+	// zero value) keeps the historical taker behaviour; unlike the float fields
+	// above there is no "zero means default" remap, so false stays false.
+	MakerEntries bool
 }
 
 // DefaultOBIParams returns the historical hardcoded exit/throttle parameters.
@@ -168,11 +180,23 @@ func NewOBIThresholdWithParams(threshold, orderSize, maxPosition float64, p OBIP
 		maxHoldTime:     p.MaxHoldTime,
 		cooldown:        p.Cooldown,
 		mlMinConfidence: p.MLMinConfidence,
+		makerEntries:    p.MakerEntries,
 	}
 }
 
 func (s *OBIThreshold) Name() string {
 	return fmt.Sprintf("OBIThreshold(%.2f)", s.Threshold)
+}
+
+// entryLiquidity returns the liquidity classification for OBI ENTRY orders:
+// model.Maker when the maker-entry lever is enabled (STRATEGY_OBI_MAKER), else
+// model.Taker (the default, unchanged behaviour). Exits/closes never call this —
+// they always cross as takers. Caller must hold s.mu.
+func (s *OBIThreshold) entryLiquidity() model.Liquidity {
+	if s.makerEntries {
+		return model.Maker
+	}
+	return model.Taker
 }
 
 // totalNotional returns the total dollar exposure across all open positions.
@@ -399,6 +423,7 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 			Side:       model.Sell,
 			Quantity:   s.OrderSize,
 			LimitPrice: midPrice,
+			Liquidity:  s.entryLiquidity(),
 			Reason: fmt.Sprintf(
 				"OBI=%.4f>%.2f m1/5/15=%.4f/%.4f/%.4f fr=%.6f oi=%.1f%% f&g=%.0f ml=%.2f news=%+.2f $%.0f [%s] — sell",
 				obi, effectiveThreshold, momentum1m, momentum, momentum15m,
@@ -481,6 +506,7 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 			Side:       model.Buy,
 			Quantity:   s.OrderSize,
 			LimitPrice: midPrice,
+			Liquidity:  s.entryLiquidity(),
 			Reason: fmt.Sprintf(
 				"OBI=%.4f<-%.2f m1/5/15=%.4f/%.4f/%.4f fr=%.6f oi=%.1f%% f&g=%.0f ml=%.2f news=%+.2f $%.0f [%s] — buy",
 				obi, effectiveThreshold, momentum1m, momentum, momentum15m,

@@ -122,6 +122,7 @@ func main() {
 		if cfg.Strategy.MLMinConfidence > 0 {
 			obiParams.MLMinConfidence = cfg.Strategy.MLMinConfidence
 		}
+		obiParams.MakerEntries = cfg.Strategy.OBIMaker
 		activeStrategy = strategy.NewOBIThresholdWithParams(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10, obiParams)
 	case "vpin":
 		activeStrategy = strategy.NewVPINBreakout(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, time.Minute)
@@ -129,6 +130,14 @@ func main() {
 		activeStrategy = strategy.NewVWAPDeviation(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
 	case "ema_crossover":
 		activeStrategy = strategy.NewEMACrossover(cfg.Strategy.FastPeriod, cfg.Strategy.SlowPeriod, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
+	case "ou":
+		// OU mean-reversion: SlowPeriod is the rolling OLS window; Threshold is
+		// the |z| entry band (defaults inside NewOUReversion if unset). Mirrors
+		// cmd/backtest so live and backtest construct the strategy identically.
+		// OUReversion implements strategy.Stateful, so the generic strategy-state
+		// restore path below (keyed on cfg.Strategy.Name) recovers its rolling
+		// window / open position on restart with no extra wiring.
+		activeStrategy = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
 	default:
 		slog.Error("Unknown strategy", "strategy", cfg.Strategy.Name)
 		os.Exit(1)

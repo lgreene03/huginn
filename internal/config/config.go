@@ -57,6 +57,15 @@ type StrategyConfig struct {
 	// MLMinConfidence is the OBI strategy's ML-confidence floor (0 => use the
 	// 0.35 default). Lower it to trade while the ML model is undertrained.
 	MLMinConfidence float64 `yaml:"ml_min_confidence" envconfig:"STRATEGY_ML_MIN_CONFIDENCE"`
+
+	// OBIMaker opts the OBI strategy into emitting MAKER-liquidity entry orders
+	// (the spread-capture fee lever, quant-alpha-2). DEFAULT false keeps every
+	// OBI entry a taker (cross-the-spread) order, so existing behaviour and all
+	// current tests/backtest numbers are unchanged. When true, OBI entry orders
+	// (the SELL and BUY entry branches) rest at the touch as makers; exits/closes
+	// stay taker so you can always cross to get out. Only meaningful once
+	// maker/taker fees are configured (EXECUTOR_MAKER_FEE_BPS / TAKER_FEE_BPS).
+	OBIMaker bool `yaml:"obi_maker" envconfig:"STRATEGY_OBI_MAKER"`
 }
 
 type ExecutorConfig struct {
