@@ -13,7 +13,7 @@ LDFLAGS := -X $(PKG).Version=$(VERSION) \
            -X $(PKG).GitSHA=$(GIT_SHA) \
            -X $(PKG).BuildTime=$(BUILD_TIME)
 
-.PHONY: build build-release test vet docker print-version help
+.PHONY: build build-release test bench vet docker print-version help
 
 ## build: compile the huginn binary with build provenance stamped in.
 build:
@@ -26,6 +26,10 @@ build-release:
 ## test: run the unit test suite.
 test:
 	go test ./...
+
+## bench: run the latency/throughput benchmark suite (ns/op + allocs/op).
+bench:
+	go test -bench=. -benchmem -run=^$$ ./...
 
 ## vet: run go vet across all packages.
 vet:

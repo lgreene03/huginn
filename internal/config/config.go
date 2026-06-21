@@ -1,7 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
@@ -104,6 +107,17 @@ type ExecutorConfig struct {
 	// points, used by the cost hurdle's OBI edge model. Zero falls back to
 	// strategy.DefaultEdgeBpsPerUnit. Only consulted when CostHurdleK > 0.
 	OBIEdgeBpsPerUnit float64 `yaml:"obi_edge_bps_per_unit" envconfig:"OBI_EDGE_BPS_PER_UNIT"`
+
+	// MakerFeeBps / TakerFeeBps are the per-fill fees (basis points) for maker
+	// (passive, rests at the touch) and taker (aggressive, crosses the spread)
+	// liquidity respectively (quant-alpha-2, the maker/taker fee lever). A
+	// negative MakerFeeBps models a rebate. Both DEFAULT to 0, which the
+	// executor resolves to TransactionCostBps — so unless you set these, every
+	// fill costs exactly TransactionCostBps regardless of liquidity and all
+	// existing backtest numbers are unchanged. Only meaningful once a strategy
+	// emits maker-liquidity orders.
+	MakerFeeBps float64 `yaml:"maker_fee_bps" envconfig:"EXECUTOR_MAKER_FEE_BPS"`
+	TakerFeeBps float64 `yaml:"taker_fee_bps" envconfig:"EXECUTOR_TAKER_FEE_BPS"`
 }
 
 type ServerConfig struct {
@@ -212,4 +226,90 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// Validate performs fail-closed sanity checks on a fully-loaded Config and
+// returns a single aggregated error describing every problem found (or nil when
+// the config is sound). It is intentionally NOT called from Load — callers wire
+// it in explicitly (cmd/huginn/main.go does so right after Load and exits 1 on
+// error) so that offline tooling (backtest/calibrate/walkforward) can keep
+// loading partially-specified configs without tripping the live-boot guards.
+//
+// The checks reject nonsensical configuration that would otherwise fail later
+// in confusing ways or silently produce garbage results:
+//   - order_size <= 0 (no position can ever be taken)
+//   - threshold outside a sane [0, 10] band
+//   - negative transaction-cost / slippage basis points
+//   - negative slippage-impact coefficient or scale
+//   - COST_HURDLE_K < 0 (the net-of-cost gate multiple)
+//   - ML confidence floor outside [0, 1]
+//   - initial cash <= 0
+//   - missing Kafka brokers/topics unless the feed source is the SSE stream
+//     (the only non-Kafka feature source the live engine supports)
+func (c *Config) Validate() error {
+	var errs []error
+
+	if c.Strategy.OrderSize <= 0 {
+		errs = append(errs, fmt.Errorf("strategy.order_size must be > 0, got %v", c.Strategy.OrderSize))
+	}
+
+	// Threshold is used as an absolute signal level by every strategy; a
+	// negative value is always a mistake and an absurdly large one disables
+	// trading entirely. 10 is a generous upper bound (OBI/VWAP/VPIN thresholds
+	// live well below 1; EMA periods are configured separately).
+	if c.Strategy.Threshold < 0 || c.Strategy.Threshold > 10 {
+		errs = append(errs, fmt.Errorf("strategy.threshold must be within [0, 10], got %v", c.Strategy.Threshold))
+	}
+
+	if c.Strategy.MLMinConfidence < 0 || c.Strategy.MLMinConfidence > 1 {
+		errs = append(errs, fmt.Errorf("strategy.ml_min_confidence must be within [0, 1], got %v", c.Strategy.MLMinConfidence))
+	}
+
+	if c.Executor.TransactionCostBps < 0 {
+		errs = append(errs, fmt.Errorf("executor.transaction_cost_bps must be >= 0, got %v", c.Executor.TransactionCostBps))
+	}
+	if c.Executor.SlippageBps < 0 {
+		errs = append(errs, fmt.Errorf("executor.slippage_bps must be >= 0, got %v", c.Executor.SlippageBps))
+	}
+	if c.Executor.SlippageImpactK < 0 {
+		errs = append(errs, fmt.Errorf("executor.slippage_impact_k must be >= 0, got %v", c.Executor.SlippageImpactK))
+	}
+	if c.Executor.SlippageImpactScale < 0 {
+		errs = append(errs, fmt.Errorf("executor.slippage_impact_scale must be >= 0, got %v", c.Executor.SlippageImpactScale))
+	}
+	if c.Executor.CostHurdleK < 0 {
+		errs = append(errs, fmt.Errorf("executor.cost_hurdle_k (COST_HURDLE_K) must be >= 0, got %v", c.Executor.CostHurdleK))
+	}
+
+	if c.Capital.InitialCash <= 0 {
+		errs = append(errs, fmt.Errorf("capital.initial_cash must be > 0, got %v", c.Capital.InitialCash))
+	}
+
+	// Kafka is the live feature transport. The SSE "stream" feed (ADR-0009) is
+	// the only source that does not need brokers/topics, so only exempt that
+	// path. Empty-string brokers/topics entries are treated as missing.
+	if c.Feed.Source != "stream" {
+		if len(nonEmpty(c.Kafka.Brokers)) == 0 {
+			errs = append(errs, errors.New("kafka.brokers must be set (feed.source is not \"stream\")"))
+		}
+		if len(nonEmpty(c.Kafka.Topics)) == 0 {
+			errs = append(errs, errors.New("kafka.topics must be set (feed.source is not \"stream\")"))
+		}
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("invalid configuration: %w", errors.Join(errs...))
+}
+
+// nonEmpty returns the input slice with empty/whitespace-only entries removed.
+func nonEmpty(in []string) []string {
+	out := in[:0:0]
+	for _, s := range in {
+		if strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

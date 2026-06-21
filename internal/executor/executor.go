@@ -79,6 +79,40 @@ type Config struct {
 	// SizingMaxNotionalFraction caps any sized order at this fraction of equity
 	// (e.g. 0.25 = never above 25% of equity in one order). Zero disables the cap.
 	SizingMaxNotionalFraction float64
+
+	// MakerFeeBps / TakerFeeBps are the per-fill fees (basis points) for maker
+	// (passive, rests at the touch) and taker (aggressive, crosses the spread)
+	// liquidity respectively (quant-alpha-2). A maker fee may be negative to
+	// model a rebate. Both default to TransactionCostBps, so unless they are
+	// explicitly configured the cost of any fill is exactly the legacy
+	// TransactionCostBps regardless of liquidity — preserving existing numbers.
+	//
+	// See feeBps for the resolution rule (zero ⇒ fall back to
+	// TransactionCostBps; an explicit negative maker rebate is honoured).
+	MakerFeeBps float64
+	TakerFeeBps float64
+}
+
+// feeBps returns the transaction-cost basis points to charge for a fill of the
+// given liquidity. The per-liquidity MakerFeeBps/TakerFeeBps override
+// TransactionCostBps only when set; a zero value falls back to
+// TransactionCostBps so the legacy single-fee behaviour is unchanged unless the
+// maker/taker fees are configured.
+//
+// A negative MakerFeeBps is a deliberate rebate and is honoured (it is not
+// treated as "unset"); only an exactly-zero value falls back.
+func (c Config) feeBps(liq model.Liquidity) float64 {
+	switch liq {
+	case model.Maker:
+		if c.MakerFeeBps != 0 {
+			return c.MakerFeeBps
+		}
+	default: // Taker
+		if c.TakerFeeBps != 0 {
+			return c.TakerFeeBps
+		}
+	}
+	return c.TransactionCostBps
 }
 
 // effectiveSlippageBps returns the slippage in basis points for an order of the
@@ -110,6 +144,29 @@ type Executor struct {
 	liveMode      bool
 	publisher     IntentPublisher
 	dedup         *dedupCache // drops duplicate Sleipnir fills by ExecutionID
+
+	// restingMakers holds maker orders parked at the touch in paper mode,
+	// awaiting a subsequent through-trade (quant-alpha-2). Each new feature
+	// event is checked against these before the strategy runs; a maker fills
+	// only if the new mid trades through its resting price (adverse-selection
+	// model). Always empty unless a strategy emits Maker-liquidity orders, so
+	// the default taker path never touches this slice.
+	restingMakers []restingMaker
+
+	// makerFills / takerFills count applied paper fills by liquidity, driving
+	// the maker-fill-rate gauge. Both start at zero; takerFills tracks the
+	// existing taker path so the rate is well-defined from the first fill.
+	makerFills int64
+	takerFills int64
+}
+
+// restingMaker is a maker order parked at the touch awaiting a through-trade.
+// restPrice is the passive level (bid for a buy, ask for a sell). The order
+// fills on a later event whose mid trades through restPrice in the order's
+// favour direction.
+type restingMaker struct {
+	order     model.Order
+	restPrice float64
 }
 
 // New creates an executor wiring a strategy to a portfolio.
@@ -255,6 +312,14 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 		e.riskManager.OnFeatureSeen(event.EventTime, event.Values["volatility"])
 	}
 
+	// Maker/taker (quant-alpha-2): before the strategy runs, test any resting
+	// maker orders against this event's mid. A maker fills only when the market
+	// trades through its passive level (adverse-selection model). No-op while
+	// no maker orders are outstanding, so the taker default is untouched.
+	if !e.liveMode && len(e.restingMakers) > 0 {
+		e.tryFillRestingMakers(event)
+	}
+
 	orders := e.strategy.OnFeature(event)
 
 	// Opt-in equity-aware sizing (quant-4). Default SizingFixed is a no-op, so
@@ -309,7 +374,21 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			}
 
 		} else {
-			// Simulated paper-trading mode
+			// Simulated paper-trading mode.
+			//
+			// Maker liquidity (quant-alpha-2): park the order at the touch and
+			// wait for a subsequent through-trade rather than crossing now. The
+			// taker default (order.Liquidity == model.Taker) keeps the original
+			// cross-the-spread path below, so existing numbers are unchanged.
+			if order.Liquidity == model.Maker {
+				if rest, ok := e.restPriceForMaker(order, event); ok {
+					e.restingMakers = append(e.restingMakers, restingMaker{order: order, restPrice: rest})
+					continue
+				}
+				// No book/mid price to rest against: degrade to a taker fill so
+				// the order is never silently dropped.
+			}
+
 			fill := e.simulateFill(order, event)
 
 			if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
@@ -317,26 +396,8 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 				continue
 			}
 
-			if e.journalWriter != nil {
-				if err := e.journalWriter.Append(fill); err != nil {
-					slog.Error("Failed to journal fill", "error", err, "order_id", fill.OrderID)
-				}
-			}
-
-			e.portfolio.ApplyFill(fill)
-			metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+			e.applyPaperFill(fill)
 			metrics.SignalToFillLatencySeconds.WithLabelValues("paper").Observe(time.Since(signalTime).Seconds())
-
-			// Persist strategy state alongside the fill: position-bearing state
-			// (OBI/VPIN/VWAP.netPosition, VPIN.lastTrade) only changes on fills.
-			e.PersistStrategyState()
-
-			// Update portfolio gauges
-			snap := e.portfolio.Snapshot()
-			metrics.PortfolioCash.Set(snap.Cash)
-			metrics.PortfolioRealizedPnL.Set(snap.RealizedPnL)
-			metrics.PortfolioUnrealizedPnL.Set(snap.UnrealizedPnL)
-			metrics.PortfolioTotalValue.Set(snap.TotalValue)
 
 			slog.Debug("Paper trade executed",
 				"strategy", e.strategy.Name(),
@@ -450,8 +511,10 @@ func (e *Executor) applySizing(orders []model.Order, event model.FeatureEvent) {
 	}
 }
 
-// simulateFill models execution with configurable slippage, transaction costs,
-// an optional order-book-aware fill price, and an optional latency offset.
+// simulateFill models a TAKER execution: cross the spread now, with
+// configurable slippage, transaction costs, an optional order-book-aware fill
+// price, and an optional latency offset. Maker orders are not filled here —
+// they rest at the touch and fill later via tryFillRestingMakers.
 func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) model.Fill {
 	e.fillCount++
 
@@ -479,7 +542,7 @@ func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) mod
 		}
 	}
 
-	txCost := fillPrice * order.Quantity * (e.config.TransactionCostBps / 10_000.0)
+	txCost := fillPrice * order.Quantity * (e.config.feeBps(model.Taker) / 10_000.0)
 
 	// Latency model: defers the fill timestamp to simulate signal-to-fill delay.
 	// Zero means use the raw event timestamp (original behaviour).
@@ -497,7 +560,165 @@ func (e *Executor) simulateFill(order model.Order, event model.FeatureEvent) mod
 		TransactionCost: txCost,
 		SlippageBps:     effectiveSlipBps,
 		Timestamp:       fillTime,
+		Liquidity:       model.Taker,
 	}
+}
+
+// restPriceForMaker returns the passive resting price for a maker order on the
+// given event: the bid touch for a buy, the ask touch for a sell. It falls back
+// to the estimated mid price when the book quote is absent, and returns
+// (0, false) when no price can be derived (so the order is treated as a taker).
+func (e *Executor) restPriceForMaker(order model.Order, event model.FeatureEvent) (float64, bool) {
+	switch order.Side {
+	case model.Buy:
+		if bid, ok := event.Values["bidPrice"]; ok && bid > 0 {
+			return bid, true
+		}
+	case model.Sell:
+		if ask, ok := event.Values["askPrice"]; ok && ask > 0 {
+			return ask, true
+		}
+	}
+	if mid := e.estimatePrice(event); mid > 0 {
+		return mid, true
+	}
+	return 0, false
+}
+
+// eventMid returns the mid price used to test whether a resting maker order was
+// traded through. Prefers an explicit midPrice, then the bid/ask average, then
+// the estimated price. Returns (0, false) when no price is available.
+func eventMid(e *Executor, event model.FeatureEvent) (float64, bool) {
+	if mid, ok := event.Values["midPrice"]; ok && mid > 0 {
+		return mid, true
+	}
+	bid, hasBid := event.Values["bidPrice"]
+	ask, hasAsk := event.Values["askPrice"]
+	if hasBid && hasAsk && bid > 0 && ask > 0 {
+		return (bid + ask) / 2, true
+	}
+	if mid := e.estimatePrice(event); mid > 0 {
+		return mid, true
+	}
+	return 0, false
+}
+
+// makerFill builds the Fill for a resting maker order that was traded through.
+// It fills exactly at the passive resting price (no spread crossed, no
+// slippage) and pays the maker fee/rebate. The fill is timestamped on the
+// through-trade event (plus any configured latency).
+func (e *Executor) makerFill(rm restingMaker, event model.FeatureEvent) model.Fill {
+	e.fillCount++
+	txCost := rm.restPrice * rm.order.Quantity * (e.config.feeBps(model.Maker) / 10_000.0)
+
+	fillTime := event.EventTime
+	if e.config.FillLatencyMs > 0 {
+		fillTime = fillTime.Add(time.Duration(e.config.FillLatencyMs) * time.Millisecond)
+	}
+
+	return model.Fill{
+		OrderID:         fmt.Sprintf("huginn-fill-%d", e.fillCount),
+		Instrument:      rm.order.Instrument,
+		Side:            rm.order.Side,
+		Quantity:        rm.order.Quantity,
+		FillPrice:       rm.restPrice,
+		TransactionCost: txCost,
+		SlippageBps:     0, // maker rests at the touch; no spread crossed
+		Timestamp:       fillTime,
+		Liquidity:       model.Maker,
+	}
+}
+
+// recordLiquidity bumps the maker/taker counters and recomputes the maker
+// fill-rate gauge. Called once per applied paper fill.
+func (e *Executor) recordLiquidity(liq model.Liquidity) {
+	if liq == model.Maker {
+		e.makerFills++
+	} else {
+		e.takerFills++
+	}
+	metrics.MakerTakerFillsTotal.WithLabelValues(liqLabel(liq)).Inc()
+	if total := e.makerFills + e.takerFills; total > 0 {
+		metrics.MakerFillRate.Set(float64(e.makerFills) / float64(total))
+	}
+}
+
+func liqLabel(liq model.Liquidity) string {
+	if liq == model.Maker {
+		return "maker"
+	}
+	return "taker"
+}
+
+// applyPaperFill journals, applies, and instruments a single paper-mode fill.
+// Shared by the immediate taker path and the deferred resting-maker path so
+// both record liquidity, persist state, and refresh the portfolio gauges
+// identically.
+func (e *Executor) applyPaperFill(fill model.Fill) {
+	if e.journalWriter != nil {
+		if err := e.journalWriter.Append(fill); err != nil {
+			slog.Error("Failed to journal fill", "error", err, "order_id", fill.OrderID)
+		}
+	}
+
+	e.portfolio.ApplyFill(fill)
+	metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
+	e.recordLiquidity(fill.Liquidity)
+
+	// Persist strategy state alongside the fill: position-bearing state
+	// (OBI/VPIN/VWAP.netPosition, VPIN.lastTrade) only changes on fills.
+	e.PersistStrategyState()
+
+	snap := e.portfolio.Snapshot()
+	metrics.PortfolioCash.Set(snap.Cash)
+	metrics.PortfolioRealizedPnL.Set(snap.RealizedPnL)
+	metrics.PortfolioUnrealizedPnL.Set(snap.UnrealizedPnL)
+	metrics.PortfolioTotalValue.Set(snap.TotalValue)
+}
+
+// tryFillRestingMakers tests every parked maker order against the current
+// event's mid and fills those the market traded through (quant-alpha-2). A buy
+// resting at the bid fills once the mid drops to or below its level (the ask
+// came down to it); a sell resting at the ask fills once the mid rises to or
+// above its level. Orders not yet traded through stay parked for the next event.
+//
+// This models adverse selection: a passive order only executes when price moves
+// against the resting side, which is exactly when a taker would have done
+// better — the price the maker pays for the spread capture / rebate.
+func (e *Executor) tryFillRestingMakers(event model.FeatureEvent) {
+	mid, ok := eventMid(e, event)
+	if !ok {
+		return // no price to test through; keep everything parked
+	}
+
+	remaining := e.restingMakers[:0]
+	for _, rm := range e.restingMakers {
+		tradedThrough := false
+		switch rm.order.Side {
+		case model.Buy:
+			tradedThrough = mid <= rm.restPrice
+		case model.Sell:
+			tradedThrough = mid >= rm.restPrice
+		}
+		if !tradedThrough {
+			remaining = append(remaining, rm)
+			continue
+		}
+
+		fill := e.makerFill(rm, event)
+		if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
+			slog.Warn("Maker fill rejected by risk manager", "order_id", fill.OrderID)
+			continue // drop it; do not re-park a risk-rejected order
+		}
+		e.applyPaperFill(fill)
+		slog.Debug("Maker order filled on through-trade",
+			"strategy", e.strategy.Name(),
+			"order_side", rm.order.Side.String(),
+			"rest_price", fmt.Sprintf("%.2f", rm.restPrice),
+			"mid", fmt.Sprintf("%.2f", mid),
+		)
+	}
+	e.restingMakers = remaining
 }
 
 // estimatePrice extracts the best available price from the feature event.

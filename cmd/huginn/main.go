@@ -45,6 +45,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fail closed: reject nonsensical configuration before wiring anything up.
+	if err := cfg.Validate(); err != nil {
+		slog.Error("Invalid configuration — refusing to boot", "error", err)
+		os.Exit(1)
+	}
+
 	v := version.Get()
 	slog.Info("Starting Huginn",
 		"version", v.Version,
@@ -217,6 +223,8 @@ func main() {
 		SizingKellyFraction:       cfg.Executor.SizingKellyFraction,
 		SizingVolTarget:           cfg.Executor.SizingVolTarget,
 		SizingMaxNotionalFraction: cfg.Executor.SizingMaxNotionalFraction,
+		MakerFeeBps:               cfg.Executor.MakerFeeBps,
+		TakerFeeBps:               cfg.Executor.TakerFeeBps,
 	}, cfg.LiveExecution, producer, strategyKey)
 
 	// Net-of-cost signal gate (quant-alpha-1). Inert by default: with

@@ -56,6 +56,10 @@ func main() {
 		activeStrategy = strategy.NewVWAPDeviation(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
 	case "ema_crossover":
 		activeStrategy = strategy.NewEMACrossover(cfg.Strategy.FastPeriod, cfg.Strategy.SlowPeriod, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
+	case "ou":
+		// OU mean-reversion: SlowPeriod is the rolling OLS window; Threshold is
+		// the |z| entry band (defaults inside NewOUReversion if unset).
+		activeStrategy = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
 	default:
 		slog.Error("Unknown strategy", "strategy", cfg.Strategy.Name)
 		os.Exit(1)

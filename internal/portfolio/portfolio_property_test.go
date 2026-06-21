@@ -2,6 +2,8 @@ package portfolio
 
 import (
 	"math"
+	"math/rand"
+	"reflect"
 	"testing"
 	"testing/quick"
 	"time"
@@ -24,6 +26,20 @@ type genFill struct {
 	Quantity  float64
 	FillPrice float64
 	TxCost    float64
+}
+
+// Generate draws genFill fields from sane economic ranges directly, instead of
+// relying on testing/quick's default float64 generator (which spans the whole
+// range up to ~1e308). The ranges are chosen so toModel's math.Mod mapping is
+// the identity, avoiding the precision loss / degenerate values that float64-max
+// inputs produce when reduced modulo a small bound.
+func (genFill) Generate(r *rand.Rand, _ int) reflect.Value {
+	return reflect.ValueOf(genFill{
+		IsBuy:     r.Intn(2) == 0,
+		Quantity:  r.Float64() * 4.9,    // -> qty in [0.01, 4.91)
+		FillPrice: r.Float64() * 89_000, // -> price in [100, 89100)
+		TxCost:    r.Float64() * 49,     // -> cost in [0, 49)
+	})
 }
 
 // toModel converts a generated fill into a model.Fill against a fixed

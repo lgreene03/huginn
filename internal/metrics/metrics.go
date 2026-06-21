@@ -221,4 +221,31 @@ var (
 		},
 		[]string{"consumer"}, // feature | fills | price
 	)
+
+	// ─── Maker/taker execution additions (quant-alpha-2) ────────────────
+
+	// MakerTakerFillsTotal counts simulated paper fills by their liquidity
+	// classification. A maker fill rested at the touch and paid the maker
+	// fee/rebate; a taker fill crossed the spread and paid the taker fee.
+	// Divide maker by the sum to get the realized maker-fill rate. Stays
+	// entirely on the "taker" series while no order requests Maker liquidity.
+	MakerTakerFillsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_maker_taker_fills_total",
+			Help: "Simulated fills by liquidity classification (maker rested, taker crossed)",
+		},
+		[]string{"liquidity"}, // maker | taker
+	)
+
+	// MakerFillRate is the running fraction of simulated fills that were maker
+	// (passive) fills, in [0,1]. 0 means every fill crossed the spread (the
+	// default when no maker orders are requested); higher means more spread
+	// captured. Computed in-process from the maker/taker counters so a single
+	// gauge is dashboard-ready without a PromQL ratio.
+	MakerFillRate = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "huginn_maker_fill_rate",
+			Help: "Fraction of simulated fills that were maker (passive) fills, in [0,1]",
+		},
+	)
 )
