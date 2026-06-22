@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,16 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/lgreene03/huginn/internal/config"
-	"github.com/lgreene03/huginn/internal/executor"
-	"github.com/lgreene03/huginn/internal/journal"
-	"github.com/lgreene03/huginn/internal/metrics"
-	"github.com/lgreene03/huginn/internal/model"
-	"github.com/lgreene03/huginn/internal/portfolio"
-	"github.com/lgreene03/huginn/internal/risk"
-	"github.com/lgreene03/huginn/internal/strategy"
+	"github.com/lgreene03/huginn/internal/research"
 )
 
 // Walk-forward validation: splits historical data into rolling train/test
@@ -45,71 +37,10 @@ import (
 // there is NO real selection — see the runtime warning. The number of combos
 // searched is reported so the best in-sample pick can be read with the
 // appropriate multiple-testing scepticism.
-
-type foldResult struct {
-	Fold           int     `json:"fold"`
-	TrainStart     string  `json:"train_start"`
-	TrainEnd       string  `json:"train_end"`
-	TestStart      string  `json:"test_start"`
-	TestEnd        string  `json:"test_end"`
-	BestThreshold  float64 `json:"best_threshold"`
-	BestOrderSize  float64 `json:"best_order_size"`
-	CombosSearched int     `json:"combos_searched"`
-	TrainPnL       float64 `json:"train_pnl"`
-	TestPnL        float64 `json:"test_pnl"`
-	TrainFills     int     `json:"train_fills"`
-	TestFills      int     `json:"test_fills"`
-	TrainSharpe    float64 `json:"train_sharpe"`
-	Sharpe         float64 `json:"sharpe"` // OOS (test) Sharpe
-	SharpeDecay    float64 `json:"sharpe_decay_ratio"`
-	MaxDD          float64 `json:"max_dd"`
-	HitRate        float64 `json:"hit_rate"`
-	// DeflatedSharpe is the selected config's OOS Deflated Sharpe Ratio,
-	// deflating the per-observation OOS Sharpe by CombosSearched trials (Bailey &
-	// López de Prado). PTrueSharpeNonPositive = 1 − DeflatedSharpe. Both are NaN
-	// when the OOS window has too few return observations to define them.
-	DeflatedSharpe         float64 `json:"deflated_sharpe"`
-	PTrueSharpeNonPositive float64 `json:"p_true_sharpe_non_positive"`
-}
-
-// nullIfNaN returns a *float64 that JSON-encodes as the value, or as null when
-// the value is NaN/±Inf (those IEEE values are not representable in JSON).
-func nullIfNaN(f float64) *float64 {
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return nil
-	}
-	return &f
-}
-
-// MarshalJSON renders the NaN-capable metric fields (Sharpe family, decay,
-// drawdown, hit-rate, deflated Sharpe) as JSON null instead of letting NaN/±Inf
-// fail the whole encode. Without this, a single NaN (e.g. a deflated Sharpe that
-// is undefined on a too-short OOS window) made encoding/json error, the error
-// was discarded, and a 0-byte results file was written. The float64 struct
-// fields are kept as-is so all compute/printf code is unaffected; the outer
-// *float64 fields here shadow the embedded ones for serialization only.
-func (r foldResult) MarshalJSON() ([]byte, error) {
-	type alias foldResult
-	return json.Marshal(struct {
-		alias
-		TrainSharpe            *float64 `json:"train_sharpe"`
-		Sharpe                 *float64 `json:"sharpe"`
-		SharpeDecay            *float64 `json:"sharpe_decay_ratio"`
-		MaxDD                  *float64 `json:"max_dd"`
-		HitRate                *float64 `json:"hit_rate"`
-		DeflatedSharpe         *float64 `json:"deflated_sharpe"`
-		PTrueSharpeNonPositive *float64 `json:"p_true_sharpe_non_positive"`
-	}{
-		alias:                  alias(r),
-		TrainSharpe:            nullIfNaN(r.TrainSharpe),
-		Sharpe:                 nullIfNaN(r.Sharpe),
-		SharpeDecay:            nullIfNaN(r.SharpeDecay),
-		MaxDD:                  nullIfNaN(r.MaxDD),
-		HitRate:                nullIfNaN(r.HitRate),
-		DeflatedSharpe:         nullIfNaN(r.DeflatedSharpe),
-		PTrueSharpeNonPositive: nullIfNaN(r.PTrueSharpeNonPositive),
-	})
-}
+//
+// The walk-forward compute itself lives in internal/research so heavy backtests
+// can also run out of the live process (cmd/research). This command owns only
+// CLI parsing, console presentation, and the artifact write.
 
 func main() {
 	configPath := flag.String("config", "configs/default.yaml", "YAML config")
@@ -138,7 +69,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	events, err := loadEvents(*dataPath)
+	events, err := research.LoadEvents(*dataPath)
 	if err != nil {
 		slog.Error("Failed to load events", "error", err)
 		os.Exit(1)
@@ -154,7 +85,7 @@ func main() {
 		testSize = 10
 	}
 
-	grid := buildGrid(cfg, *thresholdsFlag, *orderSizesFlag)
+	grid := research.BuildGrid(cfg, parseFloatsOr(*thresholdsFlag, cfg.Strategy.Threshold), parseFloatsOr(*orderSizesFlag, cfg.Strategy.OrderSize))
 
 	fmt.Println("\n═══ Walk-Forward Validation ═══")
 	fmt.Printf("Strategy:     %s\n", cfg.Strategy.Name)
@@ -170,101 +101,31 @@ func main() {
 			"for genuine in-sample selection.")
 	}
 
-	results := make([]foldResult, 0, *folds)
-	var totalOOS float64
-	var oosWins int
-	// oosMatrix[fold][config] = that config's out-of-sample Sharpe on the fold's
-	// test window. Feeds the Probability of Backtest Overfitting (CSCV) estimator.
-	var oosMatrix [][]float64
-
-	step := (len(events) - testSize) / *folds
-	if step < testSize {
-		step = testSize
+	res, err := research.Run(research.Options{
+		Config:  cfg,
+		Events:  events,
+		Folds:   *folds,
+		TestPct: *testPct,
+		Grid:    grid,
+	})
+	if err != nil {
+		slog.Error("Walk-forward run failed", "error", err)
+		os.Exit(1)
 	}
 
-	for fold := 0; fold < *folds; fold++ {
-		trainEnd := testSize + step*fold
-		if trainEnd > len(events)-testSize {
-			trainEnd = len(events) - testSize
-		}
-		testEnd := trainEnd + testSize
-		if testEnd > len(events) {
-			testEnd = len(events)
-		}
-
-		trainEvents := events[:trainEnd]
-		testEvents := events[trainEnd:testEnd]
-
-		if len(testEvents) < 5 {
-			break
-		}
-
-		// Select parameters on the TRAIN window only: evaluate every grid combo
-		// on train, keep the one with the highest in-sample Sharpe.
-		best, bestParams := selectBestOnTrain(cfg, trainEvents, grid)
-
-		// Apply ONLY the selected params to the out-of-sample TEST window.
-		testResult := runFold(cfg, testEvents, bestParams)
-
-		// Score EVERY grid combo out-of-sample on this test window for the PBO
-		// matrix (CSCV needs all configs' OOS performance, not just the winner).
-		oosRow := make([]float64, len(grid))
-		for i, p := range grid {
-			m := runFold(cfg, testEvents, p)
-			s := m.sharpe
-			if math.IsNaN(s) {
-				s = math.Inf(-1) // higher-is-better ranking; degenerate combo sinks
-			}
-			oosRow[i] = s
-		}
-		oosMatrix = append(oosMatrix, oosRow)
-
-		// Deflated Sharpe of the selected config out-of-sample, deflated by the
-		// number of grid combos searched in-sample (the trial count).
-		dsr := math.NaN()
-		pNonPos := math.NaN()
-		if mm := testResult.moments; !math.IsNaN(mm.PerObsSharpe) && mm.NObs >= 2 {
-			dsr = metrics.DeflatedSharpeRatio(mm.PerObsSharpe, len(grid), mm.Skew, mm.Kurtosis, mm.NObs)
-			pNonPos = metrics.ImpliedPTrueSharpeNonPositive(dsr)
-		}
-
-		r := foldResult{
-			Fold:                   fold + 1,
-			TrainStart:             trainEvents[0].EventTime.Format("2006-01-02T15:04"),
-			TrainEnd:               trainEvents[len(trainEvents)-1].EventTime.Format("2006-01-02T15:04"),
-			TestStart:              testEvents[0].EventTime.Format("2006-01-02T15:04"),
-			TestEnd:                testEvents[len(testEvents)-1].EventTime.Format("2006-01-02T15:04"),
-			BestThreshold:          bestParams.threshold,
-			BestOrderSize:          bestParams.orderSize,
-			CombosSearched:         len(grid),
-			TrainPnL:               best.pnl,
-			TestPnL:                testResult.pnl,
-			TrainFills:             best.fills,
-			TestFills:              testResult.fills,
-			TrainSharpe:            best.sharpe,
-			Sharpe:                 testResult.sharpe,
-			SharpeDecay:            sharpeDecayRatio(best.sharpe, testResult.sharpe),
-			MaxDD:                  testResult.maxDD,
-			HitRate:                testResult.hitRate,
-			DeflatedSharpe:         dsr,
-			PTrueSharpeNonPositive: pNonPos,
-		}
-		results = append(results, r)
-		totalOOS += testResult.pnl
-
+	for _, r := range res.Folds {
 		oosSign := "-"
-		if testResult.pnl > 0 {
+		if r.TestPnL > 0 {
 			oosSign = "+"
-			oosWins++
 		}
 
-		fmt.Printf("\nFold %d/%d\n", fold+1, *folds)
+		fmt.Printf("\nFold %d/%d\n", r.Fold, *folds)
 		fmt.Printf("  Selected:  threshold=%.4f order_size=%.4f  (best of %d on train)\n",
 			r.BestThreshold, r.BestOrderSize, r.CombosSearched)
 		fmt.Printf("  Train: %s → %s  (%d events, %d fills, IS Sharpe %.4f, PnL: %.4f)\n",
-			r.TrainStart, r.TrainEnd, len(trainEvents), r.TrainFills, r.TrainSharpe, r.TrainPnL)
+			r.TrainStart, r.TrainEnd, r.TrainEventCount, r.TrainFills, r.TrainSharpe, r.TrainPnL)
 		fmt.Printf("  Test:  %s → %s  (%d events, %d fills, PnL: %s%.4f)\n",
-			r.TestStart, r.TestEnd, len(testEvents), r.TestFills, oosSign, math.Abs(r.TestPnL))
+			r.TestStart, r.TestEnd, r.TestEventCount, r.TestFills, oosSign, math.Abs(r.TestPnL))
 		decayStr := "n/a (IS≤0)"
 		if !math.IsNaN(r.SharpeDecay) {
 			decayStr = fmt.Sprintf("%.2f", r.SharpeDecay)
@@ -275,16 +136,16 @@ func main() {
 		if !math.IsNaN(r.DeflatedSharpe) {
 			dsrStr = fmt.Sprintf("%.4f  P(true Sharpe ≤ 0): %.4f", r.DeflatedSharpe, r.PTrueSharpeNonPositive)
 		}
-		fmt.Printf("  Deflated Sharpe (deflated by %d trials): %s\n", len(grid), dsrStr)
+		fmt.Printf("  Deflated Sharpe (deflated by %d trials): %s\n", res.GridSize, dsrStr)
 	}
 
-	printSummary(results, totalOOS, oosWins, len(grid), oosMatrix)
+	printSummary(res)
 
 	resultsPath := os.Getenv("WALKFORWARD_RESULTS_PATH")
 	if resultsPath == "" {
 		resultsPath = "data/walkforward_results.json"
 	}
-	jsonOut, err := json.MarshalIndent(results, "", "  ")
+	jsonOut, err := json.MarshalIndent(res.Folds, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error marshaling walk-forward results: %v\n", err)
 		os.Exit(1)
@@ -294,35 +155,6 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("Results written to %s\n", resultsPath)
-}
-
-type foldMetrics struct {
-	pnl     float64
-	fills   int
-	sharpe  float64
-	maxDD   float64
-	hitRate float64
-	// moments carries the per-observation return statistics of this fold's
-	// equity curve so the summary can compute a Deflated Sharpe Ratio for the
-	// selected config. The sharpe field above stays the annualized headline.
-	moments metrics.ReturnMoments
-}
-
-// buildGrid expands the threshold/order-size flag lists into the cartesian
-// product of params to search. Each empty flag falls back to the single config
-// value, so the default (no flags) yields exactly one combo — i.e. no real
-// selection, which main warns about.
-func buildGrid(cfg *config.Config, thresholdsCSV, orderSizesCSV string) []params {
-	thresholds := parseFloatsOr(thresholdsCSV, cfg.Strategy.Threshold)
-	orderSizes := parseFloatsOr(orderSizesCSV, cfg.Strategy.OrderSize)
-
-	grid := make([]params, 0, len(thresholds)*len(orderSizes))
-	for _, th := range thresholds {
-		for _, os := range orderSizes {
-			grid = append(grid, params{threshold: th, orderSize: os})
-		}
-	}
-	return grid
 }
 
 // parseFloatsOr parses a comma-separated float list, falling back to [dflt]
@@ -352,35 +184,20 @@ func parseFloatsOr(csv string, dflt float64) []float64 {
 	return out
 }
 
-// selectBestOnTrain evaluates every grid combo on the train window and returns
-// the metrics + params of the highest in-sample Sharpe. NaN Sharpe is treated
-// as -Inf so a degenerate combo never wins. The grid is guaranteed non-empty.
-func selectBestOnTrain(cfg *config.Config, trainEvents []model.FeatureEvent, grid []params) (foldMetrics, params) {
-	bestSharpe := math.Inf(-1)
-	var bestMetrics foldMetrics
-	bestParams := grid[0]
-	for _, p := range grid {
-		m := runFold(cfg, trainEvents, p)
-		s := m.sharpe
-		if math.IsNaN(s) {
-			s = math.Inf(-1)
-		}
-		if s > bestSharpe {
-			bestSharpe = s
-			bestMetrics = m
-			bestParams = p
-		}
-	}
-	return bestMetrics, bestParams
+// buildGrid expands the threshold/order-size flag lists into the cartesian
+// product of params to search. Each empty flag falls back to the single config
+// value, so the default (no flags) yields exactly one combo — i.e. no real
+// selection, which main warns about. Retained as a thin wrapper over
+// research.BuildGrid so the existing cmd/walkforward tests keep exercising the
+// CLI's grid construction.
+func buildGrid(cfg *config.Config, thresholdsCSV, orderSizesCSV string) []research.Params {
+	return research.BuildGrid(cfg, parseFloatsOr(thresholdsCSV, cfg.Strategy.Threshold), parseFloatsOr(orderSizesCSV, cfg.Strategy.OrderSize))
 }
 
-// sharpeDecayRatio is OOS Sharpe / IS Sharpe — the fraction of the in-sample
-// edge that survived out of sample. NaN when IS Sharpe ≤ 0 (no edge to decay).
+// sharpeDecayRatio is retained as a thin wrapper over research.SharpeDecayRatio
+// so the existing cmd/walkforward test keeps exercising the same behavior.
 func sharpeDecayRatio(isSharpe, oosSharpe float64) float64 {
-	if isSharpe <= 0 {
-		return math.NaN()
-	}
-	return oosSharpe / isSharpe
+	return research.SharpeDecayRatio(isSharpe, oosSharpe)
 }
 
 // printSummary emits a confidence-aware walk-forward summary. It deliberately
@@ -388,7 +205,12 @@ func sharpeDecayRatio(isSharpe, oosSharpe float64) float64 {
 // fold, the best in-sample pick is upward-biased (multiple testing), so the
 // honest output is the OOS distribution and IS→OOS decay, leaving the call to
 // the reader.
-func printSummary(results []foldResult, totalOOS float64, oosWins, numCombos int, oosMatrix [][]float64) {
+func printSummary(res research.Result) {
+	results := res.Folds
+	totalOOS := res.TotalOOSPnL
+	oosWins := res.OOSFoldsProfitable
+	numCombos := res.GridSize
+
 	fmt.Println("\n═══ Walk-Forward Summary ═══")
 	if len(results) == 0 {
 		fmt.Println("No folds produced — dataset too small for the requested split.")
@@ -444,15 +266,15 @@ func printSummary(results []foldResult, totalOOS float64, oosWins, numCombos int
 			meanDSR, dsrN, len(results), 1.0-meanDSR)
 	}
 
-	pbo := metrics.ProbabilityBacktestOverfitting(oosMatrix)
+	pbo := res.PBO
 	fmt.Println("─── Probability of Backtest Overfitting (CSCV) ───")
 	if math.IsNaN(pbo) {
 		nConfigs := 0
-		if len(oosMatrix) > 0 {
-			nConfigs = len(oosMatrix[0])
+		if len(res.OOSMatrix) > 0 {
+			nConfigs = len(res.OOSMatrix[0])
 		}
 		fmt.Printf("PBO: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
-			len(oosMatrix), nConfigs)
+			len(res.OOSMatrix), nConfigs)
 	} else {
 		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
 	}
@@ -475,95 +297,4 @@ func meanStd(xs []float64) (mean, std float64) {
 	}
 	std = math.Sqrt(variance / float64(len(xs)))
 	return mean, std
-}
-
-// params is one point in the walk-forward grid: the threshold and order size
-// to instantiate the configured strategy with. EMA crossover ignores threshold
-// (it is driven by fast/slow periods from config) but still honours order size.
-type params struct {
-	threshold float64
-	orderSize float64
-}
-
-func runFold(cfg *config.Config, events []model.FeatureEvent, p params) foldMetrics {
-	port := portfolio.New(cfg.Capital.InitialCash)
-
-	var s strategy.Strategy
-	switch cfg.Strategy.Name {
-	case "obi":
-		s = strategy.NewOBIThreshold(p.threshold, p.orderSize, p.orderSize*10)
-	case "vpin":
-		s = strategy.NewVPINBreakout(p.threshold, p.orderSize, time.Minute)
-	case "vwap_deviation":
-		s = strategy.NewVWAPDeviation(p.threshold, p.orderSize, p.orderSize*10)
-	case "ema_crossover":
-		s = strategy.NewEMACrossover(cfg.Strategy.FastPeriod, cfg.Strategy.SlowPeriod, p.orderSize, p.orderSize*10)
-	case "ou":
-		// OU mean-reversion: the swept "threshold" is the |z| entry band; the
-		// rolling OLS window is cfg.Strategy.SlowPeriod (matches cmd/huginn).
-		s = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, p.threshold, p.orderSize, p.orderSize*10)
-	default:
-		s = strategy.NewOBIThreshold(p.threshold, p.orderSize, p.orderSize*10)
-	}
-
-	jw := journal.NewNullWriter()
-	rm := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
-	exec := executor.New(s, port, jw, rm, executor.Config{
-		TransactionCostBps: cfg.Executor.TransactionCostBps,
-		SlippageBps:        cfg.Executor.SlippageBps,
-		FillLatencyMs:      cfg.Executor.FillLatencyMs,
-	}, false, nil, "")
-
-	var equity []float64
-	lastDay := -1
-
-	for _, event := range events {
-		exec.OnFeature(event)
-
-		day := event.EventTime.Year()*1000 + event.EventTime.YearDay()
-		if day != lastDay {
-			if lastDay != -1 {
-				snap := port.Snapshot()
-				equity = append(equity, snap.TotalValue)
-			}
-			lastDay = day
-		}
-	}
-
-	snap := port.Snapshot()
-	equity = append(equity, snap.TotalValue)
-
-	sharpe := metrics.CalculateSharpeRatio(equity, 0.0)
-	maxDD := metrics.CalculateMaxDrawdown(equity)
-
-	return foldMetrics{
-		pnl:     snap.RealizedPnL,
-		fills:   snap.TotalFills,
-		sharpe:  sharpe,
-		maxDD:   maxDD,
-		hitRate: 0,
-		moments: metrics.EquityReturnMoments(equity),
-	}
-}
-
-func loadEvents(path string) ([]model.FeatureEvent, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-
-	var events []model.FeatureEvent
-	scanner := bufio.NewScanner(f)
-	buf := make([]byte, 0, 1024*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-
-	for scanner.Scan() {
-		var event model.FeatureEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			continue
-		}
-		events = append(events, event)
-	}
-	return events, scanner.Err()
 }
