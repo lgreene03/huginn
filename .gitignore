@@ -20,11 +20,16 @@ web/build/
 .env.local
 
 # Local Data and Logs
+#
+# data/btc_test.jsonl is intentionally NOT ignored: it is the ~550KB test
+# fixture the research gateway (cmd/research) and walk-forward replay read, and
+# it is committed so `clone -> run` works config-free.
 data/trades.jsonl
-data/btc_test.jsonl
 data/backtest_trades.jsonl
 data/costsweep_trades.jsonl
 data/walkforward_results.json
+# cmd/research writes one run-result JSON per run here — never committable.
+data/research/
 data/pg_data/
 *.db
 *.log

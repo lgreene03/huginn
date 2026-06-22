@@ -43,9 +43,12 @@ nav:
   - Architecture: architecture.md
   - Strategies:
       - Overview & Authoring Guide: strategies.md
+      - Adding an Alpha: ADDING_AN_ALPHA.md
       - Calibration Workflow: calibration.md
+      - Strategy-State Journal Design: STRATEGY_STATE_DESIGN.md
   - Risk Model: risk-model.md
   - Operations Runbook: OPERATIONS.md
+  - Benchmarks: BENCHMARKS.md
   - Architecture Decisions:
       - Overview: adr/0001-record-architecture-decisions.md
       - 0002 Pluggable strategy interface: adr/0002-pluggable-strategy-interface.md

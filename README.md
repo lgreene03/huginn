@@ -35,7 +35,7 @@ Huginn is a **downstream companion** to [Muninn](https://github.com/lgreene03/mu
 
 ## Strategies
 
-Four strategies are bundled. Pick one via `strategy.name` in the config (`obi`, `vpin`, `ema_crossover`, `vwap_deviation`). See `docs/ROADMAP.md` Phase 2 for the calibration story and per-strategy failure modes.
+Six strategies are bundled. Pick one via `strategy.name` in the config (`obi`, `vpin`, `vwap_deviation`, `ema_crossover`, `ou`, `composite`). See `docs/ROADMAP.md` Phase 2 for the calibration story and per-strategy failure modes.
 
 ### OBI Threshold (Mean-Reversion)
 Monitors Order Book Imbalance. When extreme buy pressure is detected (OBI > threshold), it sells expecting reversion. Vice versa for extreme sell pressure. Source: `internal/strategy/obi_threshold.go`.
@@ -49,6 +49,35 @@ Two exponential moving averages with configurable fast/slow periods. Enters long
 ### VWAP Deviation (Mean-Reversion on VWAP)
 Compares the current price to the rolling VWAP and trades reversion when the deviation exceeds `threshold_pct`. Source: `internal/strategy/vwap_deviation.go`.
 
+### OU Reversion (Statistical Mean-Reversion)
+Fits an Ornstein-Uhlenbeck (AR(1)) process to a rolling mid-price window by OLS, then enters when the standardized deviation `|z|` exceeds the entry band (`strategy.threshold`). `strategy.slow_period` sets the rolling OLS window. Stateful — its rolling window and open position survive a restart. Source: `internal/strategy/ou_reversion.go`.
+
+### Composite (Pluggable-Alpha Blend)
+Blends a weighted set of `Alpha` signals (OBI + multi-timeframe momentum + EMA mean-reversion by default) into one signed score, applies `strategy.threshold` as the `|combined score|` entry band, and routes the entry through the same cost-hurdle, signed-position, and risk path as OBI. Stateful. Source: `internal/strategy/composite.go`.
+
+### Adding your own alpha
+The signal layer is **pluggable**: a new signal is one small type implementing the `Alpha` interface (`internal/strategy/alpha.go`) plus one line of composite config — no change to the executor, risk manager, portfolio, or cost model. The bundled alphas live in `internal/strategy/alphas_bundled.go` and are wired in `internal/strategy/composite.go`. See [`docs/ADDING_AN_ALPHA.md`](docs/ADDING_AN_ALPHA.md) for the end-to-end guide.
+
+## Research gateway
+
+`cmd/research` is a standalone HTTP service that runs heavy walk-forward + PBO + Deflated-Sharpe validation **out of the live trading process**. It reuses the same `internal/research` engine as `cmd/walkforward`, so a gateway run reproduces the CLI's result, but executes as a separate sidecar that owns no Kafka or Postgres dependency — it just replays a JSONL dataset on disk.
+
+- **Port:** `8094` (override with `RESEARCH_PORT`).
+- **Submit a run:** `POST /api/research/runs` with `{"strategy":"obi|ou|composite","thresholds":[...],"folds":N}`. Returns `202 {id, status:"running"}` and runs the walk-forward asynchronously.
+- **Poll results:** `GET /api/research/runs` (newest-first summaries) and `GET /api/research/runs/{id}` (full record with `oosFoldsProfitable`, `totalOOSPnL`, `pbo`, `deflatedSharpe`). `GET /healthz` for liveness.
+- **Data:** replays `RESEARCH_DATA_PATH` (default `data/btc_test.jsonl`, the committed fixture). Finished runs persist to `RESEARCH_RESULTS_DIR` (default `data/research/`) and reload on restart.
+
+```bash
+# Run the gateway against the bundled fixture (no Kafka/Postgres needed)
+go run ./cmd/research
+# In another shell:
+curl -s localhost:8094/healthz
+curl -s -X POST localhost:8094/api/research/runs \
+  -d '{"strategy":"obi","thresholds":[0.5,0.6,0.7],"folds":4}'
+```
+
+Build the container image from `Dockerfile.research`. The compose wiring for the research/mimir/forseti services lives in [norse-stack](https://github.com/lgreene03/norse-stack).
+
 ## Docker Quick Start
 
 The easiest way to run Huginn is via Docker Compose, which spins up the engine alongside a local Redpanda broker:
@@ -61,7 +90,8 @@ docker-compose up -d
 docker-compose logs -f huginn
 
 # Verify health status and portfolio snapshot
-curl http://localhost:8081/healthz
+# (compose publishes Huginn on host port 8083 → container 8081)
+curl http://localhost:8083/healthz
 ```
 
 ## Configuration
@@ -76,7 +106,7 @@ Huginn is configured via YAML profiles (e.g., `configs/default.yaml`). You can o
 | `feed.source` | `FEED_SOURCE` | Feature source: `kafka` (default) or `stream` (Muninn SSE feature stream, [ADR-0009](https://github.com/lgreene03/muninn/blob/main/docs/adr/0009-streaming-features-sse.md)) |
 | `feed.stream_url` | `FEED_STREAM_URL` | Muninn base URL for the SSE source (default `http://localhost:8080`) |
 | `feed.stream_feature` | `FEED_STREAM_FEATURE` | Restrict the SSE stream to one feature name (`?feature=`); empty streams all |
-| `strategy.name` | `STRATEGY_NAME` | Strategy to run: `obi`, `vpin`, `ema_crossover`, or `vwap_deviation` |
+| `strategy.name` | `STRATEGY_NAME` | Strategy to run: `obi`, `vpin`, `vwap_deviation`, `ema_crossover`, `ou`, or `composite` |
 | `strategy.threshold` | `STRATEGY_THRESHOLD` | Signal activation threshold (OBI / VPIN / VWAP %) |
 | `strategy.order_size` | `STRATEGY_ORDER_SIZE` | Order size per signal |
 | `strategy.fast_period` | `STRATEGY_FAST_PERIOD` | EMA fast period (ema_crossover) |

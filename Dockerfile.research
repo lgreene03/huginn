@@ -32,8 +32,9 @@ COPY --from=builder --chown=research:research /app/research .
 # The historical dataset (RESEARCH_DATA_PATH, default data/btc_test.jsonl) and
 # the persisted-runs dir (RESEARCH_RESULTS_DIR, default data/research) both live
 # under /app/data, which is .dockerignored from the build context — so it is NOT
-# baked into the image. Mount ./data as a volume at runtime (see docker-compose
-# service block in the integration notes). Pre-create + own the dir so the
+# baked into the image. Mount ./data as a volume at runtime; the research service
+# compose block lives in the norse-stack repo
+# (https://github.com/lgreene03/norse-stack). Pre-create + own the dir so the
 # unprivileged user can write run artifacts even on an empty mount.
 RUN mkdir -p /app/data/research && chown -R research:research /app/data
 

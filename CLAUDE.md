@@ -28,8 +28,8 @@ docker compose up -d
 # End-to-end smoke test
 bash scripts/smoke.sh
 
-# Backtest with HTML report
-go run ./cmd/backtest --data data/features.jsonl --report report.html
+# Backtest with HTML report (data/btc_test.jsonl is the committed fixture)
+go run ./cmd/backtest --data data/btc_test.jsonl --report report.html
 ```
 
 ## Architecture
@@ -51,7 +51,8 @@ Redpanda (features.obi.v1) → Kafka Consumer → Executor
 - `cmd/backtest/` — Offline JSONL replay with Sharpe/MDD report.
 - `cmd/calibrate/` — Grid-search over strategy parameters.
 - `cmd/walkforward/` — Anchored walk-forward validation (expanding train window, sliding test window).
-- `internal/strategy/` — Four strategies: `obi_threshold.go`, `vpin_breakout.go`, `ema_crossover.go`, `vwap_deviation.go`. OBI strategy includes regime-aware threshold adaptation.
+- `cmd/research/` — Research/validation HTTP gateway (port `8094`, `POST`/`GET /api/research/runs`). Runs the same `internal/research` engine as `cmd/walkforward` but OUT of the live trading process: a standalone sidecar that replays a JSONL dataset (no Kafka/Postgres), executes walk-forward + PBO + Deflated-Sharpe async, and persists finished runs to `RESEARCH_RESULTS_DIR`. See the "Research gateway" section in README.md.
+- `internal/strategy/` — Six strategies: `obi_threshold.go`, `vpin_breakout.go`, `vwap_deviation.go`, `ema_crossover.go`, `ou_reversion.go` (OU mean-reversion), `composite.go` (pluggable-alpha blend). OBI strategy includes regime-aware threshold adaptation. The pluggable alpha framework — `alpha.go` (interface), `alphas_bundled.go` (worked alphas), `composite.go` (weighted blend) — lets a new signal ship as one `Alpha` type plus one line of config; see `docs/ADDING_AN_ALPHA.md`.
 - `internal/executor/` — Dual-mode executor (paper/live). Owns the OnFeature dispatch loop. Tracks signal-to-decision latency via Prometheus histogram.
 - `internal/risk/` — Pre-trade risk: drawdown, daily loss, position limits, staleness watchdog.
 - `internal/portfolio/` — Thread-safe position tracker with realized/unrealized PnL.
@@ -66,7 +67,7 @@ Redpanda (features.obi.v1) → Kafka Consumer → Executor
 YAML profiles live in `configs/`. Every YAML key has a corresponding env var (via `envconfig`):
 
 - `KAFKA_BROKERS`, `KAFKA_TOPICS`, `KAFKA_GROUP_ID`
-- `STRATEGY_NAME` (`obi`, `vpin`, `ema_crossover`, `vwap_deviation`)
+- `STRATEGY_NAME` (`obi`, `vpin`, `vwap_deviation`, `ema_crossover`, `ou`, `composite`)
 - `STRATEGY_THRESHOLD`, `STRATEGY_ORDER_SIZE`
 - `LIVE_EXECUTION` — publish intents to Sleipnir instead of paper-filling
 - `KAFKA_PRICE_TOPIC` — enable real-time price feed for sub-second exit monitoring

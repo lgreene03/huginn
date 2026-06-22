@@ -6,6 +6,19 @@ All notable changes to Huginn are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+- **Phase 9 — Research / validation gateway** (`cmd/research`). Standalone HTTP service (port `8094`, `RESEARCH_PORT`) that runs walk-forward + PBO + Deflated-Sharpe validation **out of the live trading process**. `POST /api/research/runs` submits a `{strategy, thresholds, folds}` job (async, returns `202`); `GET /api/research/runs` and `GET /api/research/runs/{id}` read results; `GET /healthz` for liveness. Reuses the same `internal/research` engine as `cmd/walkforward`, owns no Kafka/Postgres, replays a JSONL dataset on disk, and persists finished runs to `RESEARCH_RESULTS_DIR` (reloaded on restart). Container image: `Dockerfile.research`. Documented in README, CLAUDE.md, and `docs/ROADMAP.md` Phase 9.
+- **Committed test fixture** `data/btc_test.jsonl` (~550KB) — the dataset the research gateway and walk-forward replay read — so `clone -> run` works config-free.
+- Surfaced previously-orphaned docs in the MkDocs nav: `docs/ADDING_AN_ALPHA.md`, `docs/BENCHMARKS.md`, `docs/STRATEGY_STATE_DESIGN.md`.
+
+### Fixed
+- README/CLAUDE.md strategy count corrected from "four" to the six bundled strategies (`obi`, `vpin`, `vwap_deviation`, `ema_crossover`, `ou`, `composite`) plus the pluggable alpha framework (`internal/strategy/alpha.go`, `alphas_bundled.go`, `composite.go`).
+- README Docker quick-start health check now uses host port `8083` (compose publishes Huginn on `8083:8081`), not `8081`.
+- `.gitignore`: ignore the per-run output dir `data/research/`; stop ignoring the committed `data/btc_test.jsonl` fixture.
+- Removed the stale empty tracked file `data/backtest_trades.jsonl` (now gitignored).
+- CLAUDE.md backtest example now references the shipping `data/btc_test.jsonl` fixture instead of the non-existent `data/features.jsonl`.
+- `Dockerfile.research`: replaced the dangling "integration notes" reference with the norse-stack compose location.
+
 ---
 
 ## [0.8.0] — 2026-06-19
