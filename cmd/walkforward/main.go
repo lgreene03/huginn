@@ -448,6 +448,10 @@ func runFold(cfg *config.Config, events []model.FeatureEvent, p params) foldMetr
 		s = strategy.NewVWAPDeviation(p.threshold, p.orderSize, p.orderSize*10)
 	case "ema_crossover":
 		s = strategy.NewEMACrossover(cfg.Strategy.FastPeriod, cfg.Strategy.SlowPeriod, p.orderSize, p.orderSize*10)
+	case "ou":
+		// OU mean-reversion: the swept "threshold" is the |z| entry band; the
+		// rolling OLS window is cfg.Strategy.SlowPeriod (matches cmd/huginn).
+		s = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, p.threshold, p.orderSize, p.orderSize*10)
 	default:
 		s = strategy.NewOBIThreshold(p.threshold, p.orderSize, p.orderSize*10)
 	}
