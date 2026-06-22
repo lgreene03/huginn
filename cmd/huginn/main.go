@@ -138,6 +138,15 @@ func main() {
 		// restore path below (keyed on cfg.Strategy.Name) recovers its rolling
 		// window / open position on restart with no extra wiring.
 		activeStrategy = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
+	case "composite":
+		// Pluggable-alpha composite: blends a default weighted alpha set (OBI +
+		// multi-timeframe momentum + EMA mean-reversion) into one signed signal,
+		// reusing the same cost-hurdle + signed-position + risk path as OBI.
+		// Threshold is the |combined score| entry band (defaults to 0.5 if unset).
+		// CompositeStrategy implements strategy.Stateful, so the generic
+		// strategy-state restore path below recovers its netPosition / open
+		// positions on restart with no extra wiring.
+		activeStrategy = strategy.NewCompositeStrategy(strategy.DefaultCompositeConfig(cfg.Strategy.Threshold, cfg.Strategy.OrderSize))
 	default:
 		slog.Error("Unknown strategy", "strategy", cfg.Strategy.Name)
 		os.Exit(1)

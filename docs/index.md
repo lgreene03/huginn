@@ -19,6 +19,7 @@ The split is deliberate. Huginn never recomputes OBI, VPIN, or VWAP from raw tra
 | Goal | How |
 |---|---|
 | Run a bundled strategy on live features | `configs/default.yaml` + `docker-compose up` |
+| Add a new signal (pluggable alpha) | [docs/ADDING_AN_ALPHA.md](ADDING_AN_ALPHA.md) |
 | Backtest a strategy on historical features | `cmd/backtest --strategy obi --data data/historical.jsonl` |
 | Calibrate strategy parameters | `cmd/calibrate --strategy obi --data data/historical.jsonl --threshold 0.5,0.6,0.7` |
 | Watch equity, PnL, and fills live | Dashboard at `http://localhost:8081` (SSE-driven) |

@@ -60,6 +60,12 @@ func main() {
 		// OU mean-reversion: SlowPeriod is the rolling OLS window; Threshold is
 		// the |z| entry band (defaults inside NewOUReversion if unset).
 		activeStrategy = strategy.NewOUReversion(cfg.Strategy.SlowPeriod, cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10)
+	case "composite":
+		// Pluggable-alpha composite: blends a default weighted alpha set (OBI +
+		// multi-timeframe momentum + EMA mean-reversion) into one signed signal,
+		// reusing the same cost-hurdle + signed-position + risk path as OBI.
+		// Threshold is the |combined score| entry band (defaults to 0.5 if unset).
+		activeStrategy = strategy.NewCompositeStrategy(strategy.DefaultCompositeConfig(cfg.Strategy.Threshold, cfg.Strategy.OrderSize))
 	default:
 		slog.Error("Unknown strategy", "strategy", cfg.Strategy.Name)
 		os.Exit(1)

@@ -248,4 +248,33 @@ var (
 			Help: "Fraction of simulated fills that were maker (passive) fills, in [0,1]",
 		},
 	)
+
+	// ─── Pluggable alpha framework additions (quant-alpha-3) ─────────────
+
+	// AlphaContribution is the most recent weighted contribution (weight *
+	// value, optionally * confidence) of each alpha to a CompositeStrategy's
+	// combined score, labelled by the composite strategy name and the alpha
+	// name. This makes every alpha's pull on the blended signal observable, so
+	// an operator can see which signal is driving (or dragging) the composite.
+	// Set on every feature event the composite processes; stays absent until a
+	// composite strategy runs.
+	AlphaContribution = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "huginn_alpha_contribution",
+			Help: "Most recent weighted contribution of each alpha to the composite score",
+		},
+		[]string{"strategy", "alpha"},
+	)
+
+	// CompositeScore is the most recent combined score a CompositeStrategy
+	// produced (after weighting/blending and clamping to [-1,1]), labelled by
+	// the composite strategy name. Pair with AlphaContribution to attribute the
+	// blended signal to its parts.
+	CompositeScore = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "huginn_composite_score",
+			Help: "Most recent combined score produced by a composite strategy, in [-1,1]",
+		},
+		[]string{"strategy"},
+	)
 )
