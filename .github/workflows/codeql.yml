@@ -1,0 +1,56 @@
+name: CodeQL
+
+# Static analysis security testing (SAST) for the Go codebase. Runs on every
+# push/PR to main and on a weekly schedule so newly-added CodeQL queries catch
+# latent issues even without a code change. Results surface in the repo's
+# Security → Code scanning alerts tab.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    # Weekly sweep (Mondays 07:00 UTC) — offset from the CI govulncheck cron.
+    - cron: '0 7 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (go)
+    runs-on: ubuntu-latest
+    permissions:
+      # Required for CodeQL to upload findings to code scanning.
+      security-events: write
+      # Needed by the init action to read the workflow context.
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'go' ]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25'
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        # security-extended pulls in the broader security query suite on top of
+        # the default set.
+        queries: security-extended
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{ matrix.language }}"

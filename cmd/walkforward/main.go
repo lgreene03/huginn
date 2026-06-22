@@ -277,6 +277,17 @@ func printSummary(res research.Result) {
 			len(res.OOSMatrix), nConfigs)
 	} else {
 		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
+		// Honesty caveat: on a short fixture the OOS Sharpes across configs are
+		// often near-tied (near-zero cross-fold dispersion). When that happens a
+		// PBO pinned at 1.00 (or 0.00) is a degenerate/conservative tie-break of
+		// a rank statistic, NOT a finely-measured overfitting probability — the
+		// rank flips on noise. The load-bearing evidence in that regime is the
+		// OOS-folds-profitable count above, not the PBO value itself.
+		if (pbo >= 0.99 || pbo <= 0.01) && stdSharpe < 1e-9 {
+			fmt.Println("  ⚠ Caveat: OOS Sharpes are near-tied across configs on this short " +
+				"fixture, so this extreme PBO is a conservative tie-break, not a precise " +
+				"probability — read the OOS-folds-profitable count as the real signal.")
+		}
 	}
 	fmt.Println("════════════════════════════")
 }

@@ -7,7 +7,7 @@
 
 ## Context
 
-Huginn ships four strategies — OBI threshold, VPIN breakout, EMA crossover, VWAP deviation — and is expected to grow more. Each consumes Muninn feature events and emits orders, but they differ wildly internally: OBI carries per-instrument open positions, entry/exit state, cooldowns, and a netPosition; EMA carries a continuously-mutating moving-average accumulator; a trivial threshold strategy carries nothing.
+Huginn ships six strategies — OBI threshold, VPIN breakout, EMA crossover, VWAP deviation, OU mean-reversion, and a composite pluggable-alpha blend — and is expected to grow more (the composite strategy is itself the home of a pluggable `Alpha` framework, so new signals can ship without a new `Strategy` type at all). Each consumes Muninn feature events and emits orders, but they differ wildly internally: OBI carries per-instrument open positions, entry/exit state, cooldowns, and a netPosition; EMA carries a continuously-mutating moving-average accumulator; a trivial threshold strategy carries nothing.
 
 Two forces pull in opposite directions. First, the executor's hot path (`executor.OnFeature`) must treat every strategy identically — it cannot know which concrete type it holds. Second, strategies that carry state must survive a crash: if Huginn restarts mid-session, an EMA accumulator or a set of open OBI positions cannot silently reset to zero, or the risk picture and the strategy's own logic diverge from reality.
 

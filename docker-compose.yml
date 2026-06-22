@@ -27,7 +27,9 @@ services:
     build:
       context: ./web
     ports:
-      - "8084:80"
+      # Container nginx runs unprivileged and listens on 8080; host surface
+      # stays on 8084 (matches HUGINN_DASHBOARD_ORIGIN default).
+      - "8084:8080"
     depends_on:
       - huginn
 

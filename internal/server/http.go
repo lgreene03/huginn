@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -179,12 +180,24 @@ func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "Control plane locked: HUGINN_API_TOKEN not configured", http.StatusServiceUnavailable)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+		if !s.bearerTokenValid(r) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 		next(w, r)
 	}
+}
+
+// bearerTokenValid reports whether the request carries the configured bearer
+// token. The comparison is constant-time (crypto/subtle) so an attacker can't
+// recover the token byte-by-byte from response-time differences;
+// ConstantTimeCompare also runs in time independent of content and returns 0 on
+// a length mismatch. Callers must have already checked that s.apiToken is set
+// (the control plane fails closed when it is empty).
+func (s *Server) bearerTokenValid(r *http.Request) bool {
+	expected := "Bearer " + s.apiToken
+	provided := r.Header.Get("Authorization")
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
 func (s *Server) healthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +422,7 @@ func (s *Server) strategyConfigHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Control plane locked: HUGINN_API_TOKEN not configured", http.StatusServiceUnavailable)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer "+s.apiToken {
+		if !s.bearerTokenValid(r) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -590,11 +603,11 @@ func joinRange(start, end string) string {
 // walkforwardRawFold mirrors the fields cmd/walkforward writes per fold. Only
 // the fields the console contract needs are decoded; extras are ignored.
 type walkforwardRawFold struct {
-	Fold           int     `json:"fold"`
-	TrainStart     string  `json:"train_start"`
-	TrainEnd       string  `json:"train_end"`
-	TestStart      string  `json:"test_start"`
-	TestEnd        string  `json:"test_end"`
+	Fold           int      `json:"fold"`
+	TrainStart     string   `json:"train_start"`
+	TrainEnd       string   `json:"train_end"`
+	TestStart      string   `json:"test_start"`
+	TestEnd        string   `json:"test_end"`
 	TrainPnL       float64  `json:"train_pnl"`
 	TestPnL        float64  `json:"test_pnl"`
 	DeflatedSharpe *float64 `json:"deflated_sharpe"`

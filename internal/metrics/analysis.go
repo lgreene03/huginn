@@ -7,17 +7,21 @@ import (
 	"github.com/lgreene03/huginn/internal/model"
 )
 
-// CryptoPeriodsPerYear is the default annualization cadence for this engine.
+// CryptoPeriodsPerYear is the annualization cadence for this engine: 365.
 //
-// Equity is sampled once per calendar day from a 24/7 crypto market — there are
+// Equity is sampled once per calendar day from a 24/7 crypto venue — there are
 // no weekends or exchange holidays, so a year contains 365 return periods, not
 // the 252 trading days used for traditional equities. Using 252 here would
-// understate the annualized volatility (and inflate Sharpe) by sqrt(365/252).
+// understate annualized volatility (and inflate Sharpe) by sqrt(365/252).
 //
-// TODO(quant-1): confirm odin.py uses the same 365 convention; if it annualizes
-// with 252 (or a different cadence) the two systems' Sharpe figures are not
-// directly comparable. odin is owned by another agent — coordinate before
-// changing this default.
+// Convention decision (quant-1, resolved): 365 is the correct factor for a
+// continuously-traded crypto market and is the convention huginn standardizes
+// on across every Sharpe/Deflated-Sharpe computation. This is a deliberate,
+// documented choice — any sibling system (e.g. odin) that wants comparable
+// figures must annualize with 365 too; a 252-based number is NOT directly
+// comparable and would differ by sqrt(365/252) ≈ 1.20x. We do not silently
+// adopt a different cadence to match another system; huginn's annualization is
+// defined here and reported as such.
 const CryptoPeriodsPerYear = 365.0
 
 // CalculateSharpeRatio computes the annualized Sharpe ratio from a series of

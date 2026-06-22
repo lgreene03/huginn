@@ -100,6 +100,45 @@ func TestAuthMiddleware_PreflightPassesThrough(t *testing.T) {
 	}
 }
 
+// TestBearerTokenValid_ConstantTimeComparisonRejectsBadInput is the regression
+// guard for the constant-time-auth fix: the bearer-token check uses
+// crypto/subtle.ConstantTimeCompare instead of a plain != string compare, so a
+// timing side-channel can't leak the token. This table proves the comparison
+// still rejects every shape of bad input (empty, wrong, length-mismatch,
+// correct-token-without-the-Bearer-prefix, prefix-only) and accepts only the
+// exact "Bearer <token>" header.
+func TestBearerTokenValid_ConstantTimeComparisonRejectsBadInput(t *testing.T) {
+	s := &Server{apiToken: "s3cret-token"}
+
+	cases := []struct {
+		name   string
+		header string
+		want   bool
+	}{
+		{"empty header", "", false},
+		{"wrong token same length", "Bearer x3cret-token", false},
+		{"wrong token shorter", "Bearer nope", false},
+		{"wrong token longer", "Bearer s3cret-token-extra", false},
+		{"token without bearer prefix", "s3cret-token", false},
+		{"prefix only", "Bearer ", false},
+		{"prefix only no space", "Bearer", false},
+		{"case-mismatched scheme", "bearer s3cret-token", false},
+		{"correct token", "Bearer s3cret-token", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/breaker/trigger", nil)
+			if tc.header != "" {
+				req.Header.Set("Authorization", tc.header)
+			}
+			if got := s.bearerTokenValid(req); got != tc.want {
+				t.Fatalf("bearerTokenValid(%q) = %v, want %v", tc.header, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCORSMiddleware_ScopesToConfiguredOrigin is the regression guard for
 // sec-secrets-auth-6: the Allow-Origin header must echo the configured
 // dashboard origin, never "*".
