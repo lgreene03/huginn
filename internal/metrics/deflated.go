@@ -297,10 +297,13 @@ func ImpliedPTrueSharpeNonPositive(dsr float64) float64 {
 //	sample, i.e. P(λ ≤ 0) — the probability the in-sample optimum is no better
 //	than median out of sample, the operational definition of overfitting.
 //
-// This is the leave-one-fold-out specialization of the full combinatorial CSCV
-// (which evaluates every balanced split of folds into IS/OOS halves). It needs
-// only the fold matrix the walk-forward harness already produces, and converges
-// to the same quantity as the number of folds grows.
+// This is a leave-one-fold-out / fold-level PBO proxy: it approximates the full
+// combinatorially-symmetric CSCV (which evaluates every balanced split of folds
+// into IS/OOS halves) but is NOT that estimator. It uses a single IS/OOS
+// partition per fold rather than the symmetric set of all balanced splits, so it
+// needs only the fold matrix the walk-forward harness already produces. It is a
+// directionally consistent overfitting indicator, not a drop-in for full CSCV;
+// adding folds does not make it converge to the combinatorial estimator.
 //
 // Returns NaN (documented "undefined") when:
 //   - the matrix has fewer than 2 folds (no IS/OOS split is possible);

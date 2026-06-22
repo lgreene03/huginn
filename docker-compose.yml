@@ -22,6 +22,13 @@ services:
     depends_on:
       - redpanda
       - db
+    # Conservative privilege hardening (matches norse-stack): the image is a
+    # static Go binary, so dropping all caps and blocking privilege escalation
+    # is safe. No read_only rootfs — ./data is a writable bind mount.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   dashboard:
     build:
@@ -32,6 +39,11 @@ services:
       - "8084:8080"
     depends_on:
       - huginn
+    # nginx runs unprivileged on 8080, so all caps can be dropped safely.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   # Sleipnir lives in a sibling repo. Opt in with `--profile live`.
   # Without the profile, plain clones come up cleanly without ../sleipnir.
@@ -59,6 +71,11 @@ services:
     volumes:
       - sleipnir-data:/app/data
     restart: on-failure
+    # Static Go binary writing only to its named volume — safe to drop all caps.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
