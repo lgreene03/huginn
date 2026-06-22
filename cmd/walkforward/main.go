@@ -72,6 +72,45 @@ type foldResult struct {
 	PTrueSharpeNonPositive float64 `json:"p_true_sharpe_non_positive"`
 }
 
+// nullIfNaN returns a *float64 that JSON-encodes as the value, or as null when
+// the value is NaN/±Inf (those IEEE values are not representable in JSON).
+func nullIfNaN(f float64) *float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return nil
+	}
+	return &f
+}
+
+// MarshalJSON renders the NaN-capable metric fields (Sharpe family, decay,
+// drawdown, hit-rate, deflated Sharpe) as JSON null instead of letting NaN/±Inf
+// fail the whole encode. Without this, a single NaN (e.g. a deflated Sharpe that
+// is undefined on a too-short OOS window) made encoding/json error, the error
+// was discarded, and a 0-byte results file was written. The float64 struct
+// fields are kept as-is so all compute/printf code is unaffected; the outer
+// *float64 fields here shadow the embedded ones for serialization only.
+func (r foldResult) MarshalJSON() ([]byte, error) {
+	type alias foldResult
+	return json.Marshal(struct {
+		alias
+		TrainSharpe            *float64 `json:"train_sharpe"`
+		Sharpe                 *float64 `json:"sharpe"`
+		SharpeDecay            *float64 `json:"sharpe_decay_ratio"`
+		MaxDD                  *float64 `json:"max_dd"`
+		HitRate                *float64 `json:"hit_rate"`
+		DeflatedSharpe         *float64 `json:"deflated_sharpe"`
+		PTrueSharpeNonPositive *float64 `json:"p_true_sharpe_non_positive"`
+	}{
+		alias:                  alias(r),
+		TrainSharpe:            nullIfNaN(r.TrainSharpe),
+		Sharpe:                 nullIfNaN(r.Sharpe),
+		SharpeDecay:            nullIfNaN(r.SharpeDecay),
+		MaxDD:                  nullIfNaN(r.MaxDD),
+		HitRate:                nullIfNaN(r.HitRate),
+		DeflatedSharpe:         nullIfNaN(r.DeflatedSharpe),
+		PTrueSharpeNonPositive: nullIfNaN(r.PTrueSharpeNonPositive),
+	})
+}
+
 func main() {
 	configPath := flag.String("config", "configs/default.yaml", "YAML config")
 	dataPath := flag.String("data", "", "Historical FeatureEvent JSONL file")
@@ -241,9 +280,20 @@ func main() {
 
 	printSummary(results, totalOOS, oosWins, len(grid), oosMatrix)
 
-	jsonOut, _ := json.MarshalIndent(results, "", "  ")
-	_ = os.WriteFile("data/walkforward_results.json", jsonOut, 0644)
-	fmt.Println("Results written to data/walkforward_results.json")
+	resultsPath := os.Getenv("WALKFORWARD_RESULTS_PATH")
+	if resultsPath == "" {
+		resultsPath = "data/walkforward_results.json"
+	}
+	jsonOut, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error marshaling walk-forward results: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.WriteFile(resultsPath, jsonOut, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing %s: %v\n", resultsPath, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Results written to %s\n", resultsPath)
 }
 
 type foldMetrics struct {

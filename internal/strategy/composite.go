@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -72,7 +73,53 @@ type CompositeStrategy struct {
 	// costHurdle is the OPT-IN net-of-cost gate, identical in contract to the
 	// one OBIThreshold uses. Nil (default) is inert. See cost_hurdle.go.
 	costHurdle *CostHurdle
+
+	// ── Observability state (read by AlphaSnapshot) ─────────────────────────
+	// These are small additive monitoring fields recorded on each OnFeature.
+	// They never influence the trading decision; they exist so the console's
+	// /api/alphas endpoint can show REAL last-contribution / confidence / IC
+	// values rather than fabricated ones.
+
+	// lastContribution / lastConfidence hold the most recent per-alpha weighted
+	// contribution and reported confidence, indexed parallel to s.alphas. They
+	// are nil until the first OnFeature, in which case the snapshot reports the
+	// configured weight but a null contribution/confidence.
+	lastContribution []float64
+	lastConfidence   []float64
+	haveLast         bool
+
+	// ic holds a short rolling Information Coefficient ring per alpha: for each
+	// event we stash that alpha's contribution and, on the NEXT event, pair it
+	// with the realized mid return to grow a windowed (contribution, fwdReturn)
+	// sample set, from which AlphaSnapshot derives a Pearson IC history. Until
+	// at least icMinSamples paired points exist for an alpha, its IC history is
+	// empty ([]), never a fabricated number.
+	icSamples [][]icPoint // parallel to s.alphas; each a rolling ring
+	// pending links the previous event's per-alpha contribution + the mid price
+	// observed then, so the next event's mid can realize a forward return.
+	pendingContribution []float64
+	pendingMid          float64
+	havePending         bool
 }
+
+// icPoint is one (alpha contribution, realized forward mid return) observation
+// used to estimate a rolling Information Coefficient.
+type icPoint struct {
+	contribution float64
+	fwdReturn    float64
+}
+
+// icRingCap bounds the per-alpha IC sample ring (≈ recent history window).
+const icRingCap = 64
+
+// icMinSamples is the minimum paired observations before an IC value is
+// emitted. Below this the snapshot returns an empty IC history rather than a
+// statistically meaningless correlation.
+const icMinSamples = 5
+
+// icHistoryLen is the number of trailing rolling-IC values AlphaSnapshot emits
+// per alpha (each computed over an expanding-then-sliding sample window).
+const icHistoryLen = 8
 
 // CompositeConfig configures a CompositeStrategy. Zero values fall back to safe
 // defaults (see NewCompositeStrategy).
@@ -218,7 +265,216 @@ func (s *CompositeStrategy) score(event model.FeatureEvent) float64 {
 		metrics.AlphaContribution.WithLabelValues(s.name, wa.Alpha.Name()).Set(contributions[i])
 	}
 	metrics.CompositeScore.WithLabelValues(s.name).Set(combined)
+
+	s.recordObservability(event, scores, contributions)
 	return combined
+}
+
+// recordObservability stashes the per-alpha last contribution + confidence and
+// advances the rolling IC sample rings. Caller must hold s.mu. This is pure
+// monitoring state and never changes the trading decision.
+//
+// IC pairing: each alpha's contribution at event N is paired with the realized
+// mid return between event N and event N+1 (fwdReturn = mid_{N+1}/mid_N - 1).
+// We therefore commit the PREVIOUS event's pending contributions when the
+// current mid arrives, then stage the current event's contributions as the new
+// pending set.
+func (s *CompositeStrategy) recordObservability(event model.FeatureEvent, scores []AlphaScore, contributions []float64) {
+	// Last contribution + confidence (a straight copy so callers can't alias).
+	s.lastContribution = append(s.lastContribution[:0], contributions...)
+	if cap(s.lastConfidence) < len(scores) {
+		s.lastConfidence = make([]float64, len(scores))
+	} else {
+		s.lastConfidence = s.lastConfidence[:len(scores)]
+	}
+	for i := range scores {
+		s.lastConfidence[i] = scores[i].Confidence
+	}
+	s.haveLast = true
+
+	mid := event.Values["midPrice"]
+
+	// Realize the prior event's contributions against this event's mid.
+	if s.havePending && s.pendingMid > 0 && mid > 0 && len(s.pendingContribution) == len(s.alphas) {
+		fwd := mid/s.pendingMid - 1
+		if s.icSamples == nil {
+			s.icSamples = make([][]icPoint, len(s.alphas))
+		}
+		for i := range s.alphas {
+			s.icSamples[i] = pushICPoint(s.icSamples[i], icPoint{
+				contribution: s.pendingContribution[i],
+				fwdReturn:    fwd,
+			})
+		}
+	}
+
+	// Stage the current event as the new pending set (only when we have a usable
+	// mid; a missing mid can't anchor a forward return).
+	if mid > 0 {
+		s.pendingContribution = append(s.pendingContribution[:0], contributions...)
+		s.pendingMid = mid
+		s.havePending = true
+	}
+}
+
+// pushICPoint appends p to ring, bounded to icRingCap (dropping the oldest).
+func pushICPoint(ring []icPoint, p icPoint) []icPoint {
+	if len(ring) >= icRingCap {
+		return append(ring[1:], p)
+	}
+	return append(ring, p)
+}
+
+// ── Alpha snapshot (read by the console's /api/alphas endpoint) ─────────────
+
+// AlphaInfo is the per-alpha breakdown the monitoring endpoint exposes.
+//
+// Contribution and Confidence are pointers so a not-yet-observed alpha reports
+// JSON null (the composite has not run OnFeature yet) rather than a misleading
+// 0.0. IC is the recent rolling Information Coefficient history; it is an empty
+// slice — never fabricated — until enough paired samples exist.
+type AlphaInfo struct {
+	Name         string    `json:"name"`
+	Weight       float64   `json:"weight"`
+	Contribution *float64  `json:"contribution"`
+	Confidence   *float64  `json:"confidence"`
+	IC           []float64 `json:"ic"`
+}
+
+// AlphaSnapshot is the live alpha breakdown for the composite strategy.
+type AlphaSnapshot struct {
+	CompositeScore float64     `json:"compositeScore"`
+	EntryThreshold float64     `json:"entryThreshold"`
+	Blend          string      `json:"blend"`
+	Alphas         []AlphaInfo `json:"alphas"`
+}
+
+// blendName renders the blend mode for the snapshot.
+func blendName(m BlendMode) string {
+	if m == BlendZScore {
+		return "zscore"
+	}
+	return "weighted_sum"
+}
+
+// AlphaSnapshot returns the live per-alpha breakdown: the configured weight,
+// last recorded contribution + confidence (null until the first OnFeature), and
+// a short rolling IC history per alpha (empty until icMinSamples paired points
+// exist). The composite score is read from the Prometheus gauge's last set
+// value via the most recent recorded contributions blended — to avoid recompute
+// we report the last combined score directly from the per-alpha contributions.
+func (s *CompositeStrategy) AlphaSnapshot() AlphaSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snap := AlphaSnapshot{
+		EntryThreshold: s.entryThreshold,
+		Blend:          blendName(s.blendMode),
+		Alphas:         make([]AlphaInfo, len(s.alphas)),
+	}
+
+	// Recompute the last combined score from the recorded contributions so the
+	// snapshot's compositeScore matches what the last OnFeature blended. With no
+	// recorded contributions yet it stays 0.
+	if s.haveLast {
+		snap.CompositeScore = combinedFromContributions(s.alphas, s.lastContribution, s.blendMode)
+	}
+
+	for i, wa := range s.alphas {
+		info := AlphaInfo{
+			Name:   wa.Alpha.Name(),
+			Weight: wa.Weight,
+			IC:     []float64{},
+		}
+		if s.haveLast && i < len(s.lastContribution) {
+			c := s.lastContribution[i]
+			info.Contribution = &c
+		}
+		if s.haveLast && i < len(s.lastConfidence) {
+			conf := s.lastConfidence[i]
+			info.Confidence = &conf
+		}
+		if s.icSamples != nil && i < len(s.icSamples) {
+			info.IC = rollingIC(s.icSamples[i])
+		}
+		snap.Alphas[i] = info
+	}
+	return snap
+}
+
+// combinedFromContributions reproduces combineScores' blending step from the
+// already-computed per-alpha contributions, used by AlphaSnapshot to report the
+// last combined score without recomputing each alpha. It mirrors the weighted-
+// sum normalization and the z-score path in combineScores.
+func combinedFromContributions(weighted []WeightedAlpha, contributions []float64, mode BlendMode) float64 {
+	if len(contributions) == 0 {
+		return 0
+	}
+	if mode == BlendZScore {
+		return clampUnit(zscoreBlend(contributions))
+	}
+	var sum, totalWeight float64
+	for i, c := range contributions {
+		sum += c
+		if i < len(weighted) {
+			totalWeight += math.Abs(weighted[i].Weight)
+		}
+	}
+	if totalWeight > 0 {
+		return clampUnit(sum / totalWeight)
+	}
+	return clampUnit(sum)
+}
+
+// rollingIC computes a short trailing history of rolling Pearson Information
+// Coefficients (contribution vs realized forward return) over the sample ring.
+// It returns up to icHistoryLen values, each computed over an expanding window
+// of the ring (window i uses the first icMinSamples+i points). Returns an empty
+// slice when fewer than icMinSamples paired points exist — never a fabricated
+// number. A zero-variance window (no signal spread) yields IC 0 for that point.
+func rollingIC(ring []icPoint) []float64 {
+	if len(ring) < icMinSamples {
+		return []float64{}
+	}
+	out := make([]float64, 0, icHistoryLen)
+	// Emit up to icHistoryLen windows, each an expanding prefix of the ring
+	// ending at progressively later points (… ring[:end-1], ring[:end]). The
+	// last (newest) value uses the whole ring. Built newest-first, then
+	// reversed to chronological order.
+	for end := len(ring); end >= icMinSamples && len(out) < icHistoryLen; end-- {
+		out = append(out, pearsonIC(ring[:end]))
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out
+}
+
+// pearsonIC is the Pearson correlation between alpha contributions and realized
+// forward returns over the points. Returns 0 on zero variance in either series.
+func pearsonIC(points []icPoint) float64 {
+	n := float64(len(points))
+	if n < 2 {
+		return 0
+	}
+	var sx, sy float64
+	for _, p := range points {
+		sx += p.contribution
+		sy += p.fwdReturn
+	}
+	mx, my := sx/n, sy/n
+	var cov, vx, vy float64
+	for _, p := range points {
+		dx := p.contribution - mx
+		dy := p.fwdReturn - my
+		cov += dx * dy
+		vx += dx * dx
+		vy += dy * dy
+	}
+	if vx == 0 || vy == 0 {
+		return 0
+	}
+	return cov / math.Sqrt(vx*vy)
 }
 
 // OnFeature implements Strategy.

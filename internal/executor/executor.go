@@ -188,6 +188,15 @@ func New(s strategy.Strategy, port *portfolio.Portfolio, jw journal.Writer, rm *
 	}
 }
 
+// Strategy returns the active strategy. It is read-only and exists so the HTTP
+// server can expose live strategy introspection (e.g. /api/alphas) without the
+// server package reaching into executor internals. The returned value shares
+// the executor's strategy instance; callers must only invoke its own
+// concurrency-safe methods (Name, AlphaSnapshot), never mutate it.
+func (e *Executor) Strategy() strategy.Strategy {
+	return e.strategy
+}
+
 // PersistStrategyState marshals the strategy's current state (if Stateful) and
 // writes it via the journal. Errors are logged and counted but do not
 // propagate — a journal hiccup must not crash the engine.

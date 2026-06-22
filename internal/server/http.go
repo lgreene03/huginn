@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"sync"
@@ -17,8 +18,13 @@ import (
 	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
+	"github.com/lgreene03/huginn/internal/strategy"
 	"github.com/lgreene03/huginn/internal/version"
 )
+
+// defaultWalkforwardResultsPath is the walk-forward artifact the /api/validation
+// endpoint reads when WALKFORWARD_RESULTS_PATH is unset.
+const defaultWalkforwardResultsPath = "data/walkforward_results.json"
 
 // equityPoint is one sample in the server-side equity history ring.
 type equityPoint struct {
@@ -427,12 +433,199 @@ func (s *Server) snapshotHistoryHandler(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(s.equity.snapshot())
 }
 
+// alphaSnapshotProvider is the optional capability a strategy exposes to drive
+// the /api/alphas console panel with its live alpha breakdown. CompositeStrategy
+// implements it; single strategies do not (the handler synthesizes a one-alpha
+// view for those).
+type alphaSnapshotProvider interface {
+	AlphaSnapshot() strategy.AlphaSnapshot
+}
+
+// lastSignaler is an OPTIONAL capability: a single (non-composite) strategy that
+// tracks its most recent signal value can implement it so /api/alphas reports a
+// real contribution rather than null. Strategies that do not track a last signal
+// simply don't implement it, and the handler reports a null contribution — never
+// a fabricated number.
+type lastSignaler interface {
+	LastSignal() (value float64, ok bool)
+}
+
+// alphasHandler serves GET /api/alphas: the live alpha breakdown for the active
+// strategy. Read-only monitoring endpoint (no auth), CORS via middleware.
+//
+//   - CompositeStrategy → its real AlphaSnapshot (per-alpha weight, last
+//     contribution + confidence, rolling IC history).
+//   - Any single strategy → a one-alpha view {name, weight:1, contribution:
+//     last signal if the strategy tracks one (else null), confidence:null,
+//     ic:[]}.
+//   - No executor/strategy wired → {available:false}.
+func (s *Server) alphasHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.executor == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})
+		return
+	}
+	active := s.executor.Strategy()
+	if active == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})
+		return
+	}
+
+	// Composite: real, fully-tracked breakdown.
+	if cs, ok := active.(alphaSnapshotProvider); ok {
+		_ = json.NewEncoder(w).Encode(cs.AlphaSnapshot())
+		return
+	}
+
+	// Single strategy: expose it as one alpha. Contribution is the strategy's
+	// last signal if it tracks one; otherwise null. Confidence/IC are not
+	// tracked for single strategies, so they are null/[] (never fabricated).
+	single := strategy.AlphaInfo{
+		Name:   active.Name(),
+		Weight: 1,
+		IC:     []float64{},
+	}
+	if ls, ok := active.(lastSignaler); ok {
+		if v, have := ls.LastSignal(); have {
+			vv := v
+			single.Contribution = &vv
+		}
+	}
+	snap := strategy.AlphaSnapshot{
+		CompositeScore: 0,
+		EntryThreshold: 0,
+		Blend:          "single",
+		Alphas:         []strategy.AlphaInfo{single},
+	}
+	if single.Contribution != nil {
+		snap.CompositeScore = *single.Contribution
+	}
+	_ = json.NewEncoder(w).Encode(snap)
+}
+
+// validationHandler serves GET /api/validation: the walk-forward validation
+// results. Reads the artifact at WALKFORWARD_RESULTS_PATH (default
+// data/walkforward_results.json), which cmd/walkforward writes as a JSON ARRAY
+// of per-fold records. When the file is missing or empty it returns
+// {available:false} — it never fabricates folds. When present, it parses the raw
+// fold array and DERIVES the console-contract shape (folds, oosFoldsProfitable,
+// totalOOSPnL, pbo, deflatedSharpe) from the real numbers.
+func (s *Server) validationHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	path := os.Getenv("WALKFORWARD_RESULTS_PATH")
+	if path == "" {
+		path = defaultWalkforwardResultsPath
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})
+		return
+	}
+
+	var raw []walkforwardRawFold
+	if err := json.Unmarshal(data, &raw); err != nil || len(raw) == 0 {
+		// Corrupt or empty-array artifact: treat as "no validation run yet"
+		// rather than emitting a malformed/empty-fold response.
+		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})
+		return
+	}
+
+	out := walkforwardResults{Folds: make([]walkforwardFold, 0, len(raw))}
+	var dsrSum float64
+	var dsrN int
+	for _, f := range raw {
+		out.Folds = append(out.Folds, walkforwardFold{
+			Fold:   f.Fold,
+			Train:  joinRange(f.TrainStart, f.TrainEnd),
+			Test:   joinRange(f.TestStart, f.TestEnd),
+			ISPnL:  f.TrainPnL,
+			OOSPnL: f.TestPnL,
+		})
+		out.TotalOOSPnL += f.TestPnL
+		if f.TestPnL > 0 {
+			out.OOSFoldsProfitable++
+		}
+		// Deflated Sharpe is null (in the artifact) / NaN when an OOS window is
+		// too short to define it; skip those so the average reflects only defined
+		// folds — and stays null when none are defined, rather than a misleading 0.
+		if f.DeflatedSharpe != nil && !math.IsNaN(*f.DeflatedSharpe) {
+			dsrSum += *f.DeflatedSharpe
+			dsrN++
+		}
+	}
+	if dsrN > 0 {
+		avg := dsrSum / float64(dsrN)
+		out.DeflatedSharpe = &avg
+	}
+	// PBO (Probability of Backtest Overfitting) proxy: the fraction of folds
+	// whose OOS PnL is non-positive — i.e. how often the in-sample selection
+	// failed to carry out of sample. Derived from real fold outcomes, not
+	// fabricated. (A full combinatorially-symmetric PBO needs the per-combo OOS
+	// matrix, which the artifact does not persist; this is the honest fold-level
+	// estimate.)
+	if n := len(out.Folds); n > 0 {
+		out.PBO = float64(n-out.OOSFoldsProfitable) / float64(n)
+	}
+
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// joinRange renders a "start → end" window label, tolerating empty bounds.
+func joinRange(start, end string) string {
+	switch {
+	case start == "" && end == "":
+		return ""
+	case start == "":
+		return end
+	case end == "":
+		return start
+	default:
+		return start + " → " + end
+	}
+}
+
+// walkforwardRawFold mirrors the fields cmd/walkforward writes per fold. Only
+// the fields the console contract needs are decoded; extras are ignored.
+type walkforwardRawFold struct {
+	Fold           int     `json:"fold"`
+	TrainStart     string  `json:"train_start"`
+	TrainEnd       string  `json:"train_end"`
+	TestStart      string  `json:"test_start"`
+	TestEnd        string  `json:"test_end"`
+	TrainPnL       float64  `json:"train_pnl"`
+	TestPnL        float64  `json:"test_pnl"`
+	DeflatedSharpe *float64 `json:"deflated_sharpe"`
+}
+
+// walkforwardFold is one fold in the console-contract response.
+type walkforwardFold struct {
+	Fold   int     `json:"fold"`
+	Train  string  `json:"train"`
+	Test   string  `json:"test"`
+	ISPnL  float64 `json:"isPnL"`
+	OOSPnL float64 `json:"oosPnL"`
+}
+
+// walkforwardResults is the console-contract /api/validation response shape.
+type walkforwardResults struct {
+	Folds              []walkforwardFold `json:"folds"`
+	OOSFoldsProfitable int               `json:"oosFoldsProfitable"`
+	TotalOOSPnL        float64           `json:"totalOOSPnL"`
+	PBO                float64           `json:"pbo"`
+	DeflatedSharpe     *float64          `json:"deflatedSharpe"`
+}
+
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.corsMiddleware(s.healthzHandler))
 	mux.HandleFunc("/readyz", s.corsMiddleware(s.readyzHandler))
 	mux.HandleFunc("/api/snapshot", s.corsMiddleware(s.snapshotHandler))
 	mux.HandleFunc("/api/snapshot/history", s.corsMiddleware(s.snapshotHistoryHandler))
+	mux.HandleFunc("/api/alphas", s.corsMiddleware(s.alphasHandler))
+	mux.HandleFunc("/api/validation", s.corsMiddleware(s.validationHandler))
 	mux.HandleFunc("/api/stream", s.streamHandler)
 	mux.HandleFunc("/api/breaker/trigger", s.corsMiddleware(s.authMiddleware(s.breakerTriggerHandler)))
 	mux.HandleFunc("/api/breaker/reset", s.corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
