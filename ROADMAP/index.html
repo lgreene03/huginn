@@ -316,6 +316,25 @@
   
   
   
+    <li class="md-tabs__item">
+      <a href="../BENCHMARKS/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Benchmarks
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
     
     
       <li class="md-tabs__item">
@@ -538,6 +557,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../ADDING_AN_ALPHA/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding an Alpha
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../calibration/" class="md-nav__link">
         
   
@@ -546,6 +593,34 @@
     
   
     Calibration Workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../STRATEGY_STATE_DESIGN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Strategy-State Journal Design
   
 
     
@@ -626,6 +701,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../BENCHMARKS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -640,10 +742,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -661,8 +763,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_6">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1157,6 +1259,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#phase-9-research-validation-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 — Research / validation gateway ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1439,6 +1552,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#phase-9-research-validation-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9 — Research / validation gateway ✅
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#phase-f-future-deferred-speculative" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1687,6 +1811,16 @@
 - ✅ <strong>Tests against a stub SSE server.</strong> <code>internal/feed/sse_test.go</code> covers the decoder, the scalar-bridging mapper, an <code>httptest</code> stream emitting keepalive + <code>event: feature</code> frames, a forced mid-stream reconnect, and clean ctx-cancel shutdown.</p>
 <p><strong>Exit criteria.</strong> ✅ Huginn drives strategies from the live stream through the same dispatch path as Kafka (no added in-process latency) with clean exponential-backoff reconnects, selectable by config.</p>
 <p><strong>Reference.</strong> The muninn-py SDK's <code>MuninnStreamClient</code> (also promoted by T3) is the Python reference implementation of the same wire format.</p>
+<hr />
+<h2 id="phase-9-research-validation-gateway">Phase 9 — Research / validation gateway ✅<a class="headerlink" href="#phase-9-research-validation-gateway" title="Permanent link">&para;</a></h2>
+<p><strong>Goal.</strong> Run heavy walk-forward validation (walk-forward + PBO + Deflated-Sharpe) on demand from a UI, <strong>out of the live trading process</strong>, so a validation sweep never competes with the hot path for CPU and never risks the trading process.</p>
+<p><strong>Deliverables.</strong>
+- ✅ <strong>Standalone HTTP gateway</strong> (<code>cmd/research</code>). Port <code>8094</code> (<code>RESEARCH_PORT</code>). <code>POST /api/research/runs</code> submits a <code>{strategy, thresholds, folds}</code> job and returns <code>202 {id, status:"running"}</code>; the run executes asynchronously. <code>GET /api/research/runs</code> lists newest-first summaries; <code>GET /api/research/runs/{id}</code> returns the full record (<code>oosFoldsProfitable</code>, <code>totalOOSPnL</code>, <code>pbo</code>, <code>deflatedSharpe</code>); <code>GET /healthz</code> for liveness.
+- ✅ <strong>Same engine as the CLI.</strong> The gateway reuses <code>internal/research</code> — the exact engine <code>cmd/walkforward</code> drives — so a gateway run reproduces the CLI's numbers. It builds a self-contained config (no YAML-on-disk dependency) whose risk/executor defaults mirror <code>config.Load</code>, so PnL is cost-consistent with <code>go run ./cmd/walkforward</code>.
+- ✅ <strong>No live dependencies.</strong> Owns no Kafka/Postgres. It replays a JSONL dataset on disk (<code>RESEARCH_DATA_PATH</code>, default <code>data/btc_test.jsonl</code> — the committed fixture), so it runs as a sidecar. Finished runs persist to <code>RESEARCH_RESULTS_DIR</code> (default <code>data/research/</code>) and reload on startup, surviving a restart.
+- ✅ <strong>Container image</strong> (<code>Dockerfile.research</code>): multi-stage, digest-pinned base, unprivileged <code>research</code> user, <code>EXPOSE 8094</code>. The research/mimir/forseti compose wiring lives in <a href="https://github.com/lgreene03/norse-stack">norse-stack</a>, not here.</p>
+<p><strong>Exit criteria.</strong> ✅ <code>go run ./cmd/research</code> answers <code>/healthz</code>, accepts a run against the bundled fixture with no Kafka/Postgres, and the derived PBO/Deflated-Sharpe match a <code>cmd/walkforward</code> run of the same grid.</p>
+<p><strong>Risks.</strong> Gateway/CLI drift — mitigated by sharing <code>internal/research</code> rather than reimplementing the sweep.</p>
 <hr />
 <h2 id="phase-f-future-deferred-speculative">Phase F — Future <em>(deferred / speculative)</em><a class="headerlink" href="#phase-f-future-deferred-speculative" title="Permanent link">&para;</a></h2>
 <p>Tracked so ideas aren't lost; explicitly not scheduled. Each is gated by an <strong>observable trigger</strong> (never a date) catalogued in <a href="https://github.com/lgreene03/sleipnir/blob/main/docs/TRIGGERS.md">sleipnir/docs/TRIGGERS.md</a>, the shared cross-repo trigger catalog. When a trigger trips, the item moves out of Phase F into the next numbered phase, marked 🟢 with the trigger ID.</p>
