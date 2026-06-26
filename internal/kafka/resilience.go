@@ -44,6 +44,7 @@ func (b *backoff) sleep(ctx context.Context) {
 
 	// Full +/-50% jitter to avoid a thundering-herd reconnect across the
 	// three consumer goroutines when Redpanda comes back.
+	//nolint:gosec // G404: non-cryptographic backoff jitter, math/rand is intentional.
 	jitter := time.Duration(rand.Int63n(int64(b.current))) - b.current/2
 	d := b.current + jitter
 	if d < 0 {

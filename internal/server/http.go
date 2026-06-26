@@ -532,6 +532,7 @@ func (s *Server) validationHandler(w http.ResponseWriter, r *http.Request) {
 		path = defaultWalkforwardResultsPath
 	}
 
+	//nolint:gosec // G703: path is the operator-configured WALKFORWARD_RESULTS_PATH env var, not request input.
 	data, err := os.ReadFile(path)
 	if err != nil || len(data) == 0 {
 		_ = json.NewEncoder(w).Encode(map[string]any{"available": false})

@@ -150,7 +150,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error marshaling walk-forward results: %v\n", err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(resultsPath, jsonOut, 0o644); err != nil {
+	//nolint:gosec // G703: resultsPath is the operator-configured WALKFORWARD_RESULTS_PATH env var (with a fixed default), not request input.
+	if err := os.WriteFile(resultsPath, jsonOut, 0o600); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing %s: %v\n", resultsPath, err)
 		os.Exit(1)
 	}

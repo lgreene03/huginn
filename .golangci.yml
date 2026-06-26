@@ -25,6 +25,11 @@ linters:
     - gosec
 
   settings:
+    misspell:
+      # "strat" is a deliberate, pervasive abbreviation for "strategy" in this
+      # codebase (stratName, the strategy equity curve), NOT a typo of "start".
+      ignore-rules:
+        - strat
     staticcheck:
       # Disable quick-fix / refactor suggestions (QF*) and style checks (ST*)
       # — these flag formatting and naming preferences, not bugs. SA* (analysis)

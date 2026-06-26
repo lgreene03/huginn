@@ -132,21 +132,18 @@ func (s *Server) loadPersisted() {
 	slog.Info("Loaded persisted research runs", "count", len(s.runs))
 }
 
-// persist writes a finished run to resultsDir/<id>.json. Best-effort: a write
-// failure is logged but does not change the in-memory result.
-func (s *Server) persist(r *run) {
-	if err := os.MkdirAll(s.resultsDir, 0o755); err != nil {
+// persist writes an already-marshalled finished run to resultsDir/<id>.json.
+// The caller marshals the run under s.mu (see execute) so this function never
+// touches the run's mutable fields concurrently with the worker. Best-effort: a
+// write failure is logged but does not change the in-memory result.
+func (s *Server) persist(id string, data []byte) {
+	if err := os.MkdirAll(s.resultsDir, 0o750); err != nil {
 		slog.Error("Failed to create results dir", "dir", s.resultsDir, "error", err)
 		return
 	}
-	data, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		slog.Error("Failed to marshal run for persistence", "id", r.ID, "error", err)
-		return
-	}
-	path := filepath.Join(s.resultsDir, r.ID+".json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		slog.Error("Failed to persist run", "id", r.ID, "path", path, "error", err)
+	path := filepath.Join(s.resultsDir, id+".json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		slog.Error("Failed to persist run", "id", id, "path", path, "error", err)
 	}
 }
 
@@ -237,6 +234,7 @@ func (s *Server) execute(id string, req runRequest) {
 	now := time.Now().UTC()
 	s.mu.Lock()
 	r := s.runs[id]
+	var data []byte
 	if r != nil {
 		r.FinishedAt = &now
 		if err != nil {
@@ -246,12 +244,18 @@ func (s *Server) execute(id string, req runRequest) {
 			r.Status = "done"
 			r.Result = res
 		}
+		// Marshal under the lock so the finished run's mutable fields are read
+		// for persistence while no other goroutine can be writing them.
+		var merr error
+		if data, merr = json.MarshalIndent(r, "", "  "); merr != nil {
+			slog.Error("Failed to marshal run for persistence", "id", id, "error", merr)
+			data = nil
+		}
 	}
-	rCopy := r
 	s.mu.Unlock()
 
-	if rCopy != nil {
-		s.persist(rCopy)
+	if data != nil {
+		s.persist(id, data)
 	}
 }
 
@@ -343,8 +347,17 @@ func (s *Server) getRunHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Marshal the run UNDER the lock: the worker goroutine (execute) mutates
+	// status/result/error/finishedAt while holding s.mu, so reading those
+	// fields here without the lock is a data race. Serializing inside the
+	// critical section guarantees no field is read mid-write.
 	s.mu.Lock()
 	r0 := s.runs[id]
+	var data []byte
+	var marshalErr error
+	if r0 != nil {
+		data, marshalErr = json.Marshal(r0)
+	}
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -353,10 +366,17 @@ func (s *Server) getRunHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "run not found"})
 		return
 	}
-	_ = json.NewEncoder(w).Encode(r0)
+	if marshalErr != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "failed to encode run"})
+		return
+	}
+	_, _ = w.Write(data)
 }
 
 // listRuns serves GET /api/research/runs: a newest-first array of summaries.
+//
+//nolint:unparam // r is required by the http.HandlerFunc signature even though this handler ignores the request.
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	summaries := make([]runSummary, 0, len(s.runs))

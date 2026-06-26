@@ -40,6 +40,7 @@ type step struct {
 	wantTotalValue float64 // cash + signed qty*mark (mark == last fill price)
 }
 
+//nolint:unparam // inst parameterizes the instrument the helper asserts on; current cases all use "X", but keeping it keeps the helper general and self-documenting at each call site.
 func runSteps(t *testing.T, initialCash float64, inst string, steps []step) {
 	t.Helper()
 	p := New(initialCash)

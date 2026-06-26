@@ -75,5 +75,6 @@ func main() {
 // randSeq returns a small random integer to disambiguate run ids minted within
 // the same nanosecond.
 func randSeq() int {
+	//nolint:gosec // G404: non-cryptographic run-id disambiguator, math/rand is intentional.
 	return rand.Intn(10000)
 }

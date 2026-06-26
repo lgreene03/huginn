@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -119,6 +120,60 @@ func TestSubmitPollUntilDone(t *testing.T) {
 	}
 	if got.Result.DeflatedSharpe == nil || *got.Result.DeflatedSharpe != 1.5 {
 		t.Errorf("deflatedSharpe = %v, want 1.5", got.Result.DeflatedSharpe)
+	}
+}
+
+// TestConcurrentGetWhileRunning hammers GET /api/research/runs/{id} from many
+// goroutines while the worker is finishing the run, so `go test -race` flags any
+// unsynchronized read of the run's mutable fields (status/result/error/
+// finishedAt) against the worker's write. The walk-forward stub blocks on a
+// release channel so the readers overlap the worker's in-flight write window.
+func TestConcurrentGetWhileRunning(t *testing.T) {
+	s := newTestServer(t)
+	release := make(chan struct{})
+	s.runWalkforward = func(req runRequest) (*runResult, error) {
+		<-release // hold the worker until readers are spinning
+		return &runResult{OOSFoldsProfitable: 1, TotalOOSPnL: 1.0}, nil
+	}
+
+	id := submit(t, s, `{"strategy":"obi","thresholds":[0.5],"folds":2}`)["id"]
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					rec := getRun(t, s, id)
+					if rec.Code != http.StatusOK {
+						t.Errorf("get status = %d, want 200", rec.Code)
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// Let readers spin against the still-running run, then release the worker so
+	// its write races against the concurrent reads if locking is wrong.
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	time.Sleep(20 * time.Millisecond)
+	close(stop)
+	wg.Wait()
+
+	rec := getRun(t, s, id)
+	var got run
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode run: %v", err)
+	}
+	if got.Status != "done" {
+		t.Fatalf("final status = %q, want done", got.Status)
 	}
 }
 

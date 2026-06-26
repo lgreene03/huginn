@@ -281,7 +281,7 @@ func (s *OUReversion) OnFeature(event model.FeatureEvent) []model.Order {
 		timeExit := s.holdSteps > 0 && s.barsHeld >= s.holdSteps
 
 		if bandExit || timeExit {
-			return s.closePosition(event, price, z, zValid, bandExit, timeExit)
+			return s.closePosition(event, z, zValid, bandExit, timeExit)
 		}
 		// Still holding, no exit this bar.
 		return nil
@@ -359,7 +359,7 @@ func (s *OUReversion) OnFeature(event model.FeatureEvent) []model.Order {
 
 // closePosition emits the offsetting order that flattens the current position
 // and resets the entry bookkeeping. Caller holds s.mu.
-func (s *OUReversion) closePosition(event model.FeatureEvent, price, z float64, zValid, bandExit, timeExit bool) []model.Order {
+func (s *OUReversion) closePosition(event model.FeatureEvent, z float64, zValid, bandExit, timeExit bool) []model.Order {
 	// Offsetting side: a long-from-entry (+1) is closed by a SELL.
 	var side model.Side
 	if s.entrySign > 0 {

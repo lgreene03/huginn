@@ -78,14 +78,6 @@ func replay(initialCash float64, gens []genFill, instrument string) (*Portfolio,
 	return p, applied
 }
 
-func approxEqualEps(a, b, eps float64) bool {
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	return d <= eps
-}
-
 // relApproxEqual compares with a tolerance that scales with magnitude, so a
 // long random sequence summing six-figure cash values isn't failed by ordinary
 // float64 rounding noise.

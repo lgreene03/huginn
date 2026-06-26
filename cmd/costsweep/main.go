@@ -151,7 +151,7 @@ func main() {
 	fmt.Println("══════════════════")
 
 	svg := RenderSVG(cfg.Strategy.Name, result)
-	if werr := os.WriteFile(*outPath, []byte(svg), 0o644); werr != nil {
+	if werr := os.WriteFile(*outPath, []byte(svg), 0o600); werr != nil {
 		slog.Error("Failed to write SVG", "out", *outPath, "error", werr)
 		os.Exit(1)
 	}
