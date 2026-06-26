@@ -73,7 +73,7 @@ func TestAdv_AddToLongThenPartialSell(t *testing.T) {
 		{
 			name:           "buy 2 @100",
 			fill:           mkFill(inst, true, 2, 100, 0),
-			wantCash:       10_000 - 200,        // 9800
+			wantCash:       10_000 - 200, // 9800
 			wantQty:        2,
 			wantAvg:        100,
 			wantRealized:   0,
@@ -93,7 +93,7 @@ func TestAdv_AddToLongThenPartialSell(t *testing.T) {
 			fill:           mkFill(inst, false, 1, 130, 0),
 			wantCash:       9560 + 130, // 9690
 			wantQty:        3,
-			wantAvg:        110, // unchanged on a reducing close
+			wantAvg:        110,             // unchanged on a reducing close
 			wantRealized:   (130 - 110) * 1, // +20
 			wantTotalValue: 9690 + 3*130,    // 10080
 		},
@@ -128,9 +128,9 @@ func TestAdv_ShortAddPartialCoverFullCover(t *testing.T) {
 			fill:           mkFill(inst, true, 1, 80, 0),
 			wantCash:       10290 - 80, // 10210
 			wantQty:        -2,
-			wantAvg:        avg3,                         // unchanged on partial cover
-			wantRealized:   -1 * (80 - avg3) * 1,         // +16.6667
-			wantTotalValue: 10210 + (-2 * 80),            // 10050
+			wantAvg:        avg3,                 // unchanged on partial cover
+			wantRealized:   -1 * (80 - avg3) * 1, // +16.6667
+			wantTotalValue: 10210 + (-2 * 80),    // 10050
 		},
 		{
 			name:           "cover 2 @70 (full)",
@@ -139,7 +139,7 @@ func TestAdv_ShortAddPartialCoverFullCover(t *testing.T) {
 			wantQty:        0,
 			wantAvg:        0,
 			wantRealized:   (-1 * (80 - avg3) * 1) + (-1 * (70 - avg3) * 2), // 16.6667 + 53.3333 = 70
-			wantTotalValue: 10070,                                          // flat
+			wantTotalValue: 10070,                                           // flat
 		},
 	})
 }
@@ -162,8 +162,8 @@ func TestAdv_LongTwoSellThreeFlips(t *testing.T) {
 			fill:           mkFill(inst, false, 3, 120, 0),
 			wantCash:       9800 + 360, // 10160
 			wantQty:        -1,
-			wantAvg:        120, // remainder opens short at fill price, fee=0
-			wantRealized:   (120 - 100) * 2, // +40
+			wantAvg:        120,                // remainder opens short at fill price, fee=0
+			wantRealized:   (120 - 100) * 2,    // +40
 			wantTotalValue: 10160 + (-1 * 120), // 10040
 		},
 	})
@@ -173,8 +173,9 @@ func TestAdv_LongTwoSellThreeFlips(t *testing.T) {
 // the new cost basis embeds the prorated OPENING fee portion.
 //
 // Long 1 @100 (fee 0), then SELL 4 @110 fee 40.
-//   close 1: realized = (110-100)*1 - 40*(1/4) = 10 - 10 = 0
-//   remainder 3 opens short, avg = 110 + (40*(3/4))/3 = 110 + 10 = 120
+//
+//	close 1: realized = (110-100)*1 - 40*(1/4) = 10 - 10 = 0
+//	remainder 3 opens short, avg = 110 + (40*(3/4))/3 = 110 + 10 = 120
 func TestAdv_FlipWithFee(t *testing.T) {
 	const inst = "X"
 	runSteps(t, 100_000.0, inst, []step{
@@ -192,7 +193,7 @@ func TestAdv_FlipWithFee(t *testing.T) {
 			fill:           mkFill(inst, false, 4, 110, 40),
 			wantCash:       99_900 + 440 - 40, // 100300
 			wantQty:        -3,
-			wantAvg:        100,                       // 110 - (40*0.75)/3 (fee lowers a short's basis)
+			wantAvg:        100,                        // 110 - (40*0.75)/3 (fee lowers a short's basis)
 			wantRealized:   (110-100)*1 - 40*(1.0/4.0), // 0
 			wantTotalValue: 100_300 + (-3 * 110),       // 99970
 		},
@@ -210,16 +211,16 @@ func TestAdv_FlipWithFee(t *testing.T) {
 func TestAdv_EquityInvariantTenFillSequence(t *testing.T) {
 	p := New(1_000_000.0)
 	fills := []model.Fill{
-		mkFill("A", true, 3, 500, 1.5),   // long A 3
-		mkFill("B", false, 2, 200, 1.0),  // short B 2
-		mkFill("A", true, 1, 520, 0.5),   // add A -> 4
-		mkFill("A", false, 6, 540, 3.0),  // close 4, flip A short 2
-		mkFill("B", false, 1, 190, 0.5),  // add B short -> 3
-		mkFill("B", true, 5, 180, 2.5),   // close 3, flip B long 2
-		mkFill("A", true, 2, 530, 1.0),   // cover A short fully -> flat
-		mkFill("C", true, 10, 50, 2.0),   // open C long
-		mkFill("C", false, 4, 55, 1.0),   // partial sell C
-		mkFill("B", false, 2, 175, 0.5),  // close B long fully -> flat
+		mkFill("A", true, 3, 500, 1.5),  // long A 3
+		mkFill("B", false, 2, 200, 1.0), // short B 2
+		mkFill("A", true, 1, 520, 0.5),  // add A -> 4
+		mkFill("A", false, 6, 540, 3.0), // close 4, flip A short 2
+		mkFill("B", false, 1, 190, 0.5), // add B short -> 3
+		mkFill("B", true, 5, 180, 2.5),  // close 3, flip B long 2
+		mkFill("A", true, 2, 530, 1.0),  // cover A short fully -> flat
+		mkFill("C", true, 10, 50, 2.0),  // open C long
+		mkFill("C", false, 4, 55, 1.0),  // partial sell C
+		mkFill("B", false, 2, 175, 0.5), // close B long fully -> flat
 	}
 	for i, f := range fills {
 		p.ApplyFill(f)

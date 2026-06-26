@@ -44,13 +44,13 @@ const journalPath = "data/costsweep_trades.jsonl"
 // SweepPoint is one grid cell: the inputs that were varied plus the cost-aware
 // outputs the backtest produced at that point.
 type SweepPoint struct {
-	TxCostBps  float64
-	HurdleK    float64
-	NetSharpe  float64
-	NetPnL     float64
-	GrossPnL   float64
-	Turnover   float64
-	Fills      int
+	TxCostBps float64
+	HurdleK   float64
+	NetSharpe float64
+	NetPnL    float64
+	GrossPnL  float64
+	Turnover  float64
+	Fills     int
 }
 
 // SweepResult is the aggregate of every grid point plus the two headline

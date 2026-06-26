@@ -223,11 +223,11 @@ func TestProp_DailyLossThreshold(t *testing.T) {
 	fill := model.Fill{Side: model.Buy, Quantity: 0.001, FillPrice: 1_000.0, Instrument: "BTC-USDT"}
 
 	// Loss just under the limit: approved.
-	if !mk().Evaluate(fill, flatSnap(1_000_000.0, -(limit - 1.0))) {
+	if !mk().Evaluate(fill, flatSnap(1_000_000.0, -(limit-1.0))) {
 		t.Errorf("loss under daily limit should be approved")
 	}
 	// Loss past the limit: rejected.
-	if mk().Evaluate(fill, flatSnap(1_000_000.0, -(limit + 1.0))) {
+	if mk().Evaluate(fill, flatSnap(1_000_000.0, -(limit+1.0))) {
 		t.Errorf("loss past daily limit should be rejected")
 	}
 }

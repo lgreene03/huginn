@@ -74,7 +74,7 @@ func TestStraddlesZero(t *testing.T) {
 		{-3, 4, true},
 		{5, 5, false},
 		{-1, -2, false},
-		{10, 0, true},  // touching zero counts
+		{10, 0, true}, // touching zero counts
 		{0, -4, true},
 	}
 	for _, c := range cases {

@@ -29,12 +29,12 @@ import (
 // a still-open position, because those costs are paid the moment the fill
 // happens regardless of whether the round trip has closed.
 type CostBreakdown struct {
-	GrossPnL    float64
-	Fees        float64
-	Slippage    float64
-	NetPnL      float64
-	RoundTrips  int
-	Fills       int
+	GrossPnL   float64
+	Fees       float64
+	Slippage   float64
+	NetPnL     float64
+	RoundTrips int
+	Fills      int
 }
 
 // ComputeCostBreakdown walks the fill stream once for fee/slippage totals and

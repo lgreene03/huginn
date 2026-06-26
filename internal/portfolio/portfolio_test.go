@@ -382,7 +382,7 @@ func TestEquityInvariantUnderShorts(t *testing.T) {
 		{OrderID: "1", Instrument: "A", Side: model.Sell, Quantity: 2.0, FillPrice: 500.0, TransactionCost: 1.0},
 		{OrderID: "2", Instrument: "A", Side: model.Sell, Quantity: 1.0, FillPrice: 480.0, TransactionCost: 1.0},
 		{OrderID: "3", Instrument: "B", Side: model.Buy, Quantity: 4.0, FillPrice: 100.0, TransactionCost: 2.0},
-		{OrderID: "4", Instrument: "A", Side: model.Buy, Quantity: 5.0, FillPrice: 460.0, TransactionCost: 1.5}, // covers + flips A to long
+		{OrderID: "4", Instrument: "A", Side: model.Buy, Quantity: 5.0, FillPrice: 460.0, TransactionCost: 1.5},  // covers + flips A to long
 		{OrderID: "5", Instrument: "B", Side: model.Sell, Quantity: 6.0, FillPrice: 110.0, TransactionCost: 2.5}, // flips B to short
 	}
 	for _, f := range fills {

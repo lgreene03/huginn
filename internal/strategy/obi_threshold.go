@@ -30,10 +30,10 @@ import (
 //
 // # Risk management (exit)
 //
-//  - Stop-loss: closes position if price moves against entry by stopLossPct.
-//  - Take-profit: closes position if price moves in favour by takeProfitPct.
-//  - Time-based exit: closes position after maxHoldTime.
-//  - Cooldown: prevents re-entry on the same instrument for cooldown duration.
+//   - Stop-loss: closes position if price moves against entry by stopLossPct.
+//   - Take-profit: closes position if price moves in favour by takeProfitPct.
+//   - Time-based exit: closes position after maxHoldTime.
+//   - Cooldown: prevents re-entry on the same instrument for cooldown duration.
 type OBIThreshold struct {
 	mu        sync.Mutex
 	Threshold float64
