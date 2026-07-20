@@ -13,7 +13,7 @@ LDFLAGS := -X $(PKG).Version=$(VERSION) \
            -X $(PKG).GitSHA=$(GIT_SHA) \
            -X $(PKG).BuildTime=$(BUILD_TIME)
 
-.PHONY: build build-release test bench vet docker print-version help
+.PHONY: build build-release test bench vet reproduce docker print-version help
 
 ## build: compile the huginn binary with build provenance stamped in.
 build:
@@ -34,6 +34,11 @@ bench:
 ## vet: run go vet across all packages.
 vet:
 	go vet ./...
+
+## reproduce: regenerate the published walk-forward edge verdict from the fixture
+## and FAIL if it drifts (0/4 OOS folds, PBO=1.00, OOS PnL -146.11).
+reproduce:
+	bash scripts/reproduce.sh
 
 ## docker: build the container image, passing build provenance as --build-arg.
 docker:

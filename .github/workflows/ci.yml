@@ -36,6 +36,12 @@ jobs:
     - name: Test (race + coverage)
       run: go test -race -coverprofile=cover.out ./...
 
+    - name: Reproduce edge verdict (drift guard)
+      # Regenerate the published walk-forward verdict from the committed fixture
+      # and fail if it drifts. Makes "no measured out-of-sample edge (0/4, PBO=1.0)"
+      # a build-enforced, reproducible result rather than a documented claim.
+      run: make reproduce
+
   lint:
     runs-on: ubuntu-latest
     steps:
