@@ -14,13 +14,18 @@ import (
 
 // OBIThreshold is a mean-reversion strategy driven by Order Book Imbalance,
 // filtered by multi-timeframe momentum, volatility, market sentiment,
-// funding rate, open interest cascade detection, ML confidence, and news.
+// funding rate, open interest cascade detection, and news.
+//
+// The served ML score (mlScore/mlReady) is available to this strategy but is
+// OFF by default (mlGateEnabled=false / STRATEGY_OBI_ML_GATE): the shipped model
+// is untrained on this data and emits a near-constant score, so it is treated as
+// passive provenance and never affects an order until trained and validated.
 //
 // # Signal layers (entry)
 //
-//  1. OBI — primary trigger. Fires when |OBI| > threshold (adaptive via ML).
+//  1. OBI — primary trigger. Fires when |OBI| > threshold (ML-adaptive only when the gate is on).
 //  2. Volume spike — blocks trades during abnormal volume (>3x).
-//  3. ML confidence — blocks low-confidence signals when model is trained.
+//  3. ML confidence — opt-in only (STRATEGY_OBI_ML_GATE); off by default, no live effect.
 //  4. Multi-timeframe momentum — 1m/5m/15m must not conflict with trade direction.
 //  5. Sentiment — Fear & Greed Index. Extreme values block contrarian signals.
 //  6. News sentiment — LLM-classified headline sentiment blocks conflicting trades.
@@ -53,10 +58,19 @@ type OBIThreshold struct {
 	maxHoldTime   time.Duration
 	cooldown      time.Duration
 
-	// mlMinConfidence is the ML-confidence floor: when the ML layer is trained
-	// (mlReady>0), an entry whose mlScore is below this is blocked. Configurable
-	// so it can be relaxed while the ML model is undertrained.
+	// mlMinConfidence is the ML-confidence floor used ONLY when mlGateEnabled is
+	// true: an entry whose mlScore is below this is blocked. Configurable so it
+	// can be tuned once the ML model is trained and validated.
 	mlMinConfidence float64
+
+	// mlGateEnabled opts the strategy into letting the served ML score influence
+	// entries (the adaptive-threshold nudge and the hard confidence gate). DEFAULT
+	// false: the ML score is treated as passive provenance and never affects an
+	// order. This is deliberate — the shipped model is untrained on this data and
+	// emits a near-constant score, so an off-by-default gate prevents a degenerate
+	// model from silently shaping trades. Flip it on (STRATEGY_OBI_ML_GATE) only
+	// once the model is trained and its out-of-sample value is demonstrated.
+	mlGateEnabled bool
 
 	// makerEntries opts entry orders into MAKER liquidity (quant-alpha-2, the
 	// spread-capture fee lever). DEFAULT false keeps entries as takers, so the
@@ -123,6 +137,12 @@ type OBIParams struct {
 	// zero value) keeps the historical taker behaviour; unlike the float fields
 	// above there is no "zero means default" remap, so false stays false.
 	MakerEntries bool
+
+	// MLGateEnabled opts the served ML score into the entry decision (adaptive
+	// threshold + hard confidence gate). DEFAULT false: the ML score is passive
+	// provenance and never affects an order until the model is trained and
+	// validated. See OBIThreshold.mlGateEnabled.
+	MLGateEnabled bool
 }
 
 // DefaultOBIParams returns the historical hardcoded exit/throttle parameters.
@@ -181,6 +201,7 @@ func NewOBIThresholdWithParams(threshold, orderSize, maxPosition float64, p OBIP
 		cooldown:        p.Cooldown,
 		mlMinConfidence: p.MLMinConfidence,
 		makerEntries:    p.MakerEntries,
+		mlGateEnabled:   p.MLGateEnabled,
 	}
 }
 
@@ -312,9 +333,11 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 
 	// ── Entry filters ───────────────────────────────────────────────────
 
-	// Adaptive threshold: ML confidence modulates selectivity
+	// Adaptive threshold: ML confidence modulates selectivity — but ONLY when the
+	// ML gate is explicitly enabled. Off by default so the untrained, near-constant
+	// model never shapes entries (it is served as provenance, not a live signal).
 	effectiveThreshold := s.Threshold
-	if mlReady > 0 {
+	if s.mlGateEnabled && mlReady > 0 {
 		if mlScore > 0.7 {
 			effectiveThreshold = s.Threshold - 0.02
 		} else if mlScore < 0.4 {
@@ -352,8 +375,10 @@ func (s *OBIThreshold) OnFeature(event model.FeatureEvent) []model.Order {
 		return nil
 	}
 
-	// ML filter: block low-confidence signals when model is trained
-	if mlReady > 0 && mlScore < s.mlMinConfidence {
+	// ML filter: block low-confidence signals — ONLY when the ML gate is enabled.
+	// Off by default, so a degenerate/untrained model cannot silently block every
+	// entry (the historical foot-gun at the 0.35 floor).
+	if s.mlGateEnabled && mlReady > 0 && mlScore < s.mlMinConfidence {
 		return nil
 	}
 

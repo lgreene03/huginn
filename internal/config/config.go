@@ -66,6 +66,13 @@ type StrategyConfig struct {
 	// stay taker so you can always cross to get out. Only meaningful once
 	// maker/taker fees are configured (EXECUTOR_MAKER_FEE_BPS / TAKER_FEE_BPS).
 	OBIMaker bool `yaml:"obi_maker" envconfig:"STRATEGY_OBI_MAKER"`
+
+	// OBIMLGate opts the OBI strategy into letting the served ML score influence
+	// entries (adaptive threshold + hard confidence gate). DEFAULT false: the ML
+	// score is passive provenance and never affects an order. The shipped model is
+	// untrained on this data (near-constant score), so this stays off until the
+	// model is trained and its out-of-sample value is demonstrated; see EDGE_VERDICT.
+	OBIMLGate bool `yaml:"obi_ml_gate" envconfig:"STRATEGY_OBI_ML_GATE"`
 }
 
 type ExecutorConfig struct {

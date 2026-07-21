@@ -123,6 +123,7 @@ func main() {
 			obiParams.MLMinConfidence = cfg.Strategy.MLMinConfidence
 		}
 		obiParams.MakerEntries = cfg.Strategy.OBIMaker
+		obiParams.MLGateEnabled = cfg.Strategy.OBIMLGate
 		activeStrategy = strategy.NewOBIThresholdWithParams(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, cfg.Strategy.OrderSize*10, obiParams)
 	case "vpin":
 		activeStrategy = strategy.NewVPINBreakout(cfg.Strategy.Threshold, cfg.Strategy.OrderSize, time.Minute)
