@@ -1,4 +1,19 @@
 // Package portfolio provides a thread-safe portfolio tracker for paper-trading.
+//
+// # Money representation
+//
+// Cash, prices, quantities and PnL are float64, not a decimal or integer
+// minor-unit type. This is a deliberate, documented choice for a simulation: the
+// engine never settles real money, so it needs no exact base-10 cent semantics,
+// and float64 keeps the hot path allocation-free. The risk of a float ledger is
+// silent rounding drift, so the accounting is guarded rather than assumed:
+// portfolio_property_test.go asserts signed-equity conservation and the
+// flip-through-zero rule over random fill sequences with magnitude-scaled
+// tolerances, and portfolio_nodrift_test.go checks a long deterministic run
+// against a closed-form ground truth, requiring accumulated error to stay below
+// ~1e-6 per fill. A system that settled real money would instead use integer
+// minor-units or a decimal type for exactness at the boundary; that is an
+// explicit deferral, not an oversight.
 package portfolio
 
 import (
