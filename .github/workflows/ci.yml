@@ -85,6 +85,15 @@ jobs:
       with:
         go-version: '1.25'
     - name: Install govulncheck
-      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      # PINNED, not @latest. setup-go sets GOTOOLCHAIN=local, so `go install`
+      # cannot pull a newer toolchain: when x/vuln v1.8.0 raised its floor to
+      # go >= 1.26.0 this step began failing outright ("requires go >= 1.26.0
+      # (running go 1.25.14; GOTOOLCHAIN=local)") before the scan even ran.
+      # v1.7.0 declares go 1.25.0 and matches the go-version above.
+      #
+      # Pinning the binary does NOT stale the advisories: govulncheck fetches
+      # the vulnerability database at runtime, so coverage stays current. Raise
+      # this pin together with go-version, not on its own.
+      run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
     - name: Run govulncheck
       run: govulncheck ./...
