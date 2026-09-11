@@ -12,8 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+)
 
-	"github.com/lgreene03/huginn/internal/model"
+// Ingest sources. Bulk dumps are the default: paging the REST endpoint costs
+// many minutes per day of history, which makes it unusable for the longer,
+// multi-regime window that docs/EDGE_VERDICT.md calls for.
+const (
+	sourceREST   = "rest"
+	sourceVision = "vision"
 )
 
 // BinanceAggTrade represents a single aggregate trade record returned by Binance public API.
@@ -43,6 +49,9 @@ func main() {
 	endFlag := flag.String("end", "", "End date (YYYY-MM-DD, default: today)")
 	windowFlag := flag.String("window", "1m", "Sliding window size (e.g., 1m, 5m, 15m)")
 	outputFlag := flag.String("output", "data/historical_features.jsonl", "Path to output JSONL file")
+	sourceFlag := flag.String("source", sourceVision,
+		"Ingest source: \"vision\" for bulk data.binance.vision daily dumps (fast, use for multi-day backfills), "+
+			"\"rest\" for the paged public API (slow: ~1000 trades per request)")
 	flag.Parse()
 
 	// Logger
@@ -86,6 +95,7 @@ func main() {
 		"end", endTime.Format("2006-01-02 15:04:05"),
 		"window", windowDuration.String(),
 		"output", *outputFlag,
+		"source", *sourceFlag,
 	)
 
 	// Ensure output directory exists
@@ -103,7 +113,7 @@ func main() {
 	defer func() { _ = outFile.Close() }()
 
 	// Fetch trades & aggregate them
-	err = fetchAndProcess(outFile, *symbolFlag, startTime, endTime, windowDuration)
+	err = fetchAndProcess(outFile, *symbolFlag, *sourceFlag, startTime, endTime, windowDuration)
 	if err != nil {
 		slog.Error("Fetching and processing failed", "error", err)
 		os.Exit(1)
@@ -112,22 +122,59 @@ func main() {
 	slog.Info("Historical fetching and processing completed successfully", "output", *outputFlag)
 }
 
-func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, window time.Duration) error {
+func fetchAndProcess(writer io.Writer, symbol, source string, start, end time.Time, window time.Duration) error {
+	instrument := formatInstrument(symbol)
+	agg := newAggregator(window)
+
+	switch source {
+	case sourceVision:
+		if err := fetchVisionRange(agg, symbol, start, end); err != nil {
+			return err
+		}
+	case sourceREST:
+		if err := fetchREST(agg, symbol, start, end); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown --source %q (want %q or %q)", source, sourceREST, sourceVision)
+	}
+
+	return agg.write(writer, instrument, end)
+}
+
+// fetchVisionRange walks the date range one daily dump at a time. Bulk dumps
+// are the only practical source for a multi-month backfill: see the note on
+// visionBaseURL for the throughput comparison against the REST path.
+func fetchVisionRange(agg *aggregator, symbol string, start, end time.Time) error {
+	client := &http.Client{Timeout: 10 * time.Minute}
+
+	var total int64
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		n, err := fetchVisionDay(client, symbol, day, agg.add)
+		if err != nil {
+			return err
+		}
+		total += n
+		slog.Info("Loaded daily dump",
+			"day", day.Format("2006-01-02"), "trades", n, "total", total)
+	}
+
+	slog.Info("Bulk load complete", "total_trades", total)
+	return nil
+}
+
+// fetchREST pages the public aggTrades endpoint, chaining on fromId. Retained
+// for short ranges and for cross-checking the bulk path; it fetches 1000
+// records per request, so a single day costs many minutes.
+func fetchREST(agg *aggregator, symbol string, start, end time.Time) error {
 	client := &http.Client{Timeout: 10 * time.Second}
-	encoder := json.NewEncoder(writer)
 
 	startMs := start.UnixMilli()
 	endMs := end.UnixMilli()
 
 	var fromID int64 = -1
-	var windowMap = make(map[time.Time]*WindowData)
-	var minWindowStart time.Time
-
-	// Map symbol name to standardized instrument (e.g., BTCUSDT -> BTC-USD)
-	instrument := formatInstrument(symbol)
 
 	for {
-		// Construct Request URL
 		baseURL := "https://api.binance.com/api/v3/aggTrades"
 		params := url.Values{}
 		params.Add("symbol", symbol)
@@ -137,9 +184,8 @@ func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, wind
 			params.Add("fromId", strconv.FormatInt(fromID, 10))
 		} else {
 			params.Add("startTime", strconv.FormatInt(startMs, 10))
-			// Binance doesn't allow startTime and endTime to be more than 1 hour apart if fromId is omitted,
-			// but we will pagination-chain by setting fromId after the first request.
-			// Just in case there are no trades, we limit end time for first request to startMs + 1 hour
+			// Binance rejects a startTime/endTime span wider than 1 hour when
+			// fromId is omitted; after the first request we chain on fromId.
 			params.Add("endTime", strconv.FormatInt(startMs+3600000, 10))
 		}
 
@@ -188,31 +234,14 @@ func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, wind
 			break
 		}
 
-		slog.Info("Fetched batch of trades", "count", len(trades), "first_id", trades[0].TradeID, "last_id", trades[len(trades)-1].TradeID)
+		slog.Info("Fetched batch of trades", "count", len(trades),
+			"first_id", trades[0].TradeID, "last_id", trades[len(trades)-1].TradeID)
 
-		// Process trades in batch
 		var maxTimestamp int64
 		for _, trade := range trades {
 			maxTimestamp = trade.Timestamp
 			if trade.Timestamp > endMs {
 				break
-			}
-
-			tradeTime := time.UnixMilli(trade.Timestamp)
-			winStart := tradeTime.Truncate(window)
-			winEnd := winStart.Add(window)
-
-			if minWindowStart.IsZero() || winStart.Before(minWindowStart) {
-				minWindowStart = winStart
-			}
-
-			wData, exists := windowMap[winStart]
-			if !exists {
-				wData = &WindowData{
-					StartTime: winStart,
-					EndTime:   winEnd,
-				}
-				windowMap[winStart] = wData
 			}
 
 			p, err := strconv.ParseFloat(trade.Price, 64)
@@ -224,77 +253,20 @@ func fetchAndProcess(writer io.Writer, symbol string, start, end time.Time, wind
 				continue
 			}
 
-			wData.PriceSum += p * q
-			if trade.IsBuyerMaker {
-				wData.SellVol += q // Taker sell
-			} else {
-				wData.BuyVol += q // Taker buy
-			}
+			agg.add(time.UnixMilli(trade.Timestamp), p, q, trade.IsBuyerMaker)
 		}
 
-		// Check if we crossed the end date
 		if maxTimestamp > endMs {
 			slog.Info("Reached the end date limit. Stopping fetch.")
 			break
 		}
 
-		// Update fromID to point to the next trade
 		fromID = trades[len(trades)-1].TradeID + 1
 
 		// Sleep briefly to avoid getting rate-limited
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Write computed windows in chronological order
-	slog.Info("Writing computed metrics to JSONL file...", "total_windows", len(windowMap))
-
-	// We want to write windows sequentially. We start from minWindowStart and increment.
-	currWindow := minWindowStart
-	var writtenCount int
-	for !currWindow.After(end) {
-		wData, exists := windowMap[currWindow]
-		if exists {
-			totalVol := wData.BuyVol + wData.SellVol
-			var vwap float64
-			var obi float64
-			var vpin float64
-
-			if totalVol > 0 {
-				vwap = wData.PriceSum / totalVol
-				obi = (wData.BuyVol - wData.SellVol) / totalVol
-				vpin = (wData.BuyVol - wData.SellVol)
-				if vpin < 0 {
-					vpin = -vpin
-				}
-				vpin = vpin / totalVol
-			}
-
-			event := model.FeatureEvent{
-				EventID:        fmt.Sprintf("hist-%s-%d", instrument, wData.StartTime.Unix()),
-				EventTime:      wData.EndTime,
-				FeatureName:    "market_features",
-				FeatureVersion: "v1",
-				Instrument:     instrument,
-				WindowStart:    wData.StartTime,
-				WindowEnd:      wData.EndTime,
-				Values: map[string]float64{
-					"obi":        obi,
-					"vpin":       vpin,
-					"microPrice": vwap,
-					"vwap":       vwap,
-					"volume":     totalVol,
-				},
-			}
-
-			if err := encoder.Encode(event); err != nil {
-				return fmt.Errorf("failed to encode feature event: %w", err)
-			}
-			writtenCount++
-		}
-		currWindow = currWindow.Add(window)
-	}
-
-	slog.Info("Finished serialization", "written_events", writtenCount)
 	return nil
 }
 

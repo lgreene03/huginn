@@ -28,6 +28,11 @@ data/trades.jsonl
 data/backtest_trades.jsonl
 data/costsweep_trades.jsonl
 data/walkforward_results.json
+# Bulk backfills built by `fetcher --source vision`. btc_test.jsonl (24h) stays
+# checked in as the small reproducible fixture; multi-month pulls are tens of MB
+# and are regenerated on demand, so they are not versioned.
+data/btc_*mo.jsonl
+data/historical_features.jsonl
 # cmd/research writes one run-result JSON per run here — never committable.
 data/research/
 data/pg_data/
