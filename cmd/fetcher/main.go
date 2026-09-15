@@ -18,8 +18,9 @@ import (
 // many minutes per day of history, which makes it unusable for the longer,
 // multi-regime window that docs/EDGE_VERDICT.md calls for.
 const (
-	sourceREST   = "rest"
-	sourceVision = "vision"
+	sourceREST      = "rest"
+	sourceVision    = "vision"
+	sourceBookDepth = "bookdepth"
 )
 
 // BinanceAggTrade represents a single aggregate trade record returned by Binance public API.
@@ -51,7 +52,9 @@ func main() {
 	outputFlag := flag.String("output", "data/historical_features.jsonl", "Path to output JSONL file")
 	sourceFlag := flag.String("source", sourceVision,
 		"Ingest source: \"vision\" for bulk data.binance.vision daily dumps (fast, use for multi-day backfills), "+
-			"\"rest\" for the paged public API (slow: ~1000 trades per request)")
+			"\"rest\" for the paged public API (slow: ~1000 trades per request), "+
+			"\"bookdepth\" for futures UM percentage-band depth snapshots (emits raw bands, NOT features; "+
+			"see docs/BOOKDEPTH_FINDING.md before using)")
 	flag.Parse()
 
 	// Logger
@@ -124,6 +127,15 @@ func main() {
 
 func fetchAndProcess(writer io.Writer, symbol, source string, start, end time.Time, window time.Duration) error {
 	instrument := formatInstrument(symbol)
+
+	// Book depth is a different quantity from executed trades, so it does not
+	// go through the trade aggregator. It emits raw percentage bands instead of
+	// a FeatureEvent, because folding band depth into the `obi` field would
+	// manufacture the very mislabelling docs/ROADMAP.md exists to remove.
+	if source == sourceBookDepth {
+		return fetchBookDepthRange(writer, symbol, instrument, start, end)
+	}
+
 	agg := newAggregator(window)
 
 	switch source {
@@ -136,7 +148,8 @@ func fetchAndProcess(writer io.Writer, symbol, source string, start, end time.Ti
 			return err
 		}
 	default:
-		return fmt.Errorf("unknown --source %q (want %q or %q)", source, sourceREST, sourceVision)
+		return fmt.Errorf("unknown --source %q (want %q, %q or %q)",
+			source, sourceREST, sourceVision, sourceBookDepth)
 	}
 
 	return agg.write(writer, instrument, end)
