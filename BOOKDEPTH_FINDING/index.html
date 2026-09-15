@@ -10,31 +10,27 @@
       
       
       
-        <link rel="canonical" href="https://lgreene03.github.io/huginn/adr/0004-pre-trade-risk-model-and-kill-switch/">
+        <link rel="canonical" href="https://lgreene03.github.io/huginn/BOOKDEPTH_FINDING/">
       
       
-        <link rel="prev" href="../0003-dual-mode-paper-live-executor/">
-      
-      
-        <link rel="next" href="../0005-single-goroutine-dispatch-multi-topic-fanin/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>0004 Pre-trade risk & kill switch - Huginn</title>
+        <title>Binance bookDepth dumps cannot reconstruct the live obi - Huginn</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -53,7 +49,7 @@
       
     
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -78,7 +74,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#0004-centralized-pre-trade-risk-model-with-a-typed-kill-switch" class="md-skip">
+        <a href="#binance-bookdepth-dumps-cannot-reconstruct-the-live-obi" class="md-skip">
           Skip to content
         </a>
       
@@ -92,7 +88,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Huginn" class="md-header__button md-logo" aria-label="Huginn" data-md-component="logo">
+    <a href=".." title="Huginn" class="md-header__button md-logo" aria-label="Huginn" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +108,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              0004 Pre-trade risk & kill switch
+              Binance bookDepth dumps cannot reconstruct the live obi
             
           </span>
         </div>
@@ -223,7 +219,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../.." class="md-tabs__link">
+      <a href=".." class="md-tabs__link">
         
   
   
@@ -242,7 +238,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../architecture/" class="md-tabs__link">
+      <a href="../architecture/" class="md-tabs__link">
         
   
   
@@ -263,7 +259,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../strategies/" class="md-tabs__link">
+        <a href="../strategies/" class="md-tabs__link">
           
   
   
@@ -281,7 +277,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../risk-model/" class="md-tabs__link">
+      <a href="../risk-model/" class="md-tabs__link">
         
   
   
@@ -300,7 +296,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../OPERATIONS/" class="md-tabs__link">
+      <a href="../OPERATIONS/" class="md-tabs__link">
         
   
   
@@ -319,7 +315,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../BENCHMARKS/" class="md-tabs__link">
+      <a href="../BENCHMARKS/" class="md-tabs__link">
         
   
   
@@ -336,13 +332,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../0001-record-architecture-decisions/" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../adr/0001-record-architecture-decisions/" class="md-tabs__link">
           
   
   
@@ -360,7 +354,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../ROADMAP/" class="md-tabs__link">
+      <a href="../ROADMAP/" class="md-tabs__link">
         
   
   
@@ -395,7 +389,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Huginn" class="md-nav__button md-logo" aria-label="Huginn" data-md-component="logo">
+    <a href=".." title="Huginn" class="md-nav__button md-logo" aria-label="Huginn" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -425,7 +419,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         
   
   
@@ -452,7 +446,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../architecture/" class="md-nav__link">
+      <a href="../architecture/" class="md-nav__link">
         
   
   
@@ -531,7 +525,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../strategies/" class="md-nav__link">
+      <a href="../strategies/" class="md-nav__link">
         
   
   
@@ -559,7 +553,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../ADDING_AN_ALPHA/" class="md-nav__link">
+      <a href="../ADDING_AN_ALPHA/" class="md-nav__link">
         
   
   
@@ -587,7 +581,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../calibration/" class="md-nav__link">
+      <a href="../calibration/" class="md-nav__link">
         
   
   
@@ -615,7 +609,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../STRATEGY_STATE_DESIGN/" class="md-nav__link">
+      <a href="../STRATEGY_STATE_DESIGN/" class="md-nav__link">
         
   
   
@@ -650,7 +644,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../risk-model/" class="md-nav__link">
+      <a href="../risk-model/" class="md-nav__link">
         
   
   
@@ -677,7 +671,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../OPERATIONS/" class="md-nav__link">
+      <a href="../OPERATIONS/" class="md-nav__link">
         
   
   
@@ -704,7 +698,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../BENCHMARKS/" class="md-nav__link">
+      <a href="../BENCHMARKS/" class="md-nav__link">
         
   
   
@@ -728,31 +722,26 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
         
           
-          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
             
   
   
@@ -770,7 +759,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_7">
             <span class="md-nav__icon md-icon"></span>
             
@@ -788,7 +777,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0001-record-architecture-decisions/" class="md-nav__link">
+      <a href="../adr/0001-record-architecture-decisions/" class="md-nav__link">
         
   
   
@@ -816,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0002-pluggable-strategy-interface/" class="md-nav__link">
+      <a href="../adr/0002-pluggable-strategy-interface/" class="md-nav__link">
         
   
   
@@ -844,7 +833,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0003-dual-mode-paper-live-executor/" class="md-nav__link">
+      <a href="../adr/0003-dual-mode-paper-live-executor/" class="md-nav__link">
         
   
   
@@ -869,37 +858,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    0004 Pre-trade risk & kill switch
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../adr/0004-pre-trade-risk-model-and-kill-switch/" class="md-nav__link">
         
   
   
@@ -915,81 +877,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#context" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Context
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Decision
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#consequences" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Consequences
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#alternatives-considered" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alternatives Considered
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        References
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1002,7 +889,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0005-single-goroutine-dispatch-multi-topic-fanin/" class="md-nav__link">
+      <a href="../adr/0005-single-goroutine-dispatch-multi-topic-fanin/" class="md-nav__link">
         
   
   
@@ -1030,7 +917,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0006-dynamic-proto-grpc-without-protoc/" class="md-nav__link">
+      <a href="../adr/0006-dynamic-proto-grpc-without-protoc/" class="md-nav__link">
         
   
   
@@ -1058,7 +945,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../0007-walk-forward-calibration-workflow/" class="md-nav__link">
+      <a href="../adr/0007-walk-forward-calibration-workflow/" class="md-nav__link">
         
   
   
@@ -1093,7 +980,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../ROADMAP/" class="md-nav__link">
+      <a href="../ROADMAP/" class="md-nav__link">
         
   
   
@@ -1140,10 +1027,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#context" class="md-nav__link">
+  <a href="#why-this-was-investigated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Context
+        Why this was investigated
       
     </span>
   </a>
@@ -1151,10 +1038,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#decision" class="md-nav__link">
+  <a href="#what-the-dumps-actually-contain" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Decision
+        What the dumps actually contain
       
     </span>
   </a>
@@ -1162,10 +1049,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#consequences" class="md-nav__link">
+  <a href="#why-that-cannot-reconstruct-compute_obi" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Consequences
+        Why that cannot reconstruct compute_obi
       
     </span>
   </a>
@@ -1173,10 +1060,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#alternatives-considered" class="md-nav__link">
+  <a href="#the-verdict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Alternatives Considered
+        The verdict
       
     </span>
   </a>
@@ -1184,10 +1071,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#references" class="md-nav__link">
+  <a href="#what-shipped-anyway-and-why" class="md-nav__link">
     <span class="md-ellipsis">
       
-        References
+        What shipped anyway, and why
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducibility-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducibility evidence
       
     </span>
   </a>
@@ -1214,51 +1112,173 @@
   
 
 
-<h1 id="0004-centralized-pre-trade-risk-model-with-a-typed-kill-switch">0004. Centralized pre-trade risk model with a typed kill switch<a class="headerlink" href="#0004-centralized-pre-trade-risk-model-with-a-typed-kill-switch" title="Permanent link">&para;</a></h1>
-<ul>
-<li><strong>Status:</strong> Accepted</li>
-<li><strong>Date:</strong> 2026-06-20</li>
-<li><strong>Deciders:</strong> Project maintainer</li>
-<li><strong>Related:</strong> <a href="../0003-dual-mode-paper-live-executor/">ADR-0003 — Dual-mode executor</a>, <a href="../../risk-model/">risk-model.md</a>, <a href="../../STRATEGY_STATE_DESIGN/">STRATEGY_STATE_DESIGN.md</a></li>
-</ul>
-<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
-<p>A strategy can be wrong, a feed can stall, and an operator sometimes needs to stop everything <em>now</em>. None of that can live inside the strategies: each strategy already carries its own entry/exit logic, and duplicating loss limits and a halt switch across four (and growing) strategies would guarantee they drift. Risk must be a single chokepoint that every order passes through, in both paper and live mode, <em>before</em> the order is booked or published.</p>
-<p>The controls needed are concrete: a peak-trailing drawdown stop, a daily-loss limit that resets on the UTC-day boundary, a gross position limit (with optional per-instrument overrides), and a watchdog that halts trading when feature events stop arriving (a stalled Muninn must not leave Huginn trading on stale data). Operators also need a manual halt/resume.</p>
-<p>Two cross-cutting requirements complicate this. First, when something halts the engine, the <em>reason</em> matters for observability and for auto-recovery — a manual halt should not auto-clear, but a staleness halt should clear itself when fresh events resume. Second, the risk state that defines the limits (peak value, the day's PnL baseline, the last event time) must survive a restart, or a crash silently resets the drawdown ceiling and the daily-loss window.</p>
-<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">&para;</a></h2>
-<p>All pre-trade controls live in a single <code>risk.Manager</code>, and <code>executor.OnFeature</code> calls <code>riskManager.Evaluate(fill, snapshot)</code> for <strong>every</strong> order in both modes; a <code>false</code> return drops the order. <code>Evaluate</code> checks, in order: halt state → peak-trailing drawdown → daily-loss (UTC-windowed) → volatility-scaled position limit (per-instrument override taking precedence).</p>
-<p>The halt state is a <strong>typed reason</strong>, not a bare boolean:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">HaltReason</span><span class="w"> </span><span class="kt">string</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kd">const</span><span class="w"> </span><span class="p">(</span><span class="w"> </span><span class="nx">HaltNone</span><span class="p">;</span><span class="w"> </span><span class="nx">HaltManual</span><span class="p">;</span><span class="w"> </span><span class="nx">HaltDrawdown</span><span class="p">;</span><span class="w"> </span><span class="nx">HaltStaleness</span><span class="w"> </span><span class="p">)</span>
+<h1 id="binance-bookdepth-dumps-cannot-reconstruct-the-live-obi">Binance <code>bookDepth</code> dumps cannot reconstruct the live <code>obi</code><a class="headerlink" href="#binance-bookdepth-dumps-cannot-reconstruct-the-live-obi" title="Permanent link">&para;</a></h1>
+<p><strong>Status: P1 kill criterion fired. Track A of the parity roadmap stops here.</strong></p>
+<p>Date: 2026-09-11. Measured, not assumed: every number below came from a real
+dump or a real API response, and the commands to reproduce them are inline.</p>
+<h2 id="why-this-was-investigated">Why this was investigated<a class="headerlink" href="#why-this-was-investigated" title="Permanent link">&para;</a></h2>
+<p><code>norse-stack</code>'s README headlines <strong>deterministic replay parity</strong>: that a
+backtest and a live run share one computation path. At the <em>engine</em> level that
+is true and enforced. At the <em>signal</em> level it is not:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>live (<code>services/obi-bridge/bridge.py:268</code>)</th>
+<th>backtest (<code>huginn/cmd/fetcher</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>obi</code></td>
+<td><code>(bid_vol - ask_vol) / total</code> from <strong>L2 book depth</strong></td>
+<td><code>(BuyVol - SellVol) / total</code> from <strong>executed trades</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Two different quantities, book <em>state</em> versus realised <em>flow</em>, sharing one name.
+Phase P1 of <code>norse-stack/docs/ROADMAP.md</code> set out to obtain real historical book
+depth so that a replay could compute the same quantity the live path computes.</p>
+<p>It cannot, for the reasons below.</p>
+<h2 id="what-the-dumps-actually-contain">What the dumps actually contain<a class="headerlink" href="#what-the-dumps-actually-contain" title="Permanent link">&para;</a></h2>
+<p><code>https://data.binance.vision/data/futures/um/daily/bookDepth/&lt;SYMBOL&gt;/&lt;SYMBOL&gt;-bookDepth-&lt;YYYY-MM-DD&gt;.zip</code>
+exists and downloads cleanly. <code>BTCUSDT-bookDepth-2026-09-01.zip</code> is 564,591
+bytes zipped and 2,013,161 bytes expanded, which is already the first signal:
+the same day of <code>aggTrades</code> is roughly three orders of magnitude larger.</p>
+<p>The CSV is four columns with a header row:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>timestamp,percentage,depth,notional
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>2026-09-01 00:00:04,-5.00,10267.92200000,788466627.08110000
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>2026-09-01 00:00:04,-4.00,8967.16600000,690917971.29840000
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>2026-09-01 00:00:04,-3.00,6391.67300000,495652738.52610000
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>2026-09-01 00:00:04,-2.00,5172.11200000,402217876.47380000
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>2026-09-01 00:00:04,-1.00,2393.25400000,187143664.21670000
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>2026-09-01 00:00:04,-0.20,813.69100000,63843569.41780000
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>2026-09-01 00:00:04,0.20,410.56800000,32283149.59130000
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>2026-09-01 00:00:04,1.00,1895.92700000,149678592.00540000
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>2026-09-01 00:00:04,2.00,4832.06100000,383685577.93930000
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>2026-09-01 00:00:04,3.00,5397.92300000,429238407.34130000
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>2026-09-01 00:00:04,4.00,6219.64400000,496091150.93760000
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>2026-09-01 00:00:04,5.00,7103.90400000,568607291.79200000
 </code></pre></div>
-<p>This drives behaviour: drawdown and staleness halts are set by the manager itself; manual halts come from the operator API. Only a <code>HaltStaleness</code> halt auto-clears, and only when <code>AutoResumeAfterStaleness</code> is configured and a fresh feature event arrives (<code>OnFeatureSeen</code>). Each reason is exported as a Prometheus gauge (<code>updateHaltGauges</code>) so a dashboard shows <em>why</em> trading stopped.</p>
-<p>The position limit is volatility-scaled: <code>volScale = 1/(1 + 100*volPct)</code>, preferring Muninn's market-volatility feature when present and falling back to the dispersion of the strategy's own recent fill prices. The scaling is multiplicative on the configured hard limit, so a zero-volatility input collapses to the plain limit (preserving prior behaviour).</p>
-<p>Restart-critical state (<code>peakValue</code>, <code>dayStart</code>, <code>dayStartRealizedPnL</code>, <code>lastFeatureEventTime</code>) is captured by the manager's own <code>MarshalState</code>/<code>RestoreState</code> (versioned envelope, schema v1), persisted on the same ticker as strategy state under the reserved <code>_risk</code> journal key, with a coarser <code>daily_pnl_snapshots</code> fallback if that blob is absent.</p>
-<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">&para;</a></h2>
-<p><strong>Easier.</strong></p>
+<p>So, precisely:</p>
 <ul>
-<li>One place to read to know every way an order can be rejected, and one place to add a new control.</li>
-<li>Typed halt reasons make "why are we halted?" answerable from metrics alone, and let staleness recover automatically while keeping a manual halt sticky.</li>
-<li>Drawdown and daily-loss windows survive a crash, so recovery doesn't silently reset the risk ceiling.</li>
+<li><strong>Percentage bands, not price levels.</strong> Each snapshot is 12 rows: bands at
+  ±0.2%, ±1%, ±2%, ±3%, ±4% and ±5% of mid. Negative is the bid side.</li>
+<li><strong><code>depth</code> is cumulative from the mid</strong>, not per band. The −5.00 row implies an
+  average fill price of 76,789.31 (<code>notional / depth</code>). A disjoint −5%..−4% band
+  would have to average between 74,622 and 75,408, so it is not disjoint; a
+  cumulative 0..−5% band is the only reading consistent with the number.</li>
+<li><strong>One snapshot every ~30 seconds.</strong> Exactly 2880 snapshots per day
+  (<code>00:00:04</code>, <code>00:00:31</code>, <code>00:01:02</code>, ...), 34,560 rows in total.</li>
+<li><strong>No prices whatsoever.</strong> There is no best bid, best ask, spread or mid
+  anywhere in the file. Only an <em>implied</em> average price per band, via
+  <code>notional / depth</code>.</li>
+<li><strong>The schema is not stable across history.</strong> The 2023 through mid-2025 dumps
+  carry only <strong>10</strong> bands (±1% to ±5%) with <strong>no ±0.2% band at all</strong>, and render
+  the percentage as <code>-5</code> rather than <code>-5.00</code>. The 12-band form appears between
+  2025-06-15 and 2026-01-15.</li>
 </ul>
-<p><strong>Harder / cost.</strong></p>
-<ul>
-<li><code>Evaluate</code> takes the manager's write lock (it mutates <code>peakValue</code>, the daily window, and <code>recentPrices</code>), so it is on the hot path's critical section. Acceptable because dispatch is single-goroutine (ADR-0005) and the work is a handful of float comparisons.</li>
-<li>The volatility fallback (fill-price dispersion) only becomes meaningful after ~10 fills and is strategy-specific; the market-feature path is preferred precisely because it is fill-independent and available immediately. Operators should supply the volatility feature for the scaling to be trustworthy from the first trade.</li>
-<li>The <code>_risk</code> journal key is reserved — strategies must not use a key starting with underscore. Documented in <code>executor.go</code>.</li>
-</ul>
-<h2 id="alternatives-considered">Alternatives Considered<a class="headerlink" href="#alternatives-considered" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Per-strategy risk logic.</strong> Rejected. Guarantees drift across strategies and gives no single kill switch.</li>
-<li><strong>A bare <code>halted bool</code>.</strong> Rejected. Cannot distinguish a manual halt (must stay halted) from a staleness halt (should auto-recover), and gives observability nothing to label.</li>
-<li><strong>Post-trade risk only (reconcile after booking).</strong> Rejected. In live mode that would let an order reach the venue before any check; the kill switch must be able to stop an order from ever leaving Huginn.</li>
-</ul>
-<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
-<ul>
-<li><a href="../../internal/risk/manager.go"><code>internal/risk/manager.go</code></a> — <code>Evaluate</code>, <code>HaltReason</code>, <code>RunStalenessWatchdog</code>, <code>OnFeatureSeen</code>, <code>MarshalState</code>/<code>RestoreState</code>, <code>SeedFromBaseline</code>.</li>
-<li><a href="../../internal/executor/executor.go"><code>internal/executor/executor.go</code></a> — the <code>Evaluate</code> call sites in both paper and live branches; <code>_risk</code> persistence on the state ticker.</li>
-<li><a href="../../risk-model/"><code>docs/risk-model.md</code></a> — operator-facing description of each control.</li>
-</ul>
+<h2 id="why-that-cannot-reconstruct-compute_obi">Why that cannot reconstruct <code>compute_obi</code><a class="headerlink" href="#why-that-cannot-reconstruct-compute_obi" title="Permanent link">&para;</a></h2>
+<p>The live path sums the <strong>top 10 discrete price levels</strong> of each side
+(<code>BOOK_LEVELS = 10</code>, <code>bridge.py:47</code>), polled every 5 seconds from
+<code>api.binance.com/api/v3/depth</code>. Four independent obstacles, each individually
+fatal:</p>
+<p><strong>1. The bands are ~100x too wide.</strong> Measured against a live 100-level BTCUSDT
+book at mid 77,361.17:</p>
+<table>
+<thead>
+<tr>
+<th>cut of the book</th>
+<th>span either side of mid</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>top 10 levels (what the live path uses)</td>
+<td>0.0024% bid / 0.0015% ask</td>
+</tr>
+<tr>
+<td>top 20 levels</td>
+<td>0.0038% / 0.0036%</td>
+</tr>
+<tr>
+<td>top 100 levels</td>
+<td>0.0173% / 0.0202%</td>
+</tr>
+<tr>
+<td><strong>narrowest band the dump offers</strong></td>
+<td><strong>0.20%</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The narrowest available band is about 100x wider than the region the live signal
+measures. Even 100 levels does not reach 0.02%, still an order of magnitude
+inside the finest band. And before late 2025 the narrowest band is ±1%, roughly
+400x wider. The two quantities do not merely differ in precision; they are
+measuring different populations of resting orders. On that same snapshot the
+top-10 sums were 0.9679 bid / 1.9824 ask (<code>obi</code> = −0.3439), whereas the volume
+within 0.2% of mid was at least 9.91 bid / 12.23 ask, a full order of magnitude
+more liquidity and a different imbalance.</p>
+<p><strong>2. The per-level distribution is discarded, irreversibly.</strong> A cumulative band
+total is a projection. Nothing in the file says how the 813.691 BTC inside the
+−0.2% band is distributed across the several thousand ticks it spans, so there
+is no arithmetic that recovers the top 10 levels from it. This is lost
+information, not missing precision, so no amount of interpolation fixes it.</p>
+<p><strong>3. Wrong instrument.</strong> The live path reads the <strong>spot</strong> book
+(<code>api.binance.com/api/v3/depth</code>). <code>bookDepth</code> is published only for USD-M
+futures. <code>data.binance.vision</code> publishes <strong>no order-book product for spot at
+all</strong>: the spot daily prefixes are <code>aggTrades</code>, <code>klines</code> and <code>trades</code> only. So
+the substitution is perpetual-for-spot, which is a different instrument with a
+different book, and it is not optional.</p>
+<p><strong>4. Wrong cadence.</strong> The live path polls at 5-second intervals
+(<code>POLL_INTERVAL</code>, <code>bridge.py:46</code>); the dump snapshots at ~30 seconds. A replay
+cannot reproduce an event-time book state it never observed.</p>
+<p>The closest alternative product, <code>bookTicker</code>, is level-1 only
+(<code>best_bid_price,best_bid_qty,best_ask_price,best_ask_qty</code>) and its BTCUSDT
+coverage does not extend to 2026-09-01. One level cannot reconstruct ten either.</p>
+<h2 id="the-verdict">The verdict<a class="headerlink" href="#the-verdict" title="Permanent link">&para;</a></h2>
+<p><strong>Book depth as published is not reconstructable into the live <code>obi</code>.</strong></p>
+<p>Per <code>ROADMAP.md</code>, the correct response is to stop rather than substitute another
+proxy and call it parity. Doing so would recreate the precise defect the roadmap
+exists to remove, and would be worse than the current state because it would
+carry a parity claim on top. Phases P2 to P5 are blocked on a data source that
+does not exist in the public dumps.</p>
+<p>If book-true parity is still wanted, the realistic options are to record live
+spot L2 diffs forward from now and accept a waiting period before there is
+enough history to run a walk-forward gate, or to buy per-level historical L2
+from a commercial vendor. Both are decisions about cost and calendar, not
+engineering, so they are escalated rather than chosen here.</p>
+<p>Nothing about this invalidates <code>EDGE_VERDICT.md</code>. It sharpens it: that verdict
+is about <strong>signed taker flow</strong>, and should say so. The live signal remains one
+that has never been through the walk-forward gate.</p>
+<h2 id="what-shipped-anyway-and-why">What shipped anyway, and why<a class="headerlink" href="#what-shipped-anyway-and-why" title="Permanent link">&para;</a></h2>
+<p><code>fetcher --source bookdepth</code> loads the dumps and emits the bands as-is. It is
+deliberately <strong>not</strong> wired into the trade aggregator and emits <strong>no</strong> <code>obi</code>,
+<code>vpin</code>, <code>microPrice</code> or <code>vwap</code> field. It exists so the finding above is
+falsifiable by re-running it rather than taken on trust, and so the next person
+who wonders whether these dumps are usable can look instead of guessing.
+<code>TestBookDepthSnapshotCarriesNoDerivedFeatures</code> fails the build if that output
+ever grows a feature-shaped field.</p>
+<p>Records are tagged <code>BTC-USD-PERP</code>, not <code>BTC-USD</code>, so a perpetual snapshot can
+never be mistaken for the spot instrument the live path actually trades.</p>
+<h2 id="reproducibility-evidence">Reproducibility evidence<a class="headerlink" href="#reproducibility-evidence" title="Permanent link">&para;</a></h2>
+<p>The mechanical half of the P1 exit criterion does pass. Two runs over the same
+dated range:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>go run ./cmd/fetcher -source bookdepth -symbol BTCUSDT \
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  -start 2026-09-01 -end 2026-09-03 -output r1.jsonl
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>go run ./cmd/fetcher -source bookdepth -symbol BTCUSDT \
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  -start 2026-09-01 -end 2026-09-03 -output r2.jsonl
+</code></pre></div>
+<p>produced 8,640 snapshots from 103,680 rows across 3 days, and:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>28e8670ddb15e63c68bf005de22236255dd4562f9ee01c69f925452db837b2bc  r1.jsonl
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>28e8670ddb15e63c68bf005de22236255dd4562f9ee01c69f925452db837b2bc  r2.jsonl
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>cmp r1.jsonl r2.jsonl  -&gt;  exit 0
+</code></pre></div>
+<p>Byte-identical. Determinism is by construction: days are visited in order, rows
+are read in file order, and bands are sorted by percentage before emission, so
+no map iteration order reaches the output.</p>
+<p>That the loader is reproducible does not make the data sufficient. Both facts
+are reported together on purpose.</p>
 
 
 
@@ -1330,10 +1350,10 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
