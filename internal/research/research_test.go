@@ -152,3 +152,97 @@ func TestFoldResultMarshalsNaNAsNull(t *testing.T) {
 		t.Errorf("TrainEventCount leaked into JSON; must be omitted")
 	}
 }
+
+// tradingConfig is testConfig with a risk policy loose enough that fills are
+// actually accepted. The bare testConfig leaves RiskConfig zero-valued, which
+// means PositionLimitHard is 0 and the risk manager throttles every order, so a
+// fold built on it never produces a single fill and can say nothing about
+// fill-derived metrics.
+func tradingConfig() *config.Config {
+	c := testConfig()
+	c.Risk.MaxDrawdownPct = 0.5
+	c.Risk.DailyLossLimit = 1e9
+	c.Risk.PositionLimitHard = 500_000
+	return c
+}
+
+// hitRateEvents builds n one-minute events whose OBI flips every 3 bars (so
+// positions open and close) over a sawtooth price path that makes some round
+// trips win and others lose. Fully deterministic.
+func hitRateEvents(n int) []model.FeatureEvent {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ev := make([]model.FeatureEvent, 0, n)
+	price := 50000.0
+	for i := 0; i < n; i++ {
+		obi := 0.9
+		if (i/3)%2 == 0 {
+			obi = -0.9
+		}
+		switch i % 4 {
+		case 0:
+			price += 60
+		case 1:
+			price -= 20
+		case 2:
+			price += 15
+		case 3:
+			price -= 45
+		}
+		ev = append(ev, model.FeatureEvent{
+			EventTime:  base.Add(time.Duration(i) * time.Minute),
+			Instrument: "BTC-USD",
+			Values: map[string]float64{
+				"microPrice": price, "obi": obi, "vpin": 0.3,
+				"vwap": price, "volume": 10,
+			},
+		})
+	}
+	return ev
+}
+
+// risingEvents is hitRateEvents' price path replaced by a monotonic ramp, so
+// every closed round trip clears costs and wins. Same flip cadence, so the fill
+// count matches; only the outcome of each round trip differs.
+func risingEvents(n int) []model.FeatureEvent {
+	ev := hitRateEvents(n)
+	price := 50000.0
+	for i := range ev {
+		price += 50
+		ev[i].Values["microPrice"] = price
+		ev[i].Values["vwap"] = price
+	}
+	return ev
+}
+
+// TestRunFoldComputesHitRateFromFills guards a regression in which runFold
+// returned a hardcoded hitRate of 0. That zero flowed into FoldResult.HitRate
+// and printed as "Hit: 0.0%" next to genuinely computed metrics, so a reader
+// reasonably concluded the strategy won none of its trades.
+//
+// The fix routes the figure through metrics.HitRate over the portfolio's own
+// fill ledger, which is how cmd/backtest and cmd/calibrate already compute it.
+// Two fixtures share one code path and one fill count but have different known
+// hit rates, so no constant can satisfy both assertions:
+//
+//   - a sawtooth path where exactly one round trip in three wins
+//   - a monotonic ramp where every round trip wins
+func TestRunFoldComputesHitRateFromFills(t *testing.T) {
+	cfg := tradingConfig()
+	params := Params{Threshold: 0.5, OrderSize: 0.01}
+
+	mixed := runFold(cfg, hitRateEvents(120), params)
+	if mixed.fills == 0 {
+		t.Fatal("fixture produced no fills; hit rate would be vacuously 0")
+	}
+	if got, want := mixed.hitRate, 1.0/3.0; math.Abs(got-want) > 1e-9 {
+		t.Errorf("mixed fixture hitRate = %v, want %v", got, want)
+	}
+
+	rising := runFold(cfg, risingEvents(120), params)
+	if rising.fills != mixed.fills {
+		t.Fatalf("fixtures disagree on fill count: rising %d, mixed %d", rising.fills, mixed.fills)
+	}
+	if got := rising.hitRate; math.Abs(got-1.0) > 1e-9 {
+		t.Errorf("rising fixture hitRate = %v, want 1.0", got)
+	}
+}

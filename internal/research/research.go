@@ -394,12 +394,16 @@ func runFold(cfg *config.Config, events []model.FeatureEvent, p Params) foldMetr
 	sharpe := metrics.CalculateSharpeRatio(equity, 0.0)
 	maxDD := metrics.CalculateMaxDrawdown(equity)
 
+	// Hit rate comes from the in-memory fill ledger, exactly as cmd/backtest and
+	// cmd/calibrate compute it (metrics.HitRate over the round-trip-matched
+	// fills). The journal writer here is a null writer, so the portfolio's own
+	// Fills() is the only fill record this path has.
 	return foldMetrics{
 		pnl:     snap.RealizedPnL,
 		fills:   snap.TotalFills,
 		sharpe:  sharpe,
 		maxDD:   maxDD,
-		hitRate: 0,
+		hitRate: metrics.HitRate(port.Fills()),
 		moments: metrics.EquityReturnMoments(equity),
 	}
 }
