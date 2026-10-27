@@ -12,9 +12,12 @@ import (
 // then looked fresh until wall-clock overtook that future stamp, so huginn kept
 // trading for up to five minutes past its configured timeout.
 
-func staleManager(timeout time.Duration, clock *time.Time) *Manager {
+// staleTimeout is the documented production default (docs/risk-model.md).
+const staleTimeout = 60 * time.Second
+
+func staleManager(clock *time.Time) *Manager {
 	cfg := baseCfg()
-	cfg.StalenessTimeout = timeout
+	cfg.StalenessTimeout = staleTimeout
 	return newManagerWithClock(cfg, 100_000, func() time.Time { return *clock })
 }
 
@@ -27,7 +30,7 @@ func check(m *Manager) bool {
 func TestStaleness_FutureStampedEventCannotBlindTheWatchdog(t *testing.T) {
 	t.Parallel()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	m := staleManager(60*time.Second, &clock)
+	m := staleManager(&clock)
 
 	// One event stamped five minutes ahead, then the feed dies.
 	m.OnFeatureSeen(clock.Add(5*time.Minute), 0)
@@ -42,7 +45,7 @@ func TestStaleness_FutureStampedEventCannotBlindTheWatchdog(t *testing.T) {
 func TestStaleness_HonestEventsBehaveExactlyAsBefore(t *testing.T) {
 	t.Parallel()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	m := staleManager(60*time.Second, &clock)
+	m := staleManager(&clock)
 
 	for i := 0; i < 20; i++ {
 		m.OnFeatureSeen(clock, 0)
@@ -60,14 +63,14 @@ func TestStaleness_HonestEventsBehaveExactlyAsBefore(t *testing.T) {
 func TestStaleness_ArmedImmediatelyAfterRestore(t *testing.T) {
 	t.Parallel()
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	m := staleManager(60*time.Second, &clock)
+	m := staleManager(&clock)
 	state, err := m.MarshalState()
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
 
 	// Restart, possibly with open positions, into a feed that never comes back.
-	restored := staleManager(60*time.Second, &clock)
+	restored := staleManager(&clock)
 	if err := restored.RestoreState(state); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -86,7 +89,7 @@ func TestStaleness_FreshStartWaitsForAFirstEvent(t *testing.T) {
 	// Unchanged behaviour: with no state and no features, no strategy can trade,
 	// so there is nothing to halt.
 	clock := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
-	m := staleManager(60*time.Second, &clock)
+	m := staleManager(&clock)
 	clock = clock.Add(10 * time.Minute)
 	if check(m) {
 		t.Fatalf("a fresh manager that has seen no feature must not halt")
