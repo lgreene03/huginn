@@ -303,14 +303,22 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 
 	// Observability: wall-clock age of this feature event at the moment it
 	// reaches huginn. Histogram in `huginn_feature_event_age_seconds`.
+	// A negative age or latency is a producer stamping events in the future, not
+	// a measurement. It is counted separately (by the risk manager) and kept out
+	// of these histograms: negatives land silently in the lowest bucket and drag
+	// _sum below zero. Measured in norse-stack: 181,738 decisions summing to
+	// -26.8 billion ms, a mean of -147 s, while the buckets reported a p50 of 0.5 ms.
 	if !event.EventTime.IsZero() {
-		metrics.FeatureEventAgeSeconds.Observe(time.Since(event.EventTime).Seconds())
+		if age := time.Since(event.EventTime); age >= 0 {
+			metrics.FeatureEventAgeSeconds.Observe(age.Seconds())
+		}
 	}
 
 	// End-to-end latency: bridge signal creation → huginn receipt
 	if event.SignalTimeMs > 0 {
-		bridgeToHuginnMs := time.Now().UnixMilli() - event.SignalTimeMs
-		metrics.SignalToDecisionMs.Observe(float64(bridgeToHuginnMs))
+		if bridgeToHuginnMs := time.Now().UnixMilli() - event.SignalTimeMs; bridgeToHuginnMs >= 0 {
+			metrics.SignalToDecisionMs.Observe(float64(bridgeToHuginnMs))
+		}
 	}
 
 	// Notify the risk manager that a fresh event arrived — feeds the
