@@ -13,16 +13,17 @@ on:
 jobs:
   go:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.25']
     steps:
     - uses: actions/checkout@v7
 
     - name: Set up Go
       uses: actions/setup-go@v7
       with:
-        go-version: ${{ matrix.go-version }}
+        # go.mod is the single source of truth for the toolchain, so CI cannot
+        # drift from it. It pins 1.26.10, the first release with the fixes for
+        # GO-2026-6809 and GO-2026-6617; Go 1.25 is out of support and gets no
+        # security fixes at all.
+        go-version-file: go.mod
 
     - name: Verify Dependencies
       run: go mod verify
@@ -48,13 +49,17 @@ jobs:
     - uses: actions/checkout@v7
     - uses: actions/setup-go@v7
       with:
-        go-version: '1.25'
+        go-version-file: go.mod
     - name: golangci-lint
-      # v9 ships a golangci-lint binary built with Go 1.25, required by our
-      # go.mod. v6 shipped v1.64.x (Go 1.24) which rejects Go 1.25 modules.
+      # PINNED, not `latest`. golangci-lint refuses a module targeting a newer
+      # Go than the one it was built with, so the lint gate silently depends on
+      # whichever binary was released last; it has already broken once on a Go
+      # upgrade (v1.64.x, built with Go 1.24, rejected Go 1.25 modules). v2.15.0
+      # is built with Go 1.27.0, so it lints this go1.26.10 module. Bump this
+      # deliberately alongside go.mod.
       uses: golangci/golangci-lint-action@v9
       with:
-        version: latest
+        version: v2.15.0
         args: --timeout=5m
 
   web:
@@ -83,17 +88,20 @@ jobs:
     - uses: actions/checkout@v7
     - uses: actions/setup-go@v7
       with:
-        go-version: '1.25'
+        go-version-file: go.mod
     - name: Install govulncheck
       # PINNED, not @latest. setup-go sets GOTOOLCHAIN=local, so `go install`
       # cannot pull a newer toolchain: when x/vuln v1.8.0 raised its floor to
       # go >= 1.26.0 this step began failing outright ("requires go >= 1.26.0
       # (running go 1.25.14; GOTOOLCHAIN=local)") before the scan even ran.
-      # v1.7.0 declares go 1.25.0 and matches the go-version above.
+      # v1.7.0 declares go 1.25.0, which the go.mod toolchain (1.26.10)
+      # satisfies. Now that go.mod is on 1.26, v1.8.0's go >= 1.26.0 floor is
+      # also met, so this pin can be raised; it is left at the verified v1.7.0
+      # here to keep one change per pull request.
       #
       # Pinning the binary does NOT stale the advisories: govulncheck fetches
       # the vulnerability database at runtime, so coverage stays current. Raise
-      # this pin together with go-version, not on its own.
+      # this pin together with go.mod, not on its own.
       run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
     - name: Run govulncheck
       run: govulncheck ./...

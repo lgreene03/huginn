@@ -1,4 +1,7 @@
-FROM golang:1.25-alpine@sha256:c4ea15b4a7912716eb362a022e2b12317762eca387423760bc59c0f9ae69423c AS builder
+# Go 1.26.10, matching go.mod. 1.25 is out of support; 1.26.10 is the first
+# release with the stdlib fixes for GO-2026-6809 (crypto/x509) and GO-2026-6617
+# (net/http HTTP/2). The tag names the version; the digest pins the bytes.
+FROM golang:1.26.10-alpine@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS builder
 WORKDIR /app
 
 RUN apk add --no-cache git
