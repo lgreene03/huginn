@@ -105,7 +105,11 @@ When halted, all new `OnFeature` calls return without emitting orders. Fills tha
 
 ### Feature-staleness watchdog
 
-The risk manager tracks `lastFeatureEventTime` (from the event's `EventTime` field, not wall-clock). If no feature event arrives within `risk.staleness_timeout`, the engine auto-halts with `HaltReason = "feature_staleness"`.
+The risk manager records when each feature event **arrives** (`lastFeatureSeenAt`, by the manager's clock) and auto-halts with `HaltReason = "feature_staleness"` if none arrives within `risk.staleness_timeout`.
+
+It measures arrival, not the event's own `EventTime`. It used to compare the clock against `EventTime`, and norse-stack's obi-bridge stamps events with the close time of the still-open 5-minute candle, up to five minutes in the future. A dead feed then looked fresh until the clock overtook that stamp, so trading continued for up to five minutes past the timeout. Measuring arrival means no producer's timestamps can blind the watchdog. Events stamped more than `FutureEventTolerance` (5 s) ahead are counted in `huginn_feature_event_time_in_future_total` and kept out of the latency and age histograms, where negative values would corrupt `_sum`.
+
+After a state restore the watchdog is armed at once: if no feature arrives within the timeout of the restore, it halts. A fresh start with no state still waits for a first event, since no strategy can trade without one.
 
 If `risk.auto_resume_after_staleness` is `true`, the engine automatically resumes when the next feature event arrives.
 

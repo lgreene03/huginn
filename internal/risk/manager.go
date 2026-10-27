@@ -46,7 +46,13 @@ type Manager struct {
 	// dayStart is the UTC midnight that defines the current daily-loss window.
 	dayStart             time.Time
 	dayStartRealizedPnL  float64
-	lastFeatureEventTime time.Time // event-time (from Muninn), not wall-clock
+	lastFeatureEventTime time.Time // the last feature's own EventTime; kept for state and logs
+	// lastFeatureSeenAt is when the last feature ARRIVED, by this manager's
+	// clock. The staleness watchdog measures this, not the event's own
+	// timestamp: a producer stamping events in the future made the old
+	// event-time comparison negative for minutes after the feed died. Not
+	// persisted, because an arrival time means nothing to another process.
+	lastFeatureSeenAt time.Time
 
 	// marketVolatility is the most recent market volatility feature observed on
 	// a feature event (event.Values["volatility"]), updated by OnFeatureSeen.
@@ -134,7 +140,15 @@ func (m *Manager) UpdateLimits(positionLimit float64) {
 func (m *Manager) OnFeatureSeen(eventTime time.Time, marketVolatility float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	now := m.now()
+	m.lastFeatureSeenAt = now
 	m.lastFeatureEventTime = eventTime
+	if eventTime.After(now.Add(FutureEventTolerance)) {
+		// A producer clock or stamping error. It cannot blind the watchdog any
+		// more, but it is surfaced, because the same timestamp is likely wrong
+		// wherever else it is used.
+		metrics.FeatureEventTimeInFutureTotal.Inc()
+	}
 	if marketVolatility > 0 {
 		m.marketVolatility = marketVolatility
 	}
@@ -170,25 +184,42 @@ func (m *Manager) RunStalenessWatchdog(ctx context.Context) {
 			return
 		case <-ticker.C:
 			m.mu.Lock()
-			if m.lastFeatureEventTime.IsZero() {
-				m.mu.Unlock()
-				continue
-			}
-			gap := m.now().Sub(m.lastFeatureEventTime)
-			if gap > m.config.StalenessTimeout && (!m.halted || m.haltReason != HaltStaleness) {
-				m.halted = true
-				m.haltReason = HaltStaleness
-				m.updateHaltGauges()
-				metrics.OrdersRejectedTotal.WithLabelValues("feature_staleness").Inc()
-				slog.Warn("Risk auto-halt: feature event staleness",
-					"last_event", m.lastFeatureEventTime,
-					"gap", gap.String(),
-					"threshold", m.config.StalenessTimeout.String(),
-				)
-			}
+			m.checkStalenessLocked()
 			m.mu.Unlock()
 		}
 	}
+}
+
+// FutureEventTolerance is how far ahead of this manager's clock a feature's
+// EventTime may be before it is counted as mis-stamped. Generous enough for
+// ordinary clock skew between hosts.
+const FutureEventTolerance = 5 * time.Second
+
+// checkStalenessLocked halts trading when no feature has ARRIVED within
+// StalenessTimeout, and reports whether it newly halted. The caller holds m.mu.
+//
+// One method used by both the watchdog loop and the tests. The tests used to
+// re-implement this comparison inline, which is how the loop could compare
+// against the wrong timestamp with every test still passing.
+func (m *Manager) checkStalenessLocked() bool {
+	if m.config.StalenessTimeout <= 0 || m.lastFeatureSeenAt.IsZero() {
+		return false
+	}
+	gap := m.now().Sub(m.lastFeatureSeenAt)
+	if gap <= m.config.StalenessTimeout || (m.halted && m.haltReason == HaltStaleness) {
+		return false
+	}
+	m.halted = true
+	m.haltReason = HaltStaleness
+	m.updateHaltGauges()
+	metrics.OrdersRejectedTotal.WithLabelValues("feature_staleness").Inc()
+	slog.Warn("Risk auto-halt: no feature event arrived",
+		"last_arrival", m.lastFeatureSeenAt,
+		"last_event_time", m.lastFeatureEventTime,
+		"gap", gap.String(),
+		"threshold", m.config.StalenessTimeout.String(),
+	)
+	return true
 }
 
 // Evaluate checks if a prospective fill violates any risk parameters based on
@@ -473,5 +504,10 @@ func (m *Manager) RestoreState(data []byte) error {
 	}
 	m.dayStartRealizedPnL = f.DayStartRealizedPnL
 	m.lastFeatureEventTime = f.LastFeatureEventTime
+	// Restored state may carry open positions, so the watchdog must not wait for
+	// a first feature before it can fire: if none arrives within the timeout of
+	// this restore, halt. (Comparing against the persisted EventTime instead
+	// would halt on every restart that took longer than the timeout.)
+	m.lastFeatureSeenAt = m.now()
 	return nil
 }

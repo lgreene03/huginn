@@ -118,12 +118,11 @@ func TestStalenessWatchdog_HaltsAndAutoResumes(t *testing.T) {
 	// rather than spinning the timer — keeps the test deterministic.
 	clock = clock.Add(10 * time.Second)
 
-	// Inline check duplicates the watchdog body so we don't sleep for ticks.
+	// Run the watchdog's own check rather than spinning its ticker. This used to
+	// re-implement the comparison inline, which is how the real loop could test
+	// the wrong timestamp while this test still passed.
 	m.mu.Lock()
-	if m.now().Sub(m.lastFeatureEventTime) > m.config.StalenessTimeout {
-		m.halted = true
-		m.haltReason = HaltStaleness
-	}
+	m.checkStalenessLocked()
 	m.mu.Unlock()
 
 	if !m.IsHalted() || m.HaltReason() != HaltStaleness {

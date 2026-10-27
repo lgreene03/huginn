@@ -101,6 +101,19 @@ var (
 	// event's EventTime and when huginn dispatched it. A creeping p95 here
 	// means Muninn → Kafka → huginn is falling behind; a step change means
 	// the feed broke or huginn is throttled.
+	// FeatureEventTimeInFutureTotal counts feature events whose own timestamp is
+	// ahead of huginn's clock. Such an event is excluded from the latency and
+	// age histograms below, where a negative value would corrupt _sum (and so
+	// every mean) while hiding inside the lowest bucket. A rising count means a
+	// producer is mis-stamping events; it does not affect the staleness
+	// watchdog, which measures arrival time.
+	FeatureEventTimeInFutureTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "huginn_feature_event_time_in_future_total",
+			Help: "Feature events whose own timestamp is ahead of huginn's clock",
+		},
+	)
+
 	FeatureEventAgeSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "huginn_feature_event_age_seconds",
