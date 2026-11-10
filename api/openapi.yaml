@@ -7,8 +7,8 @@ info:
     Read-only endpoints (`/healthz`, `/readyz`, `/metrics`, `/version`,
     `/api/snapshot`, `/api/snapshot/history`, `/api/stream`, and `GET
     /api/strategy/config`) are unauthenticated. Mutating control endpoints
-    (`POST /api/breaker/trigger`, `POST /api/breaker/reset`, `POST
-    /api/fills/mock`, and `PUT /api/strategy/config`) require a bearer token.
+    (`POST /api/breaker/trigger`, `POST /api/breaker/reset`, and `PUT
+    /api/strategy/config`) require a bearer token.
 
     The mutating endpoints **fail closed**: when `HUGINN_API_TOKEN` is unset
     they return `503` (control plane locked) rather than passing through.
@@ -206,40 +206,6 @@ paths:
         "405": { $ref: "#/components/responses/MethodNotAllowed" }
         "503": { $ref: "#/components/responses/ControlPlaneLocked" }
 
-  /api/fills/mock:
-    post:
-      tags: [control]
-      summary: Inject a mock fill
-      description: >
-        Submits a synthetic fill through the same path a live Sleipnir fill
-        takes (risk-gated, journaled, deduplicated). Useful for exercising the
-        portfolio/journal pipeline without a broker.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MockFillRequest"
-      responses:
-        "200":
-          description: Fill applied.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string, example: success }
-                  message: { type: string }
-                  fill: { type: object }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "403":
-          description: Rejected by the risk manager.
-        "405": { $ref: "#/components/responses/MethodNotAllowed" }
-        "503": { $ref: "#/components/responses/ControlPlaneLocked" }
-
 components:
   securitySchemes:
     bearerAuth:
@@ -310,14 +276,3 @@ components:
       properties:
         status: { type: string, example: halted }
         message: { type: string }
-
-    MockFillRequest:
-      type: object
-      required: [instrument, side, quantity, price]
-      properties:
-        instrument: { type: string, example: BTC-USDT }
-        side:
-          type: string
-          enum: [BUY, SELL]
-        quantity: { type: number, format: double, example: 0.01 }
-        price: { type: number, format: double, example: 65000 }

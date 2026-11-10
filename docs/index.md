@@ -22,9 +22,9 @@ The split is deliberate. Huginn never recomputes OBI, VPIN, or VWAP from raw tra
 | Add a new signal (pluggable alpha) | [docs/ADDING_AN_ALPHA.md](ADDING_AN_ALPHA.md) |
 | Backtest a strategy on historical features | `cmd/backtest --strategy obi --data data/historical.jsonl` |
 | Calibrate strategy parameters | `cmd/calibrate --strategy obi --data data/historical.jsonl --threshold 0.5,0.6,0.7` |
-| Watch equity, PnL, and fills live | Dashboard at `http://localhost:8081` (SSE-driven) |
+| Watch equity, PnL, and fills live | `GET /api/snapshot`, the `GET /api/stream` SSE feed, or the console in `norse-stack/console` |
 | Tune parameters without restarting | `PUT /api/strategy/config` (auth-gated) |
-| Halt/resume the engine | Dashboard buttons or `POST /api/breaker/trigger` |
+| Halt/resume the engine | `POST /api/breaker/trigger` and `/api/breaker/reset` (auth-gated), or the `norse-stack` console's halt control |
 
 ---
 
@@ -74,7 +74,7 @@ Huginn occupies the middle tier: it receives features from Muninn over Redpanda 
 - Backtest engine: parity-tested against live executor, HTML report output
 - Calibration CLI: parameter grid sweep with CSV output
 - Observability: Prometheus metrics, Grafana dashboard JSON, SSE equity stream
-- Web UI: live operator console (halt/resume, manual fill, strategy tuning, equity chart)
+- Operator console: none bundled; the bundled web app was retired on 2026-11-10 and the console lives in `norse-stack/console`
 - Release engineering: multi-arch Docker images, versioned builds, lint CI
 
 See [Roadmap](ROADMAP.md) for phase details and [Architecture](architecture.md) for internals.

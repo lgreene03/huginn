@@ -7,7 +7,7 @@
 
 ## Context
 
-Huginn exposes its portfolio/strategy snapshot over HTTP (`/api/snapshot`, SSE) for the operator dashboard. A programmatic client (a research script, a stack-level health probe) wants the same snapshot over gRPC: a single unary `GetSnapshot` returning the snapshot JSON, at lower overhead than the SSE stream, with server reflection so `grpcurl` works without a local `.proto`.
+Huginn exposes its portfolio/strategy snapshot over HTTP (`/api/snapshot`, SSE) for the operator dashboard (at the time huginn's bundled `web/` app, retired on 2026-11-10 under Norse decision D6). A programmatic client (a research script, a stack-level health probe) wants the same snapshot over gRPC: a single unary `GetSnapshot` returning the snapshot JSON, at lower overhead than the SSE stream, with server reflection so `grpcurl` works without a local `.proto`.
 
 The conventional path is to author a `service.proto`, run `protoc` with the Go plugins, and check in (or generate-in-CI) the stubs. For exactly one method whose response is a JSON string and an HTTP-style status code, that toolchain is heavy: it adds `protoc` + plugin version pins to every build and CI environment, a generation step, and a tree of generated files — all to describe a two-field message that will essentially never change.
 
@@ -34,7 +34,7 @@ The justification is proportionality: the surface is one method whose payload is
 ## Alternatives Considered
 
 - **`protoc` + generated Go stubs.** Rejected *for the current surface*. Correct and conventional, but adds a toolchain dependency to every build/CI environment to describe one trivial, rarely-changing message. The right choice once the API is non-trivial.
-- **HTTP/JSON only, no gRPC.** Considered. The dashboard already uses HTTP. gRPC was wanted specifically for a typed-transport, reflection-introspectable programmatic entry point at lower overhead than SSE; dropping it would remove that.
+- **HTTP/JSON only, no gRPC.** Considered. The dashboard already used HTTP. gRPC was wanted specifically for a typed-transport, reflection-introspectable programmatic entry point at lower overhead than SSE; dropping it would remove that.
 - **A third-party "proto-from-struct" codegen library.** Rejected. Adds a dependency to avoid writing ~40 lines of descriptor that are themselves the clearest statement of the schema.
 
 ## References

@@ -17,17 +17,17 @@ Phased delivery, mirroring the discipline of the [Muninn server ROADMAP](https:/
 - **Portfolio** (`internal/portfolio/portfolio.go`): thread-safe FIFO-avg-cost book, realized PnL on sell, unrealized via `LastMarkPrice`. `portfolio_test.go` validates round-trip PnL.
 - **Journal** (`internal/journal/`): pluggable `Writer` interface, JSONL writer + JSONL reader/replay for crash recovery, Postgres writer with auto-init schema (`trade_fills` table, lines 51–67 of `postgres.go`) and replay-from-DB recovery.
 - **Kafka** (`internal/kafka/`): multi-topic fan-in consumer with buffered channel + per-topic goroutines, intent producer (`segmentio/kafka-go`, `RequireAll` acks), fills consumer.
-- **HTTP server** (`internal/server/http.go`): `/healthz` (returns portfolio snapshot), `/readyz`, `/metrics` (Prom), `/api/stream` (SSE @ 500 ms), `/api/breaker/{trigger,reset}`, `/api/fills/mock`.
+- **HTTP server** (`internal/server/http.go`): `/healthz` (returns portfolio snapshot), `/readyz`, `/metrics` (Prom), `/api/stream` (SSE @ 500 ms), `/api/breaker/{trigger,reset}`. (`/api/fills/mock` was removed on 2026-11-10 with the web app; see below.)
 - **Backtest engine** (`internal/backtest/engine.go`): JSONL replay, daily equity sampling (by `event.EventTime.YearDay()`), terminal Sharpe + MDD via `internal/metrics/analysis.go`.
 - **Historical fetcher** (`cmd/fetcher/main.go`): Binance `aggTrades` → windowed OBI/VPIN/VWAP → JSONL. Used to feed the backtest engine.
-- **Web UI** (`web/`): React 19 + Vite + TS dashboard with neon-cyan theme. Connects to `http://localhost:8083/api/stream` (SSE), renders inline-SVG equity curve, positions table, fills log, manual halt/resume buttons, manual-fill console.
-- **Docker Compose** (`docker-compose.yml`): huginn + dashboard + sleipnir + redpanda + postgres. Sleipnir is wired as a sibling service pointing at Binance testnet.
+- ~~**Web UI** (`web/`): React 19 + Vite + TS dashboard with neon-cyan theme. Connects to `http://localhost:8083/api/stream` (SSE), renders inline-SVG equity curve, positions table, fills log, manual halt/resume buttons, manual-fill console.~~ Retired on 2026-11-10 under Norse decision D6. It was never deployed, showed a hardcoded "Uptime: 100%", claimed the engine was executing strategy signals, and posted mock fills through the real executor. The operator console lives in `norse-stack/console`.
+- **Docker Compose** (`docker-compose.yml`): huginn + sleipnir + redpanda + postgres. Sleipnir is wired as a sibling service pointing at Binance testnet.
 - **CI**: `.github/workflows/ci.yml` — Go 1.23, `go mod verify`, build, vet, `go test ./...`. Single Linux job, no race, no coverage, no matrix.
 
 ### What is broken right now
 
 1. ~~**`go build ./...` fails on `main`.**~~ Fixed — `server.New` signature updated. `go build ./...` is green.
-2. ~~**`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail.~~ Resolved — those releases shipped (the lockfile now resolves `typescript@6.0.3` and `vite@8.0.13` with integrity hashes), and the `web` CI job (`npm ci` → build → Playwright) is green on `main`. The optimistic pins turned out to be correct; fresh clones install cleanly.
+2. ~~**`web/package.json` pins `typescript ~6.0.2` and `vite ^8.0.12`.** Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). `npm ci` will fail.~~ Resolved — those releases shipped (the lockfile now resolves `typescript@6.0.3` and `vite@8.0.13` with integrity hashes), and the `web` CI job (`npm ci` → build → Playwright) is green on `main`. The optimistic pins turned out to be correct; fresh clones install cleanly. (Moot since 2026-11-10: `web/` and its CI job were removed.)
 3. **`docker-compose.yml`** references a `sleipnir` build context at `../sleipnir` — fine on the author's machine, broken for any other clone or CI. _(Mitigated by the cross-stack `docker-compose.stack.yml` in the muninn repo, which is the recommended way to run the full stack.)_
 
 ### What the README claims but isn't real
@@ -55,7 +55,7 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 - ~~**No feature-staleness circuit breaker.**~~ Fixed in Phase 1 — `RISK_STALENESS_TIMEOUT` auto-halts when no feature event arrives; `RISK_AUTO_RESUME_AFTER_STALENESS` auto-resumes on fresh event.
 - ~~**No per-instrument position limit.**~~ Fixed in Phase 1 — `position_limit_per_instrument` config map.
 - **Risk evaluates the prospective fill but doesn't reserve cash.** Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.
-- ~~**Mock-fill endpoint bypasses the live-fill path.**~~ Fixed — `/api/fills/mock` now applies through `executor.OnExecutionFill` (`internal/server/http.go`) instead of a bare `portfolio.ApplyFill`. The mock fill is journaled, deduplicated (tagged with a `mock-exec-*` `ExecutionID`), increments `FillsExecutedTotal`, and triggers strategy-state persistence — full parity with a real Sleipnir fill. Previously it mutated the portfolio in isolation, so the fill never reached the journal and was lost on restart, silently diverging the journal from the book. Regression-tested in `internal/server/mock_fill_test.go`.
+- ~~**Mock-fill endpoint bypasses the live-fill path.**~~ Fixed — `/api/fills/mock` now applies through `executor.OnExecutionFill` (`internal/server/http.go`) instead of a bare `portfolio.ApplyFill`. The mock fill is journaled, deduplicated (tagged with a `mock-exec-*` `ExecutionID`), increments `FillsExecutedTotal`, and triggers strategy-state persistence — full parity with a real Sleipnir fill. Previously it mutated the portfolio in isolation, so the fill never reached the journal and was lost on restart, silently diverging the journal from the book. Regression-tested in `internal/server/mock_fill_test.go`. Superseded on 2026-11-10: the endpoint was removed with the web app (Norse decision D6), and the journaling guard now calls `executor.OnExecutionFill` directly in `internal/executor/execution_fill_test.go`.
 
 ### Backtest vs. live divergence
 
@@ -79,7 +79,7 @@ _Several items from the original audit were addressed in Phases 1 and 5:_
 
 ### Web UI assessment
 
-_This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated._
+_The web app assessed here was retired on 2026-11-10 under Norse decision D6, and `web/` no longer exists. This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated._
 - ~250 lines of TS, one `App.tsx`, no router, ~~no test~~ (Phase 6 added Playwright e2e at `web/tests/e2e/smoke.spec.ts`), no state-management library.
 - Single SSE source-of-truth — good pattern.
 - ~~Hardcoded `http://localhost:8083`. Will not work behind a reverse proxy.~~ Fixed in Phase 6 — `API_BASE` reads `import.meta.env.VITE_API_BASE` (default `http://localhost:8081`), documented in `web/.env.example`.
@@ -109,7 +109,7 @@ _This assessment predates Phase 6, which hardened the operator console; the item
 - Make `docker-compose.yml` Sleipnir reference optional via a compose profile (`profiles: [live]`) so plain clones still come up.
 - README correction pass: fix the strategy list, env-var table, and the "no exchange API connection" Non-Goal phrasing.
 
-**Exit criteria.** Fresh clone: `go build ./... && go test -race ./... && (cd web && npm ci && npm run build)` all pass. CI is actually green, not just "passing because the workflow only checks `go vet`."
+**Exit criteria.** Fresh clone: `go build ./... && go test -race ./... && (cd web && npm ci && npm run build)` all pass. CI is actually green, not just "passing because the workflow only checks `go vet`." (The `web` half no longer applies: the app and its CI job were removed on 2026-11-10.)
 
 **Risks.** None — pure janitorial. If this phase is hard, the codebase has rot we haven't surfaced yet.
 
@@ -160,7 +160,7 @@ _This assessment predates Phase 6, which hardened the operator console; the item
 - ✅ **OpenTelemetry traces.** Shipped in commit `6155724` (`feat(tracing): Phase 3 OTel`). `internal/tracing/tracing.go` initializes an OTLP gRPC exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, otherwise installs a no-op tracer provider (no runtime cost when unset). Span coverage: `executor.on_feature` wraps strategy → risk → executor → journal → portfolio; `kafka.fill_received` and `executor.on_execution_fill` wrap the inbound fill path. W3C TraceContext is injected on outbound intents (`kafka/producer.go:81`) and extracted from inbound fills (`kafka/fills_consumer.go:113`), making `huginn → sleipnir → huginn` render as one span tree. See `sleipnir/docs/CONTRACTS.md` for the wire-level header contract.
 - ✅ **Log volume control.** Hot-path emits demoted to `slog.Debug`: `portfolio.ApplyFill` ("Fill applied", `portfolio.go:104`), executor paper-trade emit ("Paper trade executed", `executor.go:269`), and every strategy's "Strategy signal" line (`obi_threshold.go:93,112`, `vpin_breakout.go:93`, `vwap_deviation.go:95,114`, `ema_crossover.go:128,151`). `slog.Info` is retained only for session-level events — risk rejections, live-fill applications, parameter updates, and the per-session summary.
 - ✅ **A bundled Grafana dashboard JSON** lives at `deploy/grafana/huginn.json`. Panels: Equity curve (total / cash / all-in), Realized PnL, Unrealized PnL, Fills/min, Rejections/min, Orders rejected by reason, Feature event age p50/p95/p99 (Muninn → huginn latency), Signal → fill latency, Orders generated by strategy & side, Risk halt status.
-- ✅ **`/api/snapshot` endpoint** wired in `internal/server/http.go:362` (current per-tick payload as plain JSON), with `/api/snapshot/history` at `:363` exposing the 720-point equity ring buffer. The web UI hydrates the equity chart from the history endpoint on mount before subscribing to the SSE stream.
+- ✅ **`/api/snapshot` endpoint** wired in `internal/server/http.go:362` (current per-tick payload as plain JSON), with `/api/snapshot/history` at `:363` exposing the 720-point equity ring buffer. The retired web UI hydrated its equity chart from the history endpoint on mount before subscribing to the SSE stream.
 
 **Exit criteria.** `curl :8081/metrics` exposes the new metrics. The Grafana dashboard JSON loads against a default Prometheus scrape and shows non-empty panels in a backtest replay.
 
@@ -203,6 +203,8 @@ _This assessment predates Phase 6, which hardened the operator console; the item
 ---
 
 ## Phase 6 — Hardened Web UI ✅
+_Retired on 2026-11-10 under Norse decision D6._ The web app this phase built (`web/`), its `web` CI job, its compose service and the `POST /api/fills/mock` endpoint have been removed; the record below is kept as history. The HTTP endpoints it added (`GET`/`PUT /api/strategy/config`, `/api/snapshot/history`) remain, and the operator console lives in `norse-stack/console`.
+
 **Goal.** The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.
 
 **Deliverables.**
@@ -295,7 +297,7 @@ In the same spirit as Muninn's [NON_GOALS.md](https://github.com/lgreene03/munin
 - **Not a real exchange client.** Huginn talks to Sleipnir over Kafka; Sleipnir talks to the venue.
 - **Not a research notebook environment.** Analytics belong in `muninn-py`.
 - **Not opinionated about strategy language.** Strategies are Go structs.
-- **Not a UI framework or analytics dashboard.** The bundled `web/` is an operator console — halt, resume, tune, observe. Not a research surface.
+- **Not a UI framework or analytics dashboard.** Huginn ships no front end; it exposes HTTP endpoints to halt, resume, tune and observe. The operator console lives in `norse-stack/console`. Not a research surface.
 
 ---
 

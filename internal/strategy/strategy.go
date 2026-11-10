@@ -9,8 +9,8 @@
 //
 //   - persists strategy state from a 5-second ticker goroutine
 //     (executor.RunStatePersister → Stateful.MarshalState), and
-//   - exposes the dashboard's `/api/strategy/config` PUT (planned Phase 6)
-//     which mutates strategy parameters from an HTTP handler goroutine.
+//   - exposes `PUT /api/strategy/config`, which mutates strategy
+//     parameters from an HTTP handler goroutine.
 //
 // Both paths read strategy fields concurrently with the dispatcher. The
 // contract is therefore: **all four bundled strategies are self-synchronizing
