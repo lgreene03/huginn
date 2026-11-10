@@ -27,12 +27,15 @@ const maxFeeBps = 100.0
 
 // genFill is a single randomized fill drawn from sane economic ranges. Side is
 // chosen by a bool because model.Side has no quick.Generator and unconstrained
-// ints would mostly miss the two valid variants.
+// ints would mostly miss the two valid variants. The fee is drawn as a RATE
+// (FeeBps) and charged on the fill's notional, never as an absolute amount: an
+// absolute fee drawn independently of size could exceed the whole notional of a
+// small fill, which no venue charges and which made the flip property flaky.
 type genFill struct {
 	IsBuy     bool
 	Quantity  float64
 	FillPrice float64
-	TxCost    float64
+	FeeBps    float64
 }
 
 // Generate draws genFill fields from sane economic ranges directly, instead of
@@ -43,15 +46,16 @@ type genFill struct {
 func (genFill) Generate(r *rand.Rand, _ int) reflect.Value {
 	return reflect.ValueOf(genFill{
 		IsBuy:     r.Intn(2) == 0,
-		Quantity:  r.Float64() * 4.9,    // -> qty in [0.01, 4.91)
-		FillPrice: r.Float64() * 89_000, // -> price in [100, 89100)
-		TxCost:    r.Float64() * 49,     // -> cost in [0, 49)
+		Quantity:  r.Float64() * 4.9,       // -> qty in [0.01, 4.91)
+		FillPrice: r.Float64() * 89_000,    // -> price in [100, 89100)
+		FeeBps:    r.Float64() * maxFeeBps, // -> fee rate in [0, 100) bps of notional
 	})
 }
 
 // toModel converts a generated fill into a model.Fill against a fixed
-// instrument. Quantity/price/cost are mapped into realistic positive ranges so
-// the sequences exercise the ledger rather than degenerate zeros/NaNs.
+// instrument. Quantity/price/fee rate are mapped into realistic positive ranges
+// so the sequences exercise the ledger rather than degenerate zeros/NaNs, and
+// the fee is charged on the notional exactly as the executor charges it.
 func (g genFill) toModel(instrument string) model.Fill {
 	side := model.Sell
 	if g.IsBuy {
@@ -60,7 +64,8 @@ func (g genFill) toModel(instrument string) model.Fill {
 	// Map the raw [0,1)-ish quick floats into bounded positive ranges.
 	qty := 0.01 + math.Mod(math.Abs(g.Quantity), 5.0)
 	price := 100.0 + math.Mod(math.Abs(g.FillPrice), 90_000.0)
-	cost := math.Mod(math.Abs(g.TxCost), 50.0)
+	feeBps := math.Mod(math.Abs(g.FeeBps), maxFeeBps)
+	cost := price * qty * feeBps / 10_000
 	return model.Fill{
 		OrderID:         "prop",
 		Instrument:      instrument,
@@ -70,6 +75,16 @@ func (g genFill) toModel(instrument string) model.Fill {
 		TransactionCost: cost,
 		Timestamp:       time.Now(),
 	}
+}
+
+// resized returns f with its size set to qty and its fee rescaled in proportion,
+// so a leg whose size a property overrides after generation still pays the same
+// fee RATE on what it actually trades. Overriding Quantity alone would leave a
+// fee priced for a different size, which can again exceed the new notional.
+func resized(f model.Fill, qty float64) model.Fill {
+	f.TransactionCost *= qty / f.Quantity
+	f.Quantity = qty
+	return f
 }
 
 // replay applies a sequence of generated fills to a fresh portfolio and returns
@@ -172,15 +187,17 @@ func flipLegs(buy, sell genFill) (bm, sm model.Fill) {
 
 	sm = sell.toModel(instrument)
 	sm.Side = model.Sell
-	sm.Quantity = bm.Quantity + (0.01 + math.Mod(math.Abs(sell.Quantity), 5.0))
+	sm = resized(sm, bm.Quantity+(0.01+math.Mod(math.Abs(sell.Quantity), 5.0)))
 	return bm, sm
 }
 
 // flipThroughZeroHolds is the flip-through-zero property: a long of size q
 // followed by an opposing sell strictly larger than q lands in a short whose
-// size is exactly (sellQty - q) and whose AverageCost is positive and at or
-// below the flip fill price (a fee lowers a short's effective entry, the mirror
-// of a long's fee raising it).
+// size is exactly (sellQty - q) and whose AverageCost is the flip price less
+// the sell's fee per unit (a fee lowers a short's effective entry, the mirror
+// of a long's fee raising it). That basis is positive and at or below the flip
+// price whenever the fee is below the sell's notional, which every realistic
+// fee is; see TestAdv_FlipWithFeeAboveNotional for the case where it is not.
 func flipThroughZeroHolds(buy, sell genFill) bool {
 	const instrument = "BTC-USDT"
 	bm, sm := flipLegs(buy, sell)
@@ -198,6 +215,11 @@ func flipThroughZeroHolds(buy, sell genFill) bool {
 	if !relApproxEqual(pos.Quantity, wantShort) {
 		return false
 	}
+	// The remainder's fee share spread over the remainder is the sell's whole
+	// fee per unit, so the new basis is exactly price - fee/sellQty.
+	if !relApproxEqual(pos.AverageCost, sm.FillPrice-sm.TransactionCost/sm.Quantity) {
+		return false
+	}
 	// New SHORT cost basis is strictly positive and <= the flip price.
 	if pos.AverageCost > sm.FillPrice+propEps || pos.AverageCost <= 0 {
 		return false
@@ -207,8 +229,8 @@ func flipThroughZeroHolds(buy, sell genFill) bool {
 	return relApproxEqual(snap.TotalValue, recomputed)
 }
 
-// TestProp_FlipThroughZero runs flipThroughZeroHolds across randomized
-// prices, quantities and fees.
+// TestProp_FlipThroughZero runs flipThroughZeroHolds across randomised
+// prices, quantities and fee rates.
 func TestProp_FlipThroughZero(t *testing.T) {
 	if err := quick.Check(flipThroughZeroHolds, &quick.Config{MaxCount: 2000}); err != nil {
 		t.Error(err)
@@ -320,7 +342,7 @@ func roundTripLegs(open, closing genFill, openLong bool) (om, cm model.Fill) {
 	} else {
 		om.Side, cm.Side = model.Sell, model.Buy
 	}
-	cm.Quantity = om.Quantity
+	cm = resized(cm, om.Quantity)
 	return om, cm
 }
 

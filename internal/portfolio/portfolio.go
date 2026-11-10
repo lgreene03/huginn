@@ -90,9 +90,15 @@ func New(initialCash float64) *Portfolio {
 // ApplyFill records a simulated execution against the portfolio.
 //
 // Positions are SIGNED: Quantity > 0 is long, < 0 is short, 0 is flat.
-// AverageCost is the POSITIVE average entry price of the currently-open
-// position. The fill economics generalize the original long-only avg-cost
-// ledger: a same-direction fill adds at a fee-inclusive weighted average, an
+// AverageCost is the fee-adjusted average entry price of the currently-open
+// position. It is positive whenever each fee is below its own fill's notional,
+// as every fee the executor charges (a bps rate) is. A short whose opening fee
+// exceeded its proceeds has a negative AverageCost: that is its true effective
+// entry, not an error, and the PnL still reconciles exactly
+// (TestAdv_FlipWithFeeAboveNotional).
+//
+// The fill economics generalize the original long-only avg-cost ledger: a
+// same-direction fill adds at a fee-inclusive weighted average, an
 // opposing fill closes (realizing PnL net of the prorated closing fee) and may
 // flip through zero, opening a fresh position in the opposite direction at the
 // fill price (with the remaining fee portion embedded in the new cost basis).
