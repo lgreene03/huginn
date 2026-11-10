@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -1631,17 +1631,17 @@
 <li><strong>Portfolio</strong> (<code>internal/portfolio/portfolio.go</code>): thread-safe FIFO-avg-cost book, realized PnL on sell, unrealized via <code>LastMarkPrice</code>. <code>portfolio_test.go</code> validates round-trip PnL.</li>
 <li><strong>Journal</strong> (<code>internal/journal/</code>): pluggable <code>Writer</code> interface, JSONL writer + JSONL reader/replay for crash recovery, Postgres writer with auto-init schema (<code>trade_fills</code> table, lines 51–67 of <code>postgres.go</code>) and replay-from-DB recovery.</li>
 <li><strong>Kafka</strong> (<code>internal/kafka/</code>): multi-topic fan-in consumer with buffered channel + per-topic goroutines, intent producer (<code>segmentio/kafka-go</code>, <code>RequireAll</code> acks), fills consumer.</li>
-<li><strong>HTTP server</strong> (<code>internal/server/http.go</code>): <code>/healthz</code> (returns portfolio snapshot), <code>/readyz</code>, <code>/metrics</code> (Prom), <code>/api/stream</code> (SSE @ 500 ms), <code>/api/breaker/{trigger,reset}</code>, <code>/api/fills/mock</code>.</li>
+<li><strong>HTTP server</strong> (<code>internal/server/http.go</code>): <code>/healthz</code> (returns portfolio snapshot), <code>/readyz</code>, <code>/metrics</code> (Prom), <code>/api/stream</code> (SSE @ 500 ms), <code>/api/breaker/{trigger,reset}</code>. (<code>/api/fills/mock</code> was removed on 2026-11-10 with the web app; see below.)</li>
 <li><strong>Backtest engine</strong> (<code>internal/backtest/engine.go</code>): JSONL replay, daily equity sampling (by <code>event.EventTime.YearDay()</code>), terminal Sharpe + MDD via <code>internal/metrics/analysis.go</code>.</li>
 <li><strong>Historical fetcher</strong> (<code>cmd/fetcher/main.go</code>): Binance <code>aggTrades</code> → windowed OBI/VPIN/VWAP → JSONL. Used to feed the backtest engine.</li>
-<li><strong>Web UI</strong> (<code>web/</code>): React 19 + Vite + TS dashboard with neon-cyan theme. Connects to <code>http://localhost:8083/api/stream</code> (SSE), renders inline-SVG equity curve, positions table, fills log, manual halt/resume buttons, manual-fill console.</li>
-<li><strong>Docker Compose</strong> (<code>docker-compose.yml</code>): huginn + dashboard + sleipnir + redpanda + postgres. Sleipnir is wired as a sibling service pointing at Binance testnet.</li>
+<li>~~<strong>Web UI</strong> (<code>web/</code>): React 19 + Vite + TS dashboard with neon-cyan theme. Connects to <code>http://localhost:8083/api/stream</code> (SSE), renders inline-SVG equity curve, positions table, fills log, manual halt/resume buttons, manual-fill console.~~ Retired on 2026-11-10 under Norse decision D6. It was never deployed, showed a hardcoded "Uptime: 100%", claimed the engine was executing strategy signals, and posted mock fills through the real executor. The operator console lives in <code>norse-stack/console</code>.</li>
+<li><strong>Docker Compose</strong> (<code>docker-compose.yml</code>): huginn + sleipnir + redpanda + postgres. Sleipnir is wired as a sibling service pointing at Binance testnet.</li>
 <li><strong>CI</strong>: <code>.github/workflows/ci.yml</code> — Go 1.23, <code>go mod verify</code>, build, vet, <code>go test ./...</code>. Single Linux job, no race, no coverage, no matrix.</li>
 </ul>
 <h3 id="what-is-broken-right-now">What is broken right now<a class="headerlink" href="#what-is-broken-right-now" title="Permanent link">&para;</a></h3>
 <ol>
 <li>~~<strong><code>go build ./...</code> fails on <code>main</code>.</strong>~~ Fixed — <code>server.New</code> signature updated. <code>go build ./...</code> is green.</li>
-<li>~~<strong><code>web/package.json</code> pins <code>typescript ~6.0.2</code> and <code>vite ^8.0.12</code>.</strong> Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). <code>npm ci</code> will fail.~~ Resolved — those releases shipped (the lockfile now resolves <code>typescript@6.0.3</code> and <code>vite@8.0.13</code> with integrity hashes), and the <code>web</code> CI job (<code>npm ci</code> → build → Playwright) is green on <code>main</code>. The optimistic pins turned out to be correct; fresh clones install cleanly.</li>
+<li>~~<strong><code>web/package.json</code> pins <code>typescript ~6.0.2</code> and <code>vite ^8.0.12</code>.</strong> Neither version exists yet on npm (TS is at 5.x, Vite at 6.x). <code>npm ci</code> will fail.~~ Resolved — those releases shipped (the lockfile now resolves <code>typescript@6.0.3</code> and <code>vite@8.0.13</code> with integrity hashes), and the <code>web</code> CI job (<code>npm ci</code> → build → Playwright) is green on <code>main</code>. The optimistic pins turned out to be correct; fresh clones install cleanly. (Moot since 2026-11-10: <code>web/</code> and its CI job were removed.)</li>
 <li><strong><code>docker-compose.yml</code></strong> references a <code>sleipnir</code> build context at <code>../sleipnir</code> — fine on the author's machine, broken for any other clone or CI. <em>(Mitigated by the cross-stack <code>docker-compose.stack.yml</code> in the muninn repo, which is the recommended way to run the full stack.)</em></li>
 </ol>
 <h3 id="what-the-readme-claims-but-isnt-real">What the README claims but isn't real<a class="headerlink" href="#what-the-readme-claims-but-isnt-real" title="Permanent link">&para;</a></h3>
@@ -1666,7 +1666,7 @@
 - ~~<strong>No feature-staleness circuit breaker.</strong>~~ Fixed in Phase 1 — <code>RISK_STALENESS_TIMEOUT</code> auto-halts when no feature event arrives; <code>RISK_AUTO_RESUME_AFTER_STALENESS</code> auto-resumes on fresh event.
 - ~~<strong>No per-instrument position limit.</strong>~~ Fixed in Phase 1 — <code>position_limit_per_instrument</code> config map.
 - <strong>Risk evaluates the prospective fill but doesn't reserve cash.</strong> Two concurrent strategy signals on the same instrument could both pass risk and overspend cash. Today, single-threaded dispatch hides this.
-- ~~<strong>Mock-fill endpoint bypasses the live-fill path.</strong>~~ Fixed — <code>/api/fills/mock</code> now applies through <code>executor.OnExecutionFill</code> (<code>internal/server/http.go</code>) instead of a bare <code>portfolio.ApplyFill</code>. The mock fill is journaled, deduplicated (tagged with a <code>mock-exec-*</code> <code>ExecutionID</code>), increments <code>FillsExecutedTotal</code>, and triggers strategy-state persistence — full parity with a real Sleipnir fill. Previously it mutated the portfolio in isolation, so the fill never reached the journal and was lost on restart, silently diverging the journal from the book. Regression-tested in <code>internal/server/mock_fill_test.go</code>.</p>
+- ~~<strong>Mock-fill endpoint bypasses the live-fill path.</strong>~~ Fixed — <code>/api/fills/mock</code> now applies through <code>executor.OnExecutionFill</code> (<code>internal/server/http.go</code>) instead of a bare <code>portfolio.ApplyFill</code>. The mock fill is journaled, deduplicated (tagged with a <code>mock-exec-*</code> <code>ExecutionID</code>), increments <code>FillsExecutedTotal</code>, and triggers strategy-state persistence — full parity with a real Sleipnir fill. Previously it mutated the portfolio in isolation, so the fill never reached the journal and was lost on restart, silently diverging the journal from the book. Regression-tested in <code>internal/server/mock_fill_test.go</code>. Superseded on 2026-11-10: the endpoint was removed with the web app (Norse decision D6), and the journaling guard now calls <code>executor.OnExecutionFill</code> directly in <code>internal/executor/execution_fill_test.go</code>.</p>
 <h3 id="backtest-vs-live-divergence">Backtest vs. live divergence<a class="headerlink" href="#backtest-vs-live-divergence" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Time semantics: OK.</strong> Backtest dispatches directly to <code>exec.OnFeature(event)</code> with <code>event.EventTime</code>; fills inherit that time. Live mode also tags fills with <code>event.EventTime</code>. Consistent.</li>
@@ -1688,7 +1688,7 @@
 <li>~~<strong>No race detector in CI</strong>, no coverage, no Go matrix (1.23 only), no lint (golangci-lint).~~ Fixed — CI runs <code>go test -race</code>, coverage reports, golangci-lint v2 with errcheck + gosec + staticcheck.</li>
 </ul>
 <h3 id="web-ui-assessment">Web UI assessment<a class="headerlink" href="#web-ui-assessment" title="Permanent link">&para;</a></h3>
-<p><em>This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated.</em>
+<p><em>The web app assessed here was retired on 2026-11-10 under Norse decision D6, and <code>web/</code> no longer exists. This assessment predates Phase 6, which hardened the operator console; the items below are kept for history with their resolution annotated.</em>
 - ~250 lines of TS, one <code>App.tsx</code>, no router, ~~no test~~ (Phase 6 added Playwright e2e at <code>web/tests/e2e/smoke.spec.ts</code>), no state-management library.
 - Single SSE source-of-truth — good pattern.
 - ~~Hardcoded <code>http://localhost:8083</code>. Will not work behind a reverse proxy.~~ Fixed in Phase 6 — <code>API_BASE</code> reads <code>import.meta.env.VITE_API_BASE</code> (default <code>http://localhost:8081</code>), documented in <code>web/.env.example</code>.
@@ -1713,7 +1713,7 @@
 - Add <code>go test -race ./...</code> and <code>go vet ./...</code> to CI, plus a <code>web</code> job that runs <code>npm ci &amp;&amp; npm run build</code> and <code>npm run lint</code>.
 - Make <code>docker-compose.yml</code> Sleipnir reference optional via a compose profile (<code>profiles: [live]</code>) so plain clones still come up.
 - README correction pass: fix the strategy list, env-var table, and the "no exchange API connection" Non-Goal phrasing.</p>
-<p><strong>Exit criteria.</strong> Fresh clone: <code>go build ./... &amp;&amp; go test -race ./... &amp;&amp; (cd web &amp;&amp; npm ci &amp;&amp; npm run build)</code> all pass. CI is actually green, not just "passing because the workflow only checks <code>go vet</code>."</p>
+<p><strong>Exit criteria.</strong> Fresh clone: <code>go build ./... &amp;&amp; go test -race ./... &amp;&amp; (cd web &amp;&amp; npm ci &amp;&amp; npm run build)</code> all pass. CI is actually green, not just "passing because the workflow only checks <code>go vet</code>." (The <code>web</code> half no longer applies: the app and its CI job were removed on 2026-11-10.)</p>
 <p><strong>Risks.</strong> None — pure janitorial. If this phase is hard, the codebase has rot we haven't surfaced yet.</p>
 <hr />
 <h2 id="phase-1-restart-correctness">Phase 1 — Restart correctness ✅<a class="headerlink" href="#phase-1-restart-correctness" title="Permanent link">&para;</a></h2>
@@ -1747,7 +1747,7 @@
 - ✅ <strong>OpenTelemetry traces.</strong> Shipped in commit <code>6155724</code> (<code>feat(tracing): Phase 3 OTel</code>). <code>internal/tracing/tracing.go</code> initializes an OTLP gRPC exporter when <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is set, otherwise installs a no-op tracer provider (no runtime cost when unset). Span coverage: <code>executor.on_feature</code> wraps strategy → risk → executor → journal → portfolio; <code>kafka.fill_received</code> and <code>executor.on_execution_fill</code> wrap the inbound fill path. W3C TraceContext is injected on outbound intents (<code>kafka/producer.go:81</code>) and extracted from inbound fills (<code>kafka/fills_consumer.go:113</code>), making <code>huginn → sleipnir → huginn</code> render as one span tree. See <code>sleipnir/docs/CONTRACTS.md</code> for the wire-level header contract.
 - ✅ <strong>Log volume control.</strong> Hot-path emits demoted to <code>slog.Debug</code>: <code>portfolio.ApplyFill</code> ("Fill applied", <code>portfolio.go:104</code>), executor paper-trade emit ("Paper trade executed", <code>executor.go:269</code>), and every strategy's "Strategy signal" line (<code>obi_threshold.go:93,112</code>, <code>vpin_breakout.go:93</code>, <code>vwap_deviation.go:95,114</code>, <code>ema_crossover.go:128,151</code>). <code>slog.Info</code> is retained only for session-level events — risk rejections, live-fill applications, parameter updates, and the per-session summary.
 - ✅ <strong>A bundled Grafana dashboard JSON</strong> lives at <code>deploy/grafana/huginn.json</code>. Panels: Equity curve (total / cash / all-in), Realized PnL, Unrealized PnL, Fills/min, Rejections/min, Orders rejected by reason, Feature event age p50/p95/p99 (Muninn → huginn latency), Signal → fill latency, Orders generated by strategy &amp; side, Risk halt status.
-- ✅ <strong><code>/api/snapshot</code> endpoint</strong> wired in <code>internal/server/http.go:362</code> (current per-tick payload as plain JSON), with <code>/api/snapshot/history</code> at <code>:363</code> exposing the 720-point equity ring buffer. The web UI hydrates the equity chart from the history endpoint on mount before subscribing to the SSE stream.</p>
+- ✅ <strong><code>/api/snapshot</code> endpoint</strong> wired in <code>internal/server/http.go:362</code> (current per-tick payload as plain JSON), with <code>/api/snapshot/history</code> at <code>:363</code> exposing the 720-point equity ring buffer. The retired web UI hydrated its equity chart from the history endpoint on mount before subscribing to the SSE stream.</p>
 <p><strong>Exit criteria.</strong> <code>curl :8081/metrics</code> exposes the new metrics. The Grafana dashboard JSON loads against a default Prometheus scrape and shows non-empty panels in a backtest replay.</p>
 <p><strong>Risks.</strong> OTel pulls in significant deps. Make the exporter optional (no-op tracer if env unset).</p>
 <hr />
@@ -1776,6 +1776,7 @@
 <p><strong>Risks.</strong> Backwards compatibility with existing <code>trade_fills</code> tables. The first migration should be idempotent against the current schema.</p>
 <hr />
 <h2 id="phase-6-hardened-web-ui">Phase 6 — Hardened Web UI ✅<a class="headerlink" href="#phase-6-hardened-web-ui" title="Permanent link">&para;</a></h2>
+<p><em>Retired on 2026-11-10 under Norse decision D6.</em> The web app this phase built (<code>web/</code>), its <code>web</code> CI job, its compose service and the <code>POST /api/fills/mock</code> endpoint have been removed; the record below is kept as history. The HTTP endpoints it added (<code>GET</code>/<code>PUT /api/strategy/config</code>, <code>/api/snapshot/history</code>) remain, and the operator console lives in <code>norse-stack/console</code>.</p>
 <p><strong>Goal.</strong> The dashboard is a real operator console: reload-safe, deployable behind a reverse proxy, with strategy management.</p>
 <p><strong>Deliverables.</strong>
 - ✅ <strong>Strategy control panel.</strong> <code>GET/PUT /api/strategy/config</code> wired up — GET returns <code>executor.SystemConfig</code> (strategy name, threshold, order size, fast/slow periods, position limit); PUT calls <code>executor.UpdateConfig</code> and is auth-guarded.
@@ -1842,7 +1843,7 @@
 <li><strong>Not a real exchange client.</strong> Huginn talks to Sleipnir over Kafka; Sleipnir talks to the venue.</li>
 <li><strong>Not a research notebook environment.</strong> Analytics belong in <code>muninn-py</code>.</li>
 <li><strong>Not opinionated about strategy language.</strong> Strategies are Go structs.</li>
-<li><strong>Not a UI framework or analytics dashboard.</strong> The bundled <code>web/</code> is an operator console — halt, resume, tune, observe. Not a research surface.</li>
+<li><strong>Not a UI framework or analytics dashboard.</strong> Huginn ships no front end; it exposes HTTP endpoints to halt, resume, tune and observe. The operator console lives in <code>norse-stack/console</code>. Not a research surface.</li>
 </ul>
 <hr />
 <h2 id="phase-ordering-rationale">Phase ordering rationale<a class="headerlink" href="#phase-ordering-rationale" title="Permanent link">&para;</a></h2>
@@ -1930,7 +1931,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -1510,7 +1510,7 @@
 <p>Or via environment variables: <code>DATABASE_MAX_CONNS</code>, <code>DATABASE_MIN_CONNS</code>, <code>DATABASE_MAX_CONN_LIFETIME</code>, <code>DATABASE_MAX_CONN_IDLE_TIME</code>.</p>
 <hr />
 <h2 id="api-authentication">API authentication<a class="headerlink" href="#api-authentication" title="Permanent link">&para;</a></h2>
-<p>Mutating endpoints (<code>/api/breaker/*</code>, <code>/api/fills/mock</code>, <code>PUT /api/strategy/config</code>) accept an optional bearer token. Set <code>HUGINN_API_TOKEN</code> in the environment; if the variable is empty, auth is disabled (backward-compatible default for local / trusted-network deployments).</p>
+<p>Mutating endpoints (<code>/api/breaker/*</code>, <code>PUT /api/strategy/config</code>) accept an optional bearer token. Set <code>HUGINN_API_TOKEN</code> in the environment; if the variable is empty, auth is disabled (backward-compatible default for local / trusted-network deployments).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># With a token set</span>
 <a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8081/api/breaker/trigger<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$HUGINN_API_TOKEN</span><span class="s2">"</span>
@@ -1662,7 +1662,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>

@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -1244,7 +1244,7 @@
 </tr>
 <tr>
 <td>Watch equity, PnL, and fills live</td>
-<td>Dashboard at <code>http://localhost:8081</code> (SSE-driven)</td>
+<td><code>GET /api/snapshot</code>, the <code>GET /api/stream</code> SSE feed, or the console in <code>norse-stack/console</code></td>
 </tr>
 <tr>
 <td>Tune parameters without restarting</td>
@@ -1252,7 +1252,7 @@
 </tr>
 <tr>
 <td>Halt/resume the engine</td>
-<td>Dashboard buttons or <code>POST /api/breaker/trigger</code></td>
+<td><code>POST /api/breaker/trigger</code> and <code>/api/breaker/reset</code> (auth-gated), or the <code>norse-stack</code> console's halt control</td>
 </tr>
 </tbody>
 </table>
@@ -1308,7 +1308,7 @@
 <li>Backtest engine: parity-tested against live executor, HTML report output</li>
 <li>Calibration CLI: parameter grid sweep with CSV output</li>
 <li>Observability: Prometheus metrics, Grafana dashboard JSON, SSE equity stream</li>
-<li>Web UI: live operator console (halt/resume, manual fill, strategy tuning, equity chart)</li>
+<li>Operator console: none bundled; the bundled web app was retired on 2026-11-10 and the console lives in <code>norse-stack/console</code></li>
 <li>Release engineering: multi-arch Docker images, versioned builds, lint CI</li>
 </ul>
 <p>See <a href="ROADMAP/">Roadmap</a> for phase details and <a href="architecture/">Architecture</a> for internals.</p>
@@ -1386,7 +1386,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
