@@ -60,7 +60,8 @@ Redpanda (features.obi.v1) → Kafka Consumer → Executor
 - `internal/kafka/` — Consumer (multi-topic fan-in), intent producer, fills consumer, price tick consumer (sub-second exit monitoring).
 - `internal/server/` — HTTP: `/healthz`, `/readyz`, `/metrics`, `/api/snapshot`, `/api/stream` (SSE), `/api/breaker/*`. gRPC: `huginn.HuginnService/GetSnapshot` on port 50051 with reflection.
 - `internal/config/` — YAML + envconfig. All fields have `envconfig` tags for env-var override.
-- `web/` — React operator dashboard (equity curve, positions, fills, halt/resume).
+
+There is no front end in this repo. The bundled React app (`web/`) was retired on 2026-11-10 (Norse decision D6) together with its `/api/fills/mock` route; the operator console lives in `norse-stack/console` and reads huginn over HTTP.
 
 ## Configuration
 

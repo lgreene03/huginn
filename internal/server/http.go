@@ -15,8 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/lgreene03/huginn/internal/executor"
-	"github.com/lgreene03/huginn/internal/metrics"
-	"github.com/lgreene03/huginn/internal/model"
 	"github.com/lgreene03/huginn/internal/portfolio"
 	"github.com/lgreene03/huginn/internal/risk"
 	"github.com/lgreene03/huginn/internal/strategy"
@@ -75,11 +73,13 @@ type Server struct {
 	// apiToken gates mutating endpoints. Read from HUGINN_API_TOKEN env var.
 	// When empty, mutating control endpoints FAIL CLOSED (503) rather than
 	// passing through — an unconfigured token must never leave the breaker
-	// and mock-fill controls open. Read-only endpoints are unaffected.
+	// and strategy-config controls open. Read-only endpoints are unaffected.
 	apiToken string
-	// corsOrigin is the single allowed dashboard origin echoed in
+	// corsOrigin is the single allowed browser origin echoed in
 	// Access-Control-Allow-Origin. Read from HUGINN_DASHBOARD_ORIGIN;
-	// defaults to http://localhost:8084. Never "*" on token-gated routes.
+	// defaults to http://localhost:8084, the port of the retired huginn web
+	// app. The Norse console proxies same-origin and does not rely on it.
+	// Never "*" on token-gated routes.
 	corsOrigin string
 	equity     *equityRing
 	// readinessProbe, when set, is an extra gate on /readyz: it returns a
@@ -166,7 +166,7 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 //
 // It FAILS CLOSED: when HUGINN_API_TOKEN is unset the mutation is refused with
 // 503 rather than passing through, so an unconfigured deployment can never
-// expose the breaker/mock-fill controls open. When the token is set, a missing
+// expose the breaker or strategy-config controls open. When the token is set, a missing
 // or incorrect bearer token returns 401. Read-only endpoints do not use this
 // middleware and stay open.
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -254,7 +254,8 @@ func (s *Server) readyzHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-// streamHandler implements Server-Sent Events (SSE) to push live engine state to the web UI.
+// streamHandler implements Server-Sent Events (SSE) to push live engine state to
+// any subscribed client every 500 ms.
 func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -280,7 +281,7 @@ func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			snap := s.portfolio.Snapshot()
 
-			// Construct extended UI payload including current breaker state
+			// Construct the payload, including current breaker state
 			payload := map[string]interface{}{
 				"portfolio": snap,
 				"halted":    s.riskMgr.IsHalted(),
@@ -322,82 +323,6 @@ func (s *Server) breakerResetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"running","message":"Strategy execution manually resumed."}`))
-}
-
-// mockFillHandler manually submits a mock fill.
-func (s *Server) mockFillHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Instrument string  `json:"instrument"`
-		Side       string  `json:"side"` // "BUY" or "SELL"
-		Quantity   float64 `json:"quantity"`
-		Price      float64 `json:"price"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if req.Instrument == "" || req.Quantity <= 0 || req.Price <= 0 {
-		http.Error(w, "Invalid parameters", http.StatusBadRequest)
-		return
-	}
-
-	side := model.Buy
-	if req.Side == "SELL" {
-		side = model.Sell
-	}
-
-	ts := time.Now()
-	fill := model.Fill{
-		OrderID:         fmt.Sprintf("mock-fill-%d", ts.UnixNano()),
-		ExecutionID:     fmt.Sprintf("mock-exec-%d", ts.UnixNano()),
-		Instrument:      req.Instrument,
-		Side:            side,
-		Quantity:        req.Quantity,
-		FillPrice:       req.Price,
-		TransactionCost: req.Price * req.Quantity * 0.0005, // 5 bps cost
-		SlippageBps:     5,
-		Timestamp:       ts,
-	}
-
-	// Run risk evaluation before applying. A real Sleipnir fill's originating
-	// intent already cleared risk before publication; a mock fill has no prior
-	// intent, so it must be gated here.
-	snap := s.portfolio.Snapshot()
-	if s.riskMgr != nil && !s.riskMgr.Evaluate(fill, snap) {
-		http.Error(w, "Rejected by Risk Manager", http.StatusForbidden)
-		return
-	}
-
-	// Apply through the same path a live execution fill takes, so the mock is
-	// journaled, deduplicated, and triggers strategy-state persistence rather
-	// than being a bare portfolio mutation. Without this the mock fill never
-	// reached the journal and was lost on restart, silently diverging the
-	// journal from the portfolio book. OnExecutionFill increments
-	// FillsExecutedTotal and refreshes the cash/realized/total gauges; we
-	// refresh the unrealized gauge below since it does not. The nil-executor
-	// fallback keeps the endpoint working in a minimally-constructed server.
-	if s.executor != nil {
-		s.executor.OnExecutionFill(r.Context(), fill)
-	} else {
-		s.portfolio.ApplyFill(fill)
-		metrics.FillsExecutedTotal.WithLabelValues(fill.Side.String()).Inc()
-	}
-	metrics.PortfolioUnrealizedPnL.Set(s.portfolio.Snapshot().UnrealizedPnL)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "success",
-		"message": "Mock fill executed",
-		"fill":    fill,
-	})
 }
 
 // versionHandler returns the build identity as JSON.
@@ -643,7 +568,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/stream", s.streamHandler)
 	mux.HandleFunc("/api/breaker/trigger", s.corsMiddleware(s.authMiddleware(s.breakerTriggerHandler)))
 	mux.HandleFunc("/api/breaker/reset", s.corsMiddleware(s.authMiddleware(s.breakerResetHandler)))
-	mux.HandleFunc("/api/fills/mock", s.corsMiddleware(s.authMiddleware(s.mockFillHandler)))
 	mux.HandleFunc("/api/strategy/config", s.corsMiddleware(s.strategyConfigHandler))
 	mux.HandleFunc("/version", s.corsMiddleware(s.versionHandler))
 	mux.Handle("/metrics", promhttp.Handler())

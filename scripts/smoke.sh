@@ -11,7 +11,7 @@
 #   APP_URL            — override Huginn base URL  (default: http://localhost:8083)
 #   BROKER             — override Redpanda address  (default: localhost:9092)
 #   HUGINN_API_TOKEN   — bearer token for mutating control endpoints. Mutating
-#                        endpoints (/api/breaker/*, /api/fills/mock,
+#                        endpoints (/api/breaker/*,
 #                        PUT /api/strategy/config) FAIL CLOSED (503) when the
 #                        server has no token configured, so this must match the
 #                        token set in the norse-stack compose for those calls.

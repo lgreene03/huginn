@@ -30,21 +30,6 @@ services:
     cap_drop:
       - ALL
 
-  dashboard:
-    build:
-      context: ./web
-    ports:
-      # Container nginx runs unprivileged and listens on 8080; host surface
-      # stays on 8084 (matches HUGINN_DASHBOARD_ORIGIN default).
-      - "8084:8080"
-    depends_on:
-      - huginn
-    # nginx runs unprivileged on 8080, so all caps can be dropped safely.
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-
   # Sleipnir lives in a sibling repo. Opt in with `--profile live`.
   # Without the profile, plain clones come up cleanly without ../sleipnir.
   sleipnir:
