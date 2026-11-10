@@ -397,10 +397,9 @@ func TestEquityInvariantUnderShorts(t *testing.T) {
 
 // TestEquityConservationFeeFree checks the stricter accounting identity
 // equity == initial + realized + unrealized for a mixed long/short sequence
-// with ZERO fees. (With nonzero fees this identity does not hold for shorts,
-// because the spec embeds the entry fee into AverageCost for both directions —
-// see TestProp_SignedEquityConservation; the canonical cash+sum(qty*mark)
-// invariant is the one that always holds.)
+// with ZERO fees. The identity holds with fees too, because an entry fee moves
+// the basis in the position's own direction (a long's up, a short's down);
+// TestProp_EquityReconcilesToPnL asserts it over random fee-bearing sequences.
 func TestEquityConservationFeeFree(t *testing.T) {
 	p := New(100_000.0)
 

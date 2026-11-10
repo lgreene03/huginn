@@ -254,3 +254,56 @@ func TestAdv_EquityInvariantTenFillSequence(t *testing.T) {
 		t.Errorf("C expected long 6, got %.8f", pos.Quantity)
 	}
 }
+
+// (f) Regression for the 2026-11-10 TestProp_FlipThroughZero flake: a flip
+// whose fee exceeds the flipping fill's whole notional. Reported case: a 37.21
+// fee on a sell at 274.67 that leaves a 0.029 short. The report did not carry
+// the long being flipped, so this uses a 0.05 long @270 (fee 0); any long under
+// 0.1065 puts that sell's notional below its fee.
+//
+// Long 0.05 @270 (fee 0), SELL 0.079 @274.67 fee 37.21 (notional 21.69893),
+// then cover 0.029 @280 (fee 0).
+//
+//	close 0.05:  realized = (274.67-270)*0.05 - 37.21*(0.05/0.079) = -23.3171
+//	open 0.029:  avg = 274.67 - (37.21*(0.029/0.079))/0.029 = -196.3427
+//	cover 0.029: realized += -(280 - avg)*0.029 = -13.8139
+//
+// The negative basis is correct, not a defect: the short took in 274.67 per
+// unit and paid 471.01 per unit of fee, so its effective entry is below zero.
+// What matters is that the books balance, so the final step is asserted from
+// the economics alone rather than from the ledger's formulas: the long gained
+// 0.05*(274.67-270), the short lost 0.029*(280-274.67) and the single fee was
+// 37.21, so once flat, realized PnL is exactly that sum and equals the change
+// in cash.
+func TestAdv_FlipWithFeeAboveNotional(t *testing.T) {
+	const inst = "X"
+	runSteps(t, 10_000.0, inst, []step{
+		{
+			name:           "buy 0.05 @270 fee 0",
+			fill:           mkFill(inst, true, 0.05, 270, 0),
+			wantCash:       10_000 - 0.05*270, // 9986.5
+			wantQty:        0.05,
+			wantAvg:        270,
+			wantRealized:   0,
+			wantTotalValue: 10_000,
+		},
+		{
+			name:           "sell 0.079 @274.67 fee 37.21 (close 0.05, open short 0.029)",
+			fill:           mkFill(inst, false, 0.079, 274.67, 37.21),
+			wantCash:       9_986.5 + 0.079*274.67 - 37.21, // 9970.98893
+			wantQty:        -0.029,
+			wantAvg:        274.67 - 37.21/0.079,                   // -196.3427
+			wantRealized:   (274.67-270)*0.05 - 37.21*(0.05/0.079), // -23.3171
+			wantTotalValue: 9_970.98893 - 0.029*274.67,             // 9963.0235
+		},
+		{
+			name:           "buy 0.029 @280 fee 0 (cover to flat)",
+			fill:           mkFill(inst, true, 0.029, 280, 0),
+			wantCash:       9_970.98893 - 0.029*280, // 9962.86893
+			wantQty:        0,
+			wantAvg:        0,
+			wantRealized:   0.05*(274.67-270) - 0.029*(280-274.67) - 37.21, // -37.13107
+			wantTotalValue: 10_000 + 0.05*(274.67-270) - 0.029*(280-274.67) - 37.21,
+		},
+	})
+}
