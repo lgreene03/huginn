@@ -23,7 +23,7 @@ This makes per-topic reading concurrent (so a slow topic doesn't block a fast on
 
 **Easier.**
 
-- The entire decision path — strategy → risk → executor → portfolio — can assume single-threaded application. The only genuinely concurrent operations are the state-persist ticker and the dashboard config handler, which is why those (and only those) require the strategy's mutex.
+- The entire decision path — strategy → risk → executor → portfolio — can assume single-threaded application. The only genuinely concurrent operations are the state-persist ticker and the `PUT /api/strategy/config` HTTP handler, which is why those (and only those) require the strategy's mutex.
 - Backpressure is explicit and bounded: the 1000-element channel absorbs bursts; if the dispatcher falls behind, readers block on the channel send rather than the system growing memory without bound.
 - Adding/removing a topic is configuration, not code.
 

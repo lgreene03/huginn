@@ -11,11 +11,7 @@ bin/
 *.so
 *.dylib
 
-# Web Dependencies & Builds
-web/node_modules/
-web/dist/
-web/.svelte-kit/
-web/build/
+# Local environment files
 .env
 .env.local
 

@@ -11,7 +11,7 @@ Huginn ships six strategies — OBI threshold, VPIN breakout, EMA crossover, VWA
 
 Two forces pull in opposite directions. First, the executor's hot path (`executor.OnFeature`) must treat every strategy identically — it cannot know which concrete type it holds. Second, strategies that carry state must survive a crash: if Huginn restarts mid-session, an EMA accumulator or a set of open OBI positions cannot silently reset to zero, or the risk picture and the strategy's own logic diverge from reality.
 
-A third force is concurrency. `OnFeature` is dispatched from a single goroutine (see ADR-0005), but a 5-second ticker goroutine (`executor.RunStatePersister`) and the dashboard's `PUT /api/strategy/config` handler both touch strategy fields concurrently.
+A third force is concurrency. `OnFeature` is dispatched from a single goroutine (see ADR-0005), but a 5-second ticker goroutine (`executor.RunStatePersister`) and the `PUT /api/strategy/config` HTTP handler both touch strategy fields concurrently.
 
 ## Decision
 
@@ -48,7 +48,7 @@ State blobs are **versioned envelopes**: each strategy writes a `{version, field
 **Harder / cost.**
 
 - The mutex contract is a convention enforced by review and the `-race` test run (`go test -race ./...`), not by the compiler. A new strategy that mutates shared fields without locking will race against the persister goroutine. The package doc points new authors at `ema_crossover.go` as the canonical shape.
-- Reading strategy parameters out for the dashboard (`executor.GetConfig`/`UpdateConfig`) requires a concrete-type `switch` over the four known strategies — the one place the executor is *not* polymorphic. A new strategy that wants live tuning must add itself to both switches. This is an accepted, localized leak documented here so the next author expects it.
+- Reading strategy parameters out over HTTP (`executor.GetConfig`/`UpdateConfig`) requires a concrete-type `switch` over the four known strategies — the one place the executor is *not* polymorphic. A new strategy that wants live tuning must add itself to both switches. This is an accepted, localized leak documented here so the next author expects it.
 
 ## Alternatives Considered
 

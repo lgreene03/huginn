@@ -14,7 +14,7 @@ graph TD
     KF[Kafka Consumer ← Sleipnir] --> E
     E --> J[Journal Writer]
     P --> SRV[HTTP Server]
-    SRV --> UI[Web Dashboard]
+    SRV --> UI[norse-stack console]
 ```
 
 Huginn is a **single-process, single-strategy engine**. The hot path — feature dispatch → strategy signal → risk check → executor fill → portfolio update — runs on a single goroutine. No intra-process parallelism on the critical path; observability and journal writes are the only concurrent operations.
@@ -117,21 +117,16 @@ Exposes:
 | `PUT /api/strategy/config` | token | Live config update |
 | `POST /api/breaker/trigger` | token | Manual halt |
 | `POST /api/breaker/reset` | token | Manual resume |
-| `POST /api/fills/mock` | token | Inject a test fill |
 
 Auth is controlled by `HUGINN_API_TOKEN`. Empty string disables auth (backward-compatible).
 
-### Web Dashboard (`web/`)
+### Operator console
 
-React 19 + Vite + TypeScript. Operator console — not an analytics surface:
-
-- Live equity curve (seeded from ring buffer on mount, updated via SSE)
-- Positions table and fills log
-- Halt/resume circuit-breaker buttons
-- Manual fill injection form
-- Strategy config panel (live-editable via `PUT /api/strategy/config`)
-
-Configured via `VITE_API_BASE` (default: `http://localhost:8081`). See `web/.env.example`.
+Huginn ships no front end of its own. Its bundled React app (`web/`) was retired on
+2026-11-10 under Norse decision D6, together with the `POST /api/fills/mock` route it
+used to inject fills through the real executor. The operator console now lives in
+`norse-stack/console`, which proxies `/api/snapshot`, `/api/alphas`, `/api/validation`
+and `/api/breaker/*` same-origin; Grafana reads `/metrics` through Prometheus.
 
 ---
 
@@ -194,4 +189,3 @@ On boot, Huginn replays the journal:
 | `internal/server` | HTTP + SSE server |
 | `internal/strategy` | Strategy implementations |
 | `internal/version` | Build metadata (ldflags-injected) |
-| `web/` | React operator dashboard |

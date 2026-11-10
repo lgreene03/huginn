@@ -11,6 +11,9 @@ All notable changes to Huginn are documented here. Format follows [Keep a Change
 - **Committed test fixture** `data/btc_test.jsonl` (~550KB) — the dataset the research gateway and walk-forward replay read — so `clone -> run` works config-free.
 - Surfaced previously-orphaned docs in the MkDocs nav: `docs/ADDING_AN_ALPHA.md`, `docs/BENCHMARKS.md`, `docs/STRATEGY_STATE_DESIGN.md`.
 
+### Removed
+- **The bundled web app (`web/`), retired under Norse decision D6.** It was never deployed, showed a hardcoded "Uptime: 100%", claimed the engine was executing strategy signals, and posted mock fills through the real executor. Removed with it: the `web` CI job (npm, ESLint, Vite build, Playwright), the `dashboard` compose service on port 8084, the `web/` lines in `.gitignore` and `.golangci.yml`, and the `POST /api/fills/mock` endpoint with its OpenAPI entry. The journaling guard from `internal/server/mock_fill_test.go` moved to `internal/executor/execution_fill_test.go` and now calls `OnExecutionFill` directly, so the real Sleipnir fill path keeps its coverage. The operator console lives in `norse-stack/console`. The 0.6.0 and 0.8.0 entries below describe the app and the endpoint as they were then.
+
 ### Fixed
 - README/CLAUDE.md strategy count corrected from "four" to the six bundled strategies (`obi`, `vpin`, `vwap_deviation`, `ema_crossover`, `ou`, `composite`) plus the pluggable alpha framework (`internal/strategy/alpha.go`, `alphas_bundled.go`, `composite.go`).
 - README Docker quick-start health check now uses host port `8083` (compose publishes Huginn on `8083:8081`), not `8081`.
