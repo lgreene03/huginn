@@ -1564,6 +1564,16 @@
 <td>&lt; initial_cash × 0.80</td>
 <td>20 % drawdown — review</td>
 </tr>
+<tr>
+<td><code>huginn_entries_blocked_total{reason}</code></td>
+<td>one reason dominating while no intents</td>
+<td>Why huginn is not trading: the first gate that stopped each entry (<code>below_threshold</code>, <code>position_open</code>, <code>max_position</code>, <code>zero_size</code>, <code>cost_hurdle</code>, <code>risk_rejected</code>). The strategy-level reasons are recorded by the composite strategy only</td>
+</tr>
+<tr>
+<td><code>huginn_last_order_intent_timestamp_seconds</code></td>
+<td><code>time() -</code> value grows while features flow</td>
+<td>Unix time of the last order intent; 0 means none since the process started (compare <code>process_start_time_seconds</code>)</td>
+</tr>
 </tbody>
 </table>
 <h3 id="grafana-dashboard">Grafana dashboard<a class="headerlink" href="#grafana-dashboard" title="Permanent link">&para;</a></h3>
