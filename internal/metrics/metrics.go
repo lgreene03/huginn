@@ -7,6 +7,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -290,4 +292,95 @@ var (
 		},
 		[]string{"strategy"},
 	)
+
+	// ─── Idleness instrumentation (G0.8) ────────────────────────────────
+
+	// EntriesBlockedTotal counts entries stopped before they became an order
+	// intent, labelled by the FIRST gate that stopped them. The label set is
+	// closed: it is exactly BlockReasons, and every series is created at zero
+	// on start so a dashboard can tell "never fired" from "not exported".
+	// Without it a strategy that has stopped trading is indistinguishable from
+	// one that has nothing to say. See BlockReason for each reason's meaning.
+	//
+	// The strategy-level reasons are recorded by CompositeStrategy, the
+	// strategy norse-stack runs. The executor records risk_rejected for any
+	// strategy; at that point it cannot tell an entry from an exit, which only
+	// matters for strategies that emit exits (the composite does not).
+	EntriesBlockedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "huginn_entries_blocked_total",
+			Help: "Entries stopped before becoming an order intent, by the first gate that stopped them (below_threshold means no candidate)",
+		},
+		[]string{"reason"},
+	)
+
+	// LastOrderIntentTimestampSeconds is the wall-clock Unix time at which
+	// huginn last issued an order intent: published to the gateway in live
+	// mode, or past the risk check (or parked as a resting maker) in paper
+	// mode. It is 0 until the first intent after the process starts, so 0
+	// means "none since start", never "just now"; compare it with
+	// process_start_time_seconds.
+	LastOrderIntentTimestampSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "huginn_last_order_intent_timestamp_seconds",
+			Help: "Unix time of the last order intent huginn issued; 0 if none since the process started",
+		},
+	)
 )
+
+// BlockReason is the closed set of reasons an entry can be stopped. Using a
+// named type keeps the reason label bounded: only these constants reach
+// EntriesBlockedTotal.
+type BlockReason string
+
+// The reasons, in the order the gates run. The first five are decided inside
+// the strategy; risk_rejected is decided by the executor afterwards.
+const (
+	// BlockBelowThreshold: the signal did not clear the entry band, so there
+	// was no candidate entry at all. Counted so that "no signal" can be told
+	// apart from "a signal that was refused".
+	BlockBelowThreshold BlockReason = "below_threshold"
+	// BlockPositionOpen: the instrument already holds the one position the
+	// strategy allows per instrument.
+	BlockPositionOpen BlockReason = "position_open"
+	// BlockMaxPosition: the signed net-position cap is already reached in the
+	// signal's direction.
+	BlockMaxPosition BlockReason = "max_position"
+	// BlockZeroSize: the computed order quantity was not positive.
+	BlockZeroSize BlockReason = "zero_size"
+	// BlockCostHurdle: the net-of-cost gate judged the expected edge too small
+	// for the round-trip cost.
+	BlockCostHurdle BlockReason = "cost_hurdle"
+	// BlockRiskRejected: the executor's risk manager refused the prospective
+	// fill. huginn_orders_rejected_total carries the risk manager's own reason.
+	BlockRiskRejected BlockReason = "risk_rejected"
+)
+
+// BlockReasons lists every BlockReason in gate order. It is the complete
+// label set of EntriesBlockedTotal.
+var BlockReasons = []BlockReason{
+	BlockBelowThreshold,
+	BlockPositionOpen,
+	BlockMaxPosition,
+	BlockZeroSize,
+	BlockCostHurdle,
+	BlockRiskRejected,
+}
+
+func init() {
+	// Create every reason's series at zero so the full, bounded label set is
+	// exported from the first scrape.
+	for _, r := range BlockReasons {
+		EntriesBlockedTotal.WithLabelValues(string(r))
+	}
+}
+
+// EntryBlocked records one entry stopped for the given reason.
+func EntryBlocked(r BlockReason) {
+	EntriesBlockedTotal.WithLabelValues(string(r)).Inc()
+}
+
+// OrderIntentIssued records the wall-clock time of an order intent.
+func OrderIntentIssued(at time.Time) {
+	LastOrderIntentTimestampSeconds.Set(float64(at.Unix()) + float64(at.Nanosecond())/1e9)
+}
