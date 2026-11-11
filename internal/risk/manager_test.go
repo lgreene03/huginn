@@ -15,7 +15,7 @@ func TestRiskManager(t *testing.T) {
 		DailyLossLimit:    5000.0,
 		PositionLimitHard: 200000.0,
 	}
-	manager := NewManager(cfg, 100_000.0)
+	manager := NewManager(cfg, 100_000.0, WallClock())
 
 	baseSnap := portfolio.Snapshot{
 		Timestamp:   time.Now(),
@@ -98,7 +98,7 @@ func TestPositionLimitShortSymmetry(t *testing.T) {
 	}
 
 	t.Run("Over-cap short from flat is rejected like an over-cap long", func(t *testing.T) {
-		m := NewManager(cfg, 100_000.0)
+		m := NewManager(cfg, 100_000.0, WallClock())
 		// 5 * 50000 = 250k > 200k cap. Same magnitude as the long-rejection case.
 		buy := model.Fill{Instrument: "BTC", Side: model.Buy, Quantity: 5.0, FillPrice: 50000.0}
 		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 5.0, FillPrice: 50000.0}
@@ -111,7 +111,7 @@ func TestPositionLimitShortSymmetry(t *testing.T) {
 	})
 
 	t.Run("In-cap short from flat is approved", func(t *testing.T) {
-		m := NewManager(cfg, 100_000.0)
+		m := NewManager(cfg, 100_000.0, WallClock())
 		// 3 * 50000 = 150k < 200k cap.
 		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 3.0, FillPrice: 50000.0}
 		if !m.Evaluate(sell, baseSnap) {
@@ -120,7 +120,7 @@ func TestPositionLimitShortSymmetry(t *testing.T) {
 	})
 
 	t.Run("Adding to an existing short past the cap is rejected", func(t *testing.T) {
-		m := NewManager(cfg, 100_000.0)
+		m := NewManager(cfg, 100_000.0, WallClock())
 		snap := baseSnap
 		snap.Positions = map[string]portfolio.Position{
 			"BTC": {Quantity: -3.0}, // already short 3 BTC
@@ -135,7 +135,7 @@ func TestPositionLimitShortSymmetry(t *testing.T) {
 	t.Run("Per-instrument cap is symmetric for shorts", func(t *testing.T) {
 		perCfg := cfg
 		perCfg.PositionLimitPerInstrument = map[string]float64{"BTC": 100_000.0}
-		m := NewManager(perCfg, 100_000.0)
+		m := NewManager(perCfg, 100_000.0, WallClock())
 		// 3 * 50000 = 150k > 100k per-instrument cap.
 		sell := model.Fill{Instrument: "BTC", Side: model.Sell, Quantity: 3.0, FillPrice: 50000.0}
 		if m.Evaluate(sell, baseSnap) {
@@ -151,7 +151,7 @@ func TestPositionLimitShortSymmetry(t *testing.T) {
 
 func TestSeedFromBaseline(t *testing.T) {
 	cfg := config.RiskConfig{MaxDrawdownPct: 0.20, PositionLimitHard: 500_000}
-	m := NewManager(cfg, 100_000)
+	m := NewManager(cfg, 100_000, WallClock())
 
 	// Initial peakValue is initialCash (100k).
 	if got := m.PeakValue(); got != 100_000 {
@@ -198,13 +198,13 @@ func TestRecoveryFallback_DrawdownGuard(t *testing.T) {
 	snap := portfolio.Snapshot{TotalValue: 115_000, Cash: 115_000, RealizedPnL: 2_000}
 
 	// Without seeding: peakValue = initialCash ($100k), $115k looks fine.
-	m := NewManager(cfg, initialCash)
+	m := NewManager(cfg, initialCash, WallClock())
 	if !m.Evaluate(fill, snap) {
 		t.Fatal("baseline without seeding should approve fill")
 	}
 
 	// With seeding: peakValue = $120k; $115k is 4.2% below peak — within 20% limit.
-	m2 := NewManager(cfg, initialCash)
+	m2 := NewManager(cfg, initialCash, WallClock())
 	m2.SeedFromBaseline(120_000, 1_000)
 	if !m2.Evaluate(fill, snap) {
 		t.Fatal("seeded manager should approve fill at 4.2% drawdown from peak")
@@ -212,7 +212,7 @@ func TestRecoveryFallback_DrawdownGuard(t *testing.T) {
 
 	// At $94k (21.7% below $120k peak) the seeded manager should trip the breaker.
 	snap2 := portfolio.Snapshot{TotalValue: 94_000, Cash: 94_000, RealizedPnL: 2_000}
-	m3 := NewManager(cfg, initialCash)
+	m3 := NewManager(cfg, initialCash, WallClock())
 	m3.SeedFromBaseline(120_000, 1_000)
 	if m3.Evaluate(fill, snap2) {
 		t.Fatal("seeded manager should reject fill exceeding drawdown limit")

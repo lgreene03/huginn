@@ -365,7 +365,10 @@ func runFold(cfg *config.Config, events []model.FeatureEvent, p Params) foldMetr
 	}
 
 	jw := journal.NewNullWriter()
-	rm := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
+	// Event time, not the wall clock: the whole replay runs inside one
+	// wall-clock day, which would turn the daily loss limit into a cap on the
+	// replay (fold 4 of the 2026-09-10 six-month run stopped at -10,000).
+	rm := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash, risk.NewEventClock())
 	exec := executor.New(s, port, jw, rm, executor.Config{
 		TransactionCostBps: cfg.Executor.TransactionCostBps,
 		SlippageBps:        cfg.Executor.SlippageBps,

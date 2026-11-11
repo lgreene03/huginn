@@ -57,7 +57,7 @@ func priceEvent() model.FeatureEvent {
 }
 
 func haltedRiskManager() *risk.Manager {
-	rm := risk.NewManager(config.RiskConfig{}, 1000)
+	rm := risk.NewManager(config.RiskConfig{}, 1000, risk.WallClock())
 	rm.Halt()
 	return rm
 }

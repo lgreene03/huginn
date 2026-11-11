@@ -20,7 +20,7 @@ func TestReplayDeterminism_IdenticalFills(t *testing.T) {
 		rm := risk.NewManager(config.RiskConfig{
 			MaxDrawdownPct: 0.20,
 			DailyLossLimit: 5000, PositionLimitHard: 100_000,
-		}, 100_000.0)
+		}, 100_000.0, risk.NewEventClock())
 		exec := New(s, p, nil, rm, Config{
 			TransactionCostBps: 10,
 			SlippageBps:        5,
@@ -60,7 +60,7 @@ func TestReplayDeterminism_EMA(t *testing.T) {
 		rm := risk.NewManager(config.RiskConfig{
 			MaxDrawdownPct: 0.20,
 			DailyLossLimit: 5000, PositionLimitHard: 100_000,
-		}, 100_000.0)
+		}, 100_000.0, risk.NewEventClock())
 		exec := New(s, p, nil, rm, Config{
 			TransactionCostBps: 10,
 			SlippageBps:        5,

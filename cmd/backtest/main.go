@@ -79,8 +79,9 @@ func main() {
 	}
 	defer func() { _ = jWriter.Close() }()
 
-	// Initialize risk manager
-	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
+	// Initialize risk manager. A replay keeps time by its events, so the daily
+	// loss window rolls at each UTC midnight in the data.
+	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash, risk.NewEventClock())
 
 	// Initialize executor
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{

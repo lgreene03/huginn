@@ -34,7 +34,7 @@ Compares the intraday realized PnL against a fixed limit. Rejects any order when
 (snap.RealizedPnL - day_start_realized_pnl) < -daily_loss_limit
 ```
 
-The daily window rolls at UTC midnight. `dayStartRealizedPnL` is reset to the current `RealizedPnL` on each day boundary. This prevents loss accumulation across calendar days.
+The daily window rolls at UTC midnight on the manager's clock, which every caller of `risk.NewManager` must choose. Live trading (`cmd/huginn`) passes `risk.WallClock()`, so the window rolls at the host's UTC midnight. Every replay of history (`cmd/backtest`, `cmd/walkforward`, `cmd/calibrate`, `cmd/costsweep` and the research gateway) passes `risk.NewEventClock()`, so the window rolls at each UTC midnight in the data. A replay runs months of events in minutes of wall time: on the wall clock its window never rolled and the daily limit capped the whole replay, which is why fold 4 of the 2026-09-10 six-month walk-forward stopped at -10,000. `dayStartRealizedPnL` is reset to the current `RealizedPnL` on each day boundary. This prevents loss accumulation across calendar days.
 
 **Survival across restarts.** `dayStartRealizedPnL` is persisted alongside `peakValue` in the `_risk` journal key. On first boot or after `_risk` is absent, the `daily_pnl_snapshots` fallback provides the most recent UTC-day baseline.
 
@@ -42,9 +42,9 @@ The daily window rolls at UTC midnight. `dayStartRealizedPnL` is reset to the cu
 
 | Key | Env | Default | Description |
 |---|---|---|---|
-| `risk.daily_loss_limit` | `RISK_DAILY_LOSS_LIMIT` | 0 (disabled) | Maximum allowed intraday loss |
+| `risk.daily_loss_limit` | `RISK_DAILY_LOSS_LIMIT` | 10,000 | Maximum allowed intraday loss |
 
-A `DailyLossLimit` of 0 disables the check.
+`config.Load` replaces an unset or zero limit with 10,000, so the check cannot be switched off from config; set a large value to make it non-binding. `configs/default.yaml` has no `risk` block, so every run on it has the 10,000 limit.
 
 ---
 
@@ -70,7 +70,7 @@ A `PositionLimitHard` of 0 disables the check.
 
 ### 4. Volatility-scaled position limit
 
-Computes the coefficient of variation (CV) of the last 30 fill prices and scales the hard limit down when volatility is elevated:
+Computes the coefficient of variation (CV) of the last 30 fill prices on the same instrument and scales the hard limit down when volatility is elevated. The history is kept per instrument because one shared history would read the gap between two instruments' price levels as volatility:
 
 ```
 cv = std(last_30_fill_prices) / mean(last_30_fill_prices)

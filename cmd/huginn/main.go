@@ -180,8 +180,9 @@ func main() {
 		slog.Info("No prior strategy state found — starting fresh", "strategy_key", strategyKey)
 	}
 
-	// Initialize risk manager
-	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
+	// Initialize risk manager. Live trading keeps time by the wall clock: the
+	// daily loss window rolls at UTC midnight on this host.
+	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash, risk.WallClock())
 
 	// Restore risk state (peakValue, dayStart baseline, last feature event)
 	// from the same backend the strategy state came from. Without this, every

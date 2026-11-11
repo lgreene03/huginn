@@ -160,13 +160,13 @@ func TestStalenessWatchdog_DisabledWhenTimeoutZero(t *testing.T) {
 	// Sanity: RunStalenessWatchdog returns immediately when timeout is zero.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	m := NewManager(baseCfg(), 100_000) // StalenessTimeout == 0
-	m.RunStalenessWatchdog(ctx)         // must return without blocking
+	m := NewManager(baseCfg(), 100_000, WallClock()) // StalenessTimeout == 0
+	m.RunStalenessWatchdog(ctx)                      // must return without blocking
 }
 
 func TestRestoreState_VersionMismatch(t *testing.T) {
 	t.Parallel()
-	m := NewManager(baseCfg(), 100_000)
+	m := NewManager(baseCfg(), 100_000, WallClock())
 	bad := []byte(`{"version":999,"fields":{}}`)
 	if err := m.RestoreState(bad); !errors.Is(err, ErrRiskStateVersionMismatch) {
 		t.Fatalf("expected ErrRiskStateVersionMismatch, got %v", err)
@@ -175,7 +175,7 @@ func TestRestoreState_VersionMismatch(t *testing.T) {
 
 func TestRestoreState_EmptyIsNoOp(t *testing.T) {
 	t.Parallel()
-	m := NewManager(baseCfg(), 100_000)
+	m := NewManager(baseCfg(), 100_000, WallClock())
 	before := m.peakValue
 	if err := m.RestoreState(nil); err != nil {
 		t.Fatalf("nil restore should be a no-op: %v", err)
