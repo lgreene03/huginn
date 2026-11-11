@@ -112,6 +112,8 @@ curl http://localhost:8081/api/snapshot | jq .halted
 | `huginn_kafka_consumer_lag{topic=features}` | > 500 | Consumer is falling behind |
 | `huginn_orders_rejected_total{reason=drawdown}` | rate > 0 | Drawdown limit reached |
 | `huginn_portfolio_total_value` | < initial_cash × 0.80 | 20 % drawdown — review |
+| `huginn_entries_blocked_total{reason}` | one reason dominating while no intents | Why huginn is not trading: the first gate that stopped each entry (`below_threshold`, `position_open`, `max_position`, `zero_size`, `cost_hurdle`, `risk_rejected`). The strategy-level reasons are recorded by the composite strategy only |
+| `huginn_last_order_intent_timestamp_seconds` | `time() -` value grows while features flow | Unix time of the last order intent; 0 means none since the process started (compare `process_start_time_seconds`) |
 
 ### Grafana dashboard
 

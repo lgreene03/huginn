@@ -487,13 +487,21 @@ func (s *CompositeStrategy) OnFeature(event model.FeatureEvent) []model.Order {
 
 	combined := s.score(event)
 
+	// Every early return below records the gate that stopped the entry in
+	// huginn_entries_blocked_total, so an idle composite says why (G0.8).
+
 	// ── Entry threshold ─────────────────────────────────────────────────
 	if combined <= s.entryThreshold && combined >= -s.entryThreshold {
+		metrics.EntryBlocked(metrics.BlockBelowThreshold)
 		return nil
 	}
 
 	// ── Per-instrument throttle: only 1 open position per instrument ─────
+	// The composite has no exit path: nothing ever removes an entry from
+	// s.positions, and the throttle refuses a signal in EITHER direction, so
+	// once an instrument is entered it is never traded again.
 	if _, hasPos := s.positions[instrument]; hasPos {
+		metrics.EntryBlocked(metrics.BlockPositionOpen)
 		return nil
 	}
 
@@ -505,9 +513,11 @@ func (s *CompositeStrategy) OnFeature(event model.FeatureEvent) []model.Order {
 
 	// Signed-position cap, identical semantics to OBIThreshold.
 	if side == model.Sell && s.netPosition <= -s.maxPosition {
+		metrics.EntryBlocked(metrics.BlockMaxPosition)
 		return nil
 	}
 	if side == model.Buy && s.netPosition >= s.maxPosition {
+		metrics.EntryBlocked(metrics.BlockMaxPosition)
 		return nil
 	}
 
@@ -521,6 +531,7 @@ func (s *CompositeStrategy) OnFeature(event model.FeatureEvent) []model.Order {
 		qty = s.OrderSize * conviction
 	}
 	if qty <= 0 {
+		metrics.EntryBlocked(metrics.BlockZeroSize)
 		return nil
 	}
 
@@ -534,6 +545,7 @@ func (s *CompositeStrategy) OnFeature(event model.FeatureEvent) []model.Order {
 	}
 	if s.costHurdle.Suppress(signalStrength, qty, side, event) {
 		metrics.OrdersCostSuppressedTotal.WithLabelValues(s.Name(), side.String()).Inc()
+		metrics.EntryBlocked(metrics.BlockCostHurdle)
 		slog.Debug("Composite entry suppressed by net-of-cost hurdle",
 			"instrument", instrument,
 			"combined", fmt.Sprintf("%.4f", combined),

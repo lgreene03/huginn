@@ -369,6 +369,7 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			}
 
 			if e.riskManager != nil && !e.riskManager.Evaluate(prospectiveFill, e.portfolio.Snapshot()) {
+				metrics.EntryBlocked(metrics.BlockRiskRejected)
 				slog.Warn("Outbound live order intent rejected by pre-trade risk manager", "order_id", orderID, "instrument", order.Instrument)
 				continue
 			}
@@ -380,6 +381,9 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 				publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				if err := e.publisher.PublishIntent(publishCtx, order, orderID); err != nil {
 					slog.Error("Failed to publish live order intent to gateway", "error", err, "order_id", orderID)
+				} else {
+					// Only an intent that reached the gateway counts as issued.
+					metrics.OrderIntentIssued(time.Now())
 				}
 				cancel()
 				// Latency for live mode covers the signal → intent-publish leg.
@@ -400,6 +404,8 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			if order.Liquidity == model.Maker {
 				if rest, ok := e.restPriceForMaker(order, event); ok {
 					e.restingMakers = append(e.restingMakers, restingMaker{order: order, restPrice: rest})
+					// Parking at the touch is the paper-mode intent for a maker.
+					metrics.OrderIntentIssued(time.Now())
 					continue
 				}
 				// No book/mid price to rest against: degrade to a taker fill so
@@ -409,10 +415,12 @@ func (e *Executor) OnFeature(event model.FeatureEvent) {
 			fill := e.simulateFill(order, event)
 
 			if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
+				metrics.EntryBlocked(metrics.BlockRiskRejected)
 				slog.Warn("Fill rejected by risk manager", "order_id", fill.OrderID)
 				continue
 			}
 
+			metrics.OrderIntentIssued(time.Now())
 			e.applyPaperFill(fill)
 			metrics.SignalToFillLatencySeconds.WithLabelValues("paper").Observe(time.Since(signalTime).Seconds())
 
@@ -724,6 +732,7 @@ func (e *Executor) tryFillRestingMakers(event model.FeatureEvent) {
 
 		fill := e.makerFill(rm, event)
 		if e.riskManager != nil && !e.riskManager.Evaluate(fill, e.portfolio.Snapshot()) {
+			metrics.EntryBlocked(metrics.BlockRiskRejected)
 			slog.Warn("Maker fill rejected by risk manager", "order_id", fill.OrderID)
 			continue // drop it; do not re-park a risk-rejected order
 		}
