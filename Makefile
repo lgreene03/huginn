@@ -36,7 +36,7 @@ vet:
 	go vet ./...
 
 ## reproduce: regenerate the published walk-forward edge verdict from the fixture
-## and FAIL if it drifts (0/4 OOS folds, PBO=1.00, OOS PnL -146.11).
+## and FAIL if it drifts (0/4 OOS folds, fold PBO proxy 1.00, OOS PnL -146.11).
 reproduce:
 	bash scripts/reproduce.sh
 

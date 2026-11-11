@@ -266,7 +266,7 @@ type result struct {
 	AvgHoldSec  float64
 	// Moments carries the per-observation return statistics of this combo's
 	// equity curve (per-obs Sharpe, skew, kurtosis, nObs) so the walk-forward
-	// path can compute a Deflated Sharpe Ratio for the selected config without
+	// path can compute a fold deflated Sharpe for the selected config without
 	// re-deriving them. Populated by runOne; the annualized Sharpe field above
 	// remains the headline figure.
 	Moments metrics.ReturnMoments
@@ -540,7 +540,7 @@ type foldResult struct {
 	TestTurnover float64
 	TestHoldSec  float64
 	// TestMoments holds the selected config's out-of-sample per-observation
-	// return statistics, used to compute the Deflated Sharpe Ratio.
+	// return statistics, used to compute the fold deflated Sharpe.
 	TestMoments metrics.ReturnMoments
 }
 
@@ -567,9 +567,9 @@ func runWalkForward(stratName string, combos []map[string]string, events []model
 
 	folds := make([]foldResult, windows)
 	// oosMatrix is the [fold][config] out-of-sample Sharpe matrix that feeds the
-	// Probability of Backtest Overfitting (CSCV) estimator. Each row is one
-	// fold's test slice scored across EVERY combo (not just the selected one),
-	// so PBO can ask whether the in-sample winner generalises.
+	// leave-one-fold-out PBO proxy (metrics.FoldPBOProxy, not CSCV). Each row is
+	// one fold's test slice scored across EVERY combo (not just the selected
+	// one), so the proxy can ask whether the in-sample winner generalises.
 	oosMatrix := make([][]float64, windows)
 	for k := 0; k < windows; k++ {
 		trainEnd := (k + 1) * winSize
@@ -590,16 +590,16 @@ func runWalkForward(stratName string, combos []map[string]string, events []model
 			return nil, nil, fmt.Errorf("fold %d: %w", k, err)
 		}
 
-		// Score every combo out-of-sample on this fold's test slice for the PBO
-		// matrix. The selected config's OOS metrics are read back from this same
-		// sweep so we don't run it twice.
+		// Score every combo out-of-sample on this fold's test slice for the fold
+		// PBO proxy's matrix. The selected config's OOS metrics are read back from
+		// this same sweep so we don't run it twice.
 		testResults := runSweep(stratName, combos, test, initialCash, workers, riskCfg)
 		oosRow := make([]float64, len(testResults))
 		for i, tr := range testResults {
 			s := tr.Sharpe
 			if math.IsNaN(s) {
-				// CSCV ranks higher-is-better; a failed/degenerate combo gets the
-				// worst possible score so it never inflates a rank.
+				// The proxy ranks higher-is-better; a failed/degenerate combo
+				// gets the worst possible score so it never inflates a rank.
 				s = math.Inf(-1)
 			}
 			oosRow[i] = s
@@ -766,45 +766,49 @@ func printWalkForwardSummary(folds []foldResult, numCombos int, oosMatrix [][]fl
 	}
 	fmt.Printf("Reminder: %d combos searched/fold — treat the best as upward-biased.\n", numCombos)
 
-	// ─── Overfitting-aware statistics (Bailey & López de Prado) ───
-	// Deflated Sharpe Ratio per fold: the selected config's OOS Sharpe, deflated
+	// ─── Fold-level overfitting indicators (after Bailey & López de Prado) ───
+	// Fold deflated Sharpe per fold: the selected config's OOS Sharpe, deflated
 	// by the number of trials (numCombos) searched in-sample, reported with the
 	// implied P(true Sharpe ≤ 0). The Sharpe is converted from the engine's
-	// annualized figure back to per-observation units via the OOS moments.
-	fmt.Println("─── Deflated Sharpe (selected config, deflated by trials) ───")
+	// annualized figure back to per-observation units via the OOS moments. This
+	// is not the evaluation gate's deflated Sharpe, which norse-stack computes on
+	// the joined OOS returns in research/norse_research/sharpe.py (goal G1.3).
+	fmt.Println("─── Fold deflated Sharpe (selected config, deflated by trials) ───")
 	fmt.Printf("Trials (combos) per fold: %d\n", numCombos)
 	for _, f := range folds {
 		m := f.TestMoments
 		if math.IsNaN(m.PerObsSharpe) || m.NObs < 2 {
-			fmt.Printf("  Fold %d: DSR n/a (insufficient OOS return observations)\n", f.Idx)
+			fmt.Printf("  Fold %d: fold deflated Sharpe n/a (insufficient OOS return observations)\n", f.Idx)
 			continue
 		}
-		dsr := metrics.DeflatedSharpeRatio(m.PerObsSharpe, numCombos, m.Skew, m.Kurtosis, m.NObs)
+		dsr := metrics.FoldDeflatedSharpe(m.PerObsSharpe, numCombos, m.Skew, m.Kurtosis, m.NObs)
 		if math.IsNaN(dsr) {
-			fmt.Printf("  Fold %d: DSR n/a (undefined: degenerate higher moments)\n", f.Idx)
+			fmt.Printf("  Fold %d: fold deflated Sharpe n/a (undefined: degenerate higher moments)\n", f.Idx)
 			continue
 		}
 		pNonPos := metrics.ImpliedPTrueSharpeNonPositive(dsr)
-		fmt.Printf("  Fold %d: DSR %.4f  P(true Sharpe ≤ 0) %.4f  (OOS obs %.0f)\n",
+		fmt.Printf("  Fold %d: fold deflated Sharpe %.4f  P(true Sharpe ≤ 0) %.4f  (OOS obs %.0f)\n",
 			f.Idx, dsr, pNonPos, m.NObs)
 	}
 
-	// Probability of Backtest Overfitting across all folds, from the OOS Sharpe
-	// matrix (CSCV). High PBO ⇒ the in-sample winner tends to be a coin-flip (or
-	// worse) out of sample.
-	pbo := metrics.ProbabilityBacktestOverfitting(oosMatrix)
-	fmt.Println("─── Probability of Backtest Overfitting (CSCV) ───")
-	if math.IsNaN(pbo) {
-		fmt.Printf("PBO: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
+	// Leave-one-fold-out PBO proxy across all folds, from the OOS Sharpe matrix.
+	// A high value suggests the in-sample winner tends to be a coin-flip (or
+	// worse) out of sample. It is not CSCV PBO and not the evaluation gate's
+	// statistic (norse-stack research/norse_research/cscv.py, goal G1.3).
+	foldPBO := metrics.FoldPBOProxy(oosMatrix)
+	fmt.Println("─── Fold PBO proxy (leave-one-fold-out, not CSCV) ───")
+	if math.IsNaN(foldPBO) {
+		fmt.Printf("Fold PBO proxy: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
 			len(oosMatrix), oosConfigCount(oosMatrix))
 	} else {
-		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
+		fmt.Printf("Fold PBO proxy: %.4f  (fraction of folds where the IS-best config was OOS bottom-half; not CSCV PBO)\n", foldPBO)
 	}
 	fmt.Println("════════════════════════════")
 }
 
 // oosConfigCount returns the config count (row width) of the OOS matrix, or 0
-// when the matrix is empty — used only for the PBO "n/a" diagnostic line.
+// when the matrix is empty; used only for the fold PBO proxy "n/a" diagnostic
+// line.
 func oosConfigCount(m [][]float64) int {
 	if len(m) == 0 {
 		return 0

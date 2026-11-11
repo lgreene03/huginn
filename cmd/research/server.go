@@ -43,15 +43,19 @@ type runRequest struct {
 }
 
 // runResult is the console-contract subset surfaced for a finished run. It
-// mirrors the derived shape internal/server/http.go validationHandler emits
-// (folds, oosFoldsProfitable, totalOOSPnL, pbo, deflatedSharpe), with
-// deflatedSharpe a *float64 so an undefined DSR stays null rather than 0.
+// shares folds, oosFoldsProfitable, totalOOSPnL and meanFoldDeflatedSharpe with
+// the shape internal/server/http.go validationHandler emits, with
+// meanFoldDeflatedSharpe a *float64 so an undefined mean stays null rather than
+// 0. Where validationHandler can only report unprofitableFoldShare, this carries
+// foldPboProxy, the rank-based leave-one-fold-out proxy, because a gateway run
+// has the per-config OOS matrix. Neither figure is the evaluation gate's PBO or
+// deflated Sharpe (norse-stack research/norse_research, goal G1.3).
 type runResult struct {
-	Folds              []research.FoldResult `json:"folds"`
-	OOSFoldsProfitable int                   `json:"oosFoldsProfitable"`
-	TotalOOSPnL        float64               `json:"totalOOSPnL"`
-	PBO                *float64              `json:"pbo"`
-	DeflatedSharpe     *float64              `json:"deflatedSharpe"`
+	Folds                  []research.FoldResult `json:"folds"`
+	OOSFoldsProfitable     int                   `json:"oosFoldsProfitable"`
+	TotalOOSPnL            float64               `json:"totalOOSPnL"`
+	FoldPBOProxy           *float64              `json:"foldPboProxy"`
+	MeanFoldDeflatedSharpe *float64              `json:"meanFoldDeflatedSharpe"`
 }
 
 // run is one research job. Guarded by Server.mu when read/written through the
@@ -262,7 +266,7 @@ func (s *Server) execute(id string, req runRequest) {
 // runWalkforwardReal builds a base config, overrides the strategy, constructs
 // the grid from the request thresholds, loads the dataset, and runs
 // internal/research.Run. It maps research.Result into the console-contract
-// runResult (deflatedSharpe / pbo stay null when undefined).
+// runResult (meanFoldDeflatedSharpe / foldPboProxy stay null when undefined).
 func (s *Server) runWalkforwardReal(req runRequest) (*runResult, error) {
 	cfg := baseConfig(req.Strategy)
 
@@ -289,19 +293,19 @@ func (s *Server) runWalkforwardReal(req runRequest) (*runResult, error) {
 	return toRunResult(res), nil
 }
 
-// toRunResult maps a research.Result into the console-contract response. PBO is
-// surfaced as *float64 so a NaN (too few folds/configs) becomes null instead of
-// failing the JSON encode.
+// toRunResult maps a research.Result into the console-contract response. The
+// fold PBO proxy is surfaced as *float64 so a NaN (too few folds/configs)
+// becomes null instead of failing the JSON encode.
 func toRunResult(res research.Result) *runResult {
 	out := &runResult{
-		Folds:              res.Folds,
-		OOSFoldsProfitable: res.OOSFoldsProfitable,
-		TotalOOSPnL:        res.TotalOOSPnL,
-		DeflatedSharpe:     res.DeflatedSharpe,
+		Folds:                  res.Folds,
+		OOSFoldsProfitable:     res.OOSFoldsProfitable,
+		TotalOOSPnL:            res.TotalOOSPnL,
+		MeanFoldDeflatedSharpe: res.MeanFoldDeflatedSharpe,
 	}
-	if !math.IsNaN(res.PBO) && !math.IsInf(res.PBO, 0) {
-		pbo := res.PBO
-		out.PBO = &pbo
+	if !math.IsNaN(res.FoldPBOProxy) && !math.IsInf(res.FoldPBOProxy, 0) {
+		proxy := res.FoldPBOProxy
+		out.FoldPBOProxy = &proxy
 	}
 	return out
 }

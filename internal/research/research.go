@@ -2,15 +2,18 @@
 // from cmd/walkforward. It runs an anchored walk-forward (expanding train
 // window, sliding test window), selecting parameters in-sample on each fold's
 // train window and scoring only the chosen params out-of-sample, and derives
-// the overfitting-aware statistics (PBO, Deflated Sharpe) so heavy backtests
-// can run OUT of the live trading process — both the CLI (cmd/walkforward) and
-// the research gateway service (cmd/research) call Run.
+// huginn's fold-level overfitting indicators (a leave-one-fold-out PBO proxy and
+// per-fold deflated Sharpes) so heavy backtests can run OUT of the live trading
+// process. Both the CLI (cmd/walkforward) and the research gateway service
+// (cmd/research) call Run. These indicators are not the evaluation gate's
+// statistics, which live in norse-stack's research/norse_research (goal G1.3).
 //
-// Behavior is identical to the routine that previously lived inline in
+// Behaviour is identical to the routine that previously lived inline in
 // cmd/walkforward/main.go: same window layout, same in-sample selection, same
-// OOS scoring, same *float64-null-for-undefined-DSR handling — so the CLI's
-// console output and the data/walkforward_results.json artifact it writes are
-// byte-for-byte unchanged.
+// OOS scoring, same null-for-undefined handling of the fold deflated Sharpe.
+// The extraction left the CLI's console output and artefact byte-for-byte
+// unchanged; goal G1.3 later renamed the fold-level labels and JSON keys
+// without changing any number.
 package research
 
 import (
@@ -30,9 +33,10 @@ import (
 	"github.com/lgreene03/huginn/internal/strategy"
 )
 
-// FoldResult is one per-fold record. Field names + JSON tags are kept identical
-// to the struct that previously lived in cmd/walkforward so the persisted
-// artifact is byte-for-byte unchanged.
+// FoldResult is one per-fold record. Its JSON tags define the
+// data/walkforward_results.json artefact that cmd/walkforward writes and
+// internal/server's validationHandler reads, so a tag change here must be
+// matched there. fold_deflated_sharpe was deflated_sharpe before goal G1.3.
 type FoldResult struct {
 	Fold           int     `json:"fold"`
 	TrainStart     string  `json:"train_start"`
@@ -51,11 +55,13 @@ type FoldResult struct {
 	SharpeDecay    float64 `json:"sharpe_decay_ratio"`
 	MaxDD          float64 `json:"max_dd"`
 	HitRate        float64 `json:"hit_rate"`
-	// DeflatedSharpe is the selected config's OOS Deflated Sharpe Ratio,
-	// deflating the per-observation OOS Sharpe by CombosSearched trials (Bailey &
-	// López de Prado). PTrueSharpeNonPositive = 1 − DeflatedSharpe. Both are NaN
-	// when the OOS window has too few return observations to define them.
-	DeflatedSharpe         float64 `json:"deflated_sharpe"`
+	// FoldDeflatedSharpe is a deflated Sharpe applied to this fold's OOS returns
+	// alone (metrics.FoldDeflatedSharpe): the selected config's per-observation
+	// OOS Sharpe deflated by CombosSearched trials. It is not the evaluation
+	// gate's deflated Sharpe (norse-stack research/norse_research/sharpe.py).
+	// PTrueSharpeNonPositive = 1 - FoldDeflatedSharpe. Both are NaN when the OOS
+	// window has too few return observations to define them.
+	FoldDeflatedSharpe     float64 `json:"fold_deflated_sharpe"`
 	PTrueSharpeNonPositive float64 `json:"p_true_sharpe_non_positive"`
 
 	// TrainEventCount / TestEventCount are the window sizes for this fold. They
@@ -76,10 +82,11 @@ func nullIfNaN(f float64) *float64 {
 }
 
 // MarshalJSON renders the NaN-capable metric fields (Sharpe family, decay,
-// drawdown, hit-rate, deflated Sharpe) as JSON null instead of letting NaN/±Inf
-// fail the whole encode. Without this, a single NaN (e.g. a deflated Sharpe that
-// is undefined on a too-short OOS window) made encoding/json error, the error
-// was discarded, and a 0-byte results file was written. The float64 struct
+// drawdown, hit-rate, fold deflated Sharpe) as JSON null instead of letting
+// NaN/±Inf fail the whole encode. Without this, a single NaN (e.g. a fold
+// deflated Sharpe that is undefined on a too-short OOS window) made
+// encoding/json error, the error was discarded, and a 0-byte results file was
+// written. The float64 struct
 // fields are kept as-is so all compute/printf code is unaffected; the outer
 // *float64 fields here shadow the embedded ones for serialization only.
 func (r FoldResult) MarshalJSON() ([]byte, error) {
@@ -91,7 +98,7 @@ func (r FoldResult) MarshalJSON() ([]byte, error) {
 		SharpeDecay            *float64 `json:"sharpe_decay_ratio"`
 		MaxDD                  *float64 `json:"max_dd"`
 		HitRate                *float64 `json:"hit_rate"`
-		DeflatedSharpe         *float64 `json:"deflated_sharpe"`
+		FoldDeflatedSharpe     *float64 `json:"fold_deflated_sharpe"`
 		PTrueSharpeNonPositive *float64 `json:"p_true_sharpe_non_positive"`
 	}{
 		alias:                  alias(r),
@@ -100,7 +107,7 @@ func (r FoldResult) MarshalJSON() ([]byte, error) {
 		SharpeDecay:            nullIfNaN(r.SharpeDecay),
 		MaxDD:                  nullIfNaN(r.MaxDD),
 		HitRate:                nullIfNaN(r.HitRate),
-		DeflatedSharpe:         nullIfNaN(r.DeflatedSharpe),
+		FoldDeflatedSharpe:     nullIfNaN(r.FoldDeflatedSharpe),
 		PTrueSharpeNonPositive: nullIfNaN(r.PTrueSharpeNonPositive),
 	})
 }
@@ -116,8 +123,8 @@ type Options struct {
 
 // Result carries the per-fold records plus the derived aggregates the callers
 // need: the CLI uses them for its summary, the service surfaces the
-// console-contract subset (oosFoldsProfitable / totalOOSPnL / pbo /
-// deflatedSharpe).
+// console-contract subset (oosFoldsProfitable / totalOOSPnL / foldPboProxy /
+// meanFoldDeflatedSharpe).
 type Result struct {
 	Folds []FoldResult
 	// TotalOOSPnL is the summed out-of-sample PnL across folds.
@@ -127,16 +134,20 @@ type Result struct {
 	// GridSize is the number of grid combos searched per fold (the trial count).
 	GridSize int
 	// OOSMatrix[fold][config] is each config's OOS Sharpe on that fold's test
-	// window — feeds the CSCV Probability of Backtest Overfitting estimator.
+	// window. It feeds metrics.FoldPBOProxy, the leave-one-fold-out proxy.
 	OOSMatrix [][]float64
-	// PBO is the Probability of Backtest Overfitting (CSCV). NaN when there are
-	// too few folds/configs to define it.
-	PBO float64
-	// DeflatedSharpe is the mean OOS Deflated Sharpe over the folds where it is
-	// defined, or nil when no fold had enough OOS observations (mirrors the
-	// *float64-null-for-undefined-DSR handling in internal/server/http.go's
-	// validationHandler — never a misleading 0).
-	DeflatedSharpe *float64
+	// FoldPBOProxy is the leave-one-fold-out PBO proxy over OOSMatrix: the
+	// fraction of folds whose in-sample-best config ranked in the bottom half out
+	// of sample. It is not CSCV PBO and not the evaluation gate's PBO
+	// (norse-stack research/norse_research/cscv.py). NaN when there are too few
+	// folds/configs to define it.
+	FoldPBOProxy float64
+	// MeanFoldDeflatedSharpe is the arithmetic mean of FoldDeflatedSharpe over
+	// the folds where it is defined, or nil when no fold had enough OOS
+	// observations (mirrors the null-for-undefined handling in
+	// internal/server/http.go's validationHandler, never a misleading 0). A mean
+	// of per-fold figures is not a deflated Sharpe of the joined OOS returns.
+	MeanFoldDeflatedSharpe *float64
 }
 
 // Params is one point in the walk-forward grid: the threshold and order size to
@@ -155,7 +166,7 @@ type foldMetrics struct {
 	maxDD   float64
 	hitRate float64
 	// moments carries the per-observation return statistics of this fold's
-	// equity curve so the caller can compute a Deflated Sharpe Ratio for the
+	// equity curve so the caller can compute a fold deflated Sharpe for the
 	// selected config. The sharpe field above stays the annualized headline.
 	moments metrics.ReturnMoments
 }
@@ -178,7 +189,7 @@ func Run(opts Options) (Result, error) {
 	var totalOOS float64
 	var oosWins int
 	// oosMatrix[fold][config] = that config's out-of-sample Sharpe on the fold's
-	// test window. Feeds the Probability of Backtest Overfitting (CSCV) estimator.
+	// test window. Feeds the leave-one-fold-out PBO proxy (metrics.FoldPBOProxy).
 	var oosMatrix [][]float64
 
 	step := (len(events) - testSize) / folds
@@ -210,8 +221,9 @@ func Run(opts Options) (Result, error) {
 		// Apply ONLY the selected params to the out-of-sample TEST window.
 		testResult := runFold(cfg, testEvents, bestParams)
 
-		// Score EVERY grid combo out-of-sample on this test window for the PBO
-		// matrix (CSCV needs all configs' OOS performance, not just the winner).
+		// Score EVERY grid combo out-of-sample on this test window for the fold
+		// PBO proxy's matrix (it ranks all configs' OOS performance, not just the
+		// winner).
 		oosRow := make([]float64, len(grid))
 		for i, p := range grid {
 			m := runFold(cfg, testEvents, p)
@@ -223,12 +235,13 @@ func Run(opts Options) (Result, error) {
 		}
 		oosMatrix = append(oosMatrix, oosRow)
 
-		// Deflated Sharpe of the selected config out-of-sample, deflated by the
-		// number of grid combos searched in-sample (the trial count).
+		// Fold deflated Sharpe of the selected config on this fold's OOS window,
+		// deflated by the number of grid combos searched in-sample (the trial
+		// count).
 		dsr := math.NaN()
 		pNonPos := math.NaN()
 		if mm := testResult.moments; !math.IsNaN(mm.PerObsSharpe) && mm.NObs >= 2 {
-			dsr = metrics.DeflatedSharpeRatio(mm.PerObsSharpe, len(grid), mm.Skew, mm.Kurtosis, mm.NObs)
+			dsr = metrics.FoldDeflatedSharpe(mm.PerObsSharpe, len(grid), mm.Skew, mm.Kurtosis, mm.NObs)
 			pNonPos = metrics.ImpliedPTrueSharpeNonPositive(dsr)
 		}
 
@@ -250,7 +263,7 @@ func Run(opts Options) (Result, error) {
 			SharpeDecay:            SharpeDecayRatio(best.sharpe, testResult.sharpe),
 			MaxDD:                  testResult.maxDD,
 			HitRate:                testResult.hitRate,
-			DeflatedSharpe:         dsr,
+			FoldDeflatedSharpe:     dsr,
 			PTrueSharpeNonPositive: pNonPos,
 			TrainEventCount:        len(trainEvents),
 			TestEventCount:         len(testEvents),
@@ -262,30 +275,30 @@ func Run(opts Options) (Result, error) {
 		}
 	}
 
-	// Mean Deflated Sharpe across folds where it is defined; nil when none are,
-	// rather than a misleading 0 (mirrors validationHandler).
+	// Mean of the per-fold deflated Sharpes over folds where it is defined; nil
+	// when none are, rather than a misleading 0 (mirrors validationHandler).
 	var dsrSum float64
 	var dsrN int
 	for _, r := range results {
-		if !math.IsNaN(r.DeflatedSharpe) {
-			dsrSum += r.DeflatedSharpe
+		if !math.IsNaN(r.FoldDeflatedSharpe) {
+			dsrSum += r.FoldDeflatedSharpe
 			dsrN++
 		}
 	}
-	var deflated *float64
+	var meanFold *float64
 	if dsrN > 0 {
 		avg := dsrSum / float64(dsrN)
-		deflated = &avg
+		meanFold = &avg
 	}
 
 	return Result{
-		Folds:              results,
-		TotalOOSPnL:        totalOOS,
-		OOSFoldsProfitable: oosWins,
-		GridSize:           len(grid),
-		OOSMatrix:          oosMatrix,
-		PBO:                metrics.ProbabilityBacktestOverfitting(oosMatrix),
-		DeflatedSharpe:     deflated,
+		Folds:                  results,
+		TotalOOSPnL:            totalOOS,
+		OOSFoldsProfitable:     oosWins,
+		GridSize:               len(grid),
+		OOSMatrix:              oosMatrix,
+		FoldPBOProxy:           metrics.FoldPBOProxy(oosMatrix),
+		MeanFoldDeflatedSharpe: meanFold,
 	}, nil
 }
 

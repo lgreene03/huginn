@@ -19,18 +19,18 @@ import (
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	s := NewServer(":0", t.TempDir(), defaultDataPath)
-	pbo := 0.25
-	dsr := 1.5
+	foldPBO := 0.25
+	meanDSR := 1.5
 	s.runWalkforward = func(req runRequest) (*runResult, error) {
 		return &runResult{
 			Folds: []research.FoldResult{
 				{Fold: 1, TestPnL: 12.5},
 				{Fold: 2, TestPnL: -3.0},
 			},
-			OOSFoldsProfitable: 1,
-			TotalOOSPnL:        9.5,
-			PBO:                &pbo,
-			DeflatedSharpe:     &dsr,
+			OOSFoldsProfitable:     1,
+			TotalOOSPnL:            9.5,
+			FoldPBOProxy:           &foldPBO,
+			MeanFoldDeflatedSharpe: &meanDSR,
 		}, nil
 	}
 	return s
@@ -115,11 +115,65 @@ func TestSubmitPollUntilDone(t *testing.T) {
 	if got.Result.TotalOOSPnL != 9.5 {
 		t.Errorf("totalOOSPnL = %v, want 9.5", got.Result.TotalOOSPnL)
 	}
-	if got.Result.PBO == nil || *got.Result.PBO != 0.25 {
-		t.Errorf("pbo = %v, want 0.25", got.Result.PBO)
+	if got.Result.FoldPBOProxy == nil || *got.Result.FoldPBOProxy != 0.25 {
+		t.Errorf("foldPboProxy = %v, want 0.25", got.Result.FoldPBOProxy)
 	}
-	if got.Result.DeflatedSharpe == nil || *got.Result.DeflatedSharpe != 1.5 {
-		t.Errorf("deflatedSharpe = %v, want 1.5", got.Result.DeflatedSharpe)
+	if got.Result.MeanFoldDeflatedSharpe == nil || *got.Result.MeanFoldDeflatedSharpe != 1.5 {
+		t.Errorf("meanFoldDeflatedSharpe = %v, want 1.5", got.Result.MeanFoldDeflatedSharpe)
+	}
+}
+
+// TestRunResultJSONUsesFoldQualifiedKeys pins the wire names of the gateway's
+// run result. huginn's figures are a leave-one-fold-out PBO proxy and a mean of
+// per-fold deflated Sharpes, not the evaluation gate's CSCV PBO or deflated
+// Sharpe (norse-stack research/norse_research, goal G1.3), so the encoded run
+// must carry foldPboProxy and meanFoldDeflatedSharpe and must never carry the
+// unqualified pbo or deflatedSharpe keys. The per-fold records must likewise use
+// fold_deflated_sharpe rather than deflated_sharpe.
+func TestRunResultJSONUsesFoldQualifiedKeys(t *testing.T) {
+	s := newTestServer(t)
+	const id = "run-json-keys"
+	s.runs[id] = &run{ID: id, Status: "running", SubmittedAt: time.Now().UTC()}
+	s.execute(id, runRequest{Strategy: "obi", Thresholds: []float64{0.5}, Folds: 2})
+
+	rec := getRun(t, s, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode run: %v; body=%s", err, rec.Body.String())
+	}
+	result, ok := body["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result missing or not an object; body=%s", rec.Body.String())
+	}
+
+	if v, ok := result["foldPboProxy"].(float64); !ok || v != 0.25 {
+		t.Errorf("result.foldPboProxy = %v, want 0.25", result["foldPboProxy"])
+	}
+	if v, ok := result["meanFoldDeflatedSharpe"].(float64); !ok || v != 1.5 {
+		t.Errorf("result.meanFoldDeflatedSharpe = %v, want 1.5", result["meanFoldDeflatedSharpe"])
+	}
+	for _, stale := range []string{"pbo", "deflatedSharpe"} {
+		if _, present := result[stale]; present {
+			t.Errorf("result carries the unqualified key %q; it must not", stale)
+		}
+	}
+
+	folds, ok := result["folds"].([]any)
+	if !ok || len(folds) == 0 {
+		t.Fatalf("result.folds missing or empty; body=%s", rec.Body.String())
+	}
+	fold0, ok := folds[0].(map[string]any)
+	if !ok {
+		t.Fatalf("result.folds[0] is not an object; body=%s", rec.Body.String())
+	}
+	if _, present := fold0["fold_deflated_sharpe"]; !present {
+		t.Errorf("result.folds[0] lacks fold_deflated_sharpe")
+	}
+	if _, present := fold0["deflated_sharpe"]; present {
+		t.Errorf("result.folds[0] carries the unqualified key deflated_sharpe; it must not")
 	}
 }
 
@@ -300,9 +354,9 @@ func TestRealWalkforwardEndToEnd(t *testing.T) {
 func TestRunPersistedAndReloaded(t *testing.T) {
 	dir := t.TempDir()
 	s := NewServer(":0", dir, defaultDataPath)
-	dsr := 2.0
+	meanDSR := 2.0
 	s.runWalkforward = func(req runRequest) (*runResult, error) {
-		return &runResult{OOSFoldsProfitable: 3, TotalOOSPnL: 42.0, DeflatedSharpe: &dsr}, nil
+		return &runResult{OOSFoldsProfitable: 3, TotalOOSPnL: 42.0, MeanFoldDeflatedSharpe: &meanDSR}, nil
 	}
 
 	id := submit(t, s, `{"strategy":"composite","thresholds":[0.5],"folds":2}`)["id"]

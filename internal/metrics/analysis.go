@@ -16,7 +16,7 @@ import (
 //
 // Convention decision (quant-1, resolved): 365 is the correct factor for a
 // continuously-traded crypto market and is the convention huginn standardizes
-// on across every Sharpe/Deflated-Sharpe computation. This is a deliberate,
+// on across every Sharpe and fold deflated Sharpe computation. This is a deliberate,
 // documented choice — any sibling system (e.g. odin) that wants comparable
 // figures must annualize with 365 too; a 252-based number is NOT directly
 // comparable and would differ by sqrt(365/252) ≈ 1.20x. We do not silently

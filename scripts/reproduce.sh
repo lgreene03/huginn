@@ -3,8 +3,10 @@
 #
 # The numbers in docs/RESULTS.md are not hand-typed claims. This regenerates
 # them from data/btc_test.jsonl with the exact documented command and FAILS if
-# they drift, so "no measured out-of-sample edge (0/4 folds, PBO=1.00)" is a
-# verifiable, one-command result rather than a marketing line.
+# they drift, so "no measured out-of-sample edge (0/4 folds, fold PBO proxy
+# 1.00)" is a verifiable, one-command result rather than a marketing line. The
+# fold PBO proxy is huginn's leave-one-fold-out figure, not CSCV PBO; the
+# evaluation gate's statistics live in norse-stack's research/norse_research.
 #
 #   make reproduce        # or: bash scripts/reproduce.sh
 #
@@ -18,7 +20,7 @@ DATA="data/btc_test.jsonl"
 #     documented result change, never to make a red reproduce go green. ---
 EXPECT_OOS="0/4"
 EXPECT_PNL="-146.1090"
-EXPECT_PBO="1.0000"
+EXPECT_FOLD_PBO_PROXY="1.0000"
 CMD_ARGS="--data ${DATA} --folds 4 --thresholds 0.5,0.6,0.7,0.8"
 
 if [ ! -f "${DATA}" ]; then
@@ -44,17 +46,17 @@ fi
 
 oos="$(printf '%s\n' "${OUT}" | grep -oE 'OOS folds profitable: [0-9]+/[0-9]+' | grep -oE '[0-9]+/[0-9]+' | head -1)"
 pnl="$(printf '%s\n' "${OUT}" | grep -oE 'Total OOS PnL: +-?[0-9]+\.[0-9]+' | grep -oE '\-?[0-9]+\.[0-9]+' | head -1)"
-pbo="$(printf '%s\n' "${OUT}" | grep -oE 'PBO: [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+fold_pbo_proxy="$(printf '%s\n' "${OUT}" | grep -oE 'Fold PBO proxy: [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
 
 printf '  %-22s %-12s (expected %s)\n' "OOS folds profitable:" "${oos:-<none>}" "${EXPECT_OOS}"
 printf '  %-22s %-12s (expected %s)\n' "Total OOS PnL:"        "${pnl:-<none>}" "${EXPECT_PNL}"
-printf '  %-22s %-12s (expected %s)\n' "PBO (CSCV):"           "${pbo:-<none>}" "${EXPECT_PBO}"
+printf '  %-22s %-12s (expected %s)\n' "Fold PBO proxy:"       "${fold_pbo_proxy:-<none>}" "${EXPECT_FOLD_PBO_PROXY}"
 echo
 
 fail=0
 [ "${oos}" = "${EXPECT_OOS}" ] || { echo "DRIFT: OOS folds profitable changed (${oos} != ${EXPECT_OOS})"; fail=1; }
 [ "${pnl}" = "${EXPECT_PNL}" ] || { echo "DRIFT: total OOS PnL changed (${pnl} != ${EXPECT_PNL})"; fail=1; }
-[ "${pbo}" = "${EXPECT_PBO}" ] || { echo "DRIFT: PBO changed (${pbo} != ${EXPECT_PBO})"; fail=1; }
+[ "${fold_pbo_proxy}" = "${EXPECT_FOLD_PBO_PROXY}" ] || { echo "DRIFT: fold PBO proxy changed (${fold_pbo_proxy} != ${EXPECT_FOLD_PBO_PROXY})"; fail=1; }
 
 if [ "${fail}" -ne 0 ]; then
   echo
@@ -65,5 +67,5 @@ if [ "${fail}" -ne 0 ]; then
 fi
 
 echo "REPRODUCE OK: docs/RESULTS.md regenerates exactly."
-echo "  No measured out-of-sample edge: 0/4 OOS folds profitable, PBO=1.00, OOS PnL -146.11."
+echo "  No measured out-of-sample edge: 0/4 OOS folds profitable, fold PBO proxy 1.00, OOS PnL -146.11."
 echo "  (This is the honest headline, verified end-to-end from the committed data.)"

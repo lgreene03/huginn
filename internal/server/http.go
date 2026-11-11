@@ -448,7 +448,9 @@ func (s *Server) alphasHandler(w http.ResponseWriter, r *http.Request) {
 // of per-fold records. When the file is missing or empty it returns
 // {available:false} — it never fabricates folds. When present, it parses the raw
 // fold array and DERIVES the console-contract shape (folds, oosFoldsProfitable,
-// totalOOSPnL, pbo, deflatedSharpe) from the real numbers.
+// totalOOSPnL, unprofitableFoldShare, meanFoldDeflatedSharpe) from the real
+// numbers. Neither of the last two is the evaluation gate's PBO or deflated
+// Sharpe, which live in norse-stack's research/norse_research (goal G1.3).
 func (s *Server) validationHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -487,26 +489,28 @@ func (s *Server) validationHandler(w http.ResponseWriter, r *http.Request) {
 		if f.TestPnL > 0 {
 			out.OOSFoldsProfitable++
 		}
-		// Deflated Sharpe is null (in the artifact) / NaN when an OOS window is
-		// too short to define it; skip those so the average reflects only defined
-		// folds — and stays null when none are defined, rather than a misleading 0.
-		if f.DeflatedSharpe != nil && !math.IsNaN(*f.DeflatedSharpe) {
-			dsrSum += *f.DeflatedSharpe
+		// The fold deflated Sharpe is null (in the artefact) or NaN when an OOS
+		// window is too short to define it; skip those so the mean reflects only
+		// defined folds, and stays null when none are defined rather than a
+		// misleading 0.
+		if f.FoldDeflatedSharpe != nil && !math.IsNaN(*f.FoldDeflatedSharpe) {
+			dsrSum += *f.FoldDeflatedSharpe
 			dsrN++
 		}
 	}
 	if dsrN > 0 {
 		avg := dsrSum / float64(dsrN)
-		out.DeflatedSharpe = &avg
+		out.MeanFoldDeflatedSharpe = &avg
 	}
-	// PBO (Probability of Backtest Overfitting) proxy: the fraction of folds
-	// whose OOS PnL is non-positive — i.e. how often the in-sample selection
-	// failed to carry out of sample. Derived from real fold outcomes, not
-	// fabricated. (A full combinatorially-symmetric PBO needs the per-combo OOS
-	// matrix, which the artifact does not persist; this is the honest fold-level
-	// estimate.)
+	// Unprofitable fold share: the fraction of folds whose OOS PnL is
+	// non-positive, i.e. how often the in-sample selection failed to carry out
+	// of sample. Derived from real fold outcomes, not fabricated. It is NOT the
+	// Probability of Backtest Overfitting: neither CSCV PBO (the evaluation
+	// gate's statistic, norse-stack research/norse_research/cscv.py) nor
+	// huginn's rank-based metrics.FoldPBOProxy, both of which need the
+	// per-config OOS matrix that the artefact does not persist.
 	if n := len(out.Folds); n > 0 {
-		out.PBO = float64(n-out.OOSFoldsProfitable) / float64(n)
+		out.UnprofitableFoldShare = float64(n-out.OOSFoldsProfitable) / float64(n)
 	}
 
 	_ = json.NewEncoder(w).Encode(out)
@@ -526,17 +530,18 @@ func joinRange(start, end string) string {
 	}
 }
 
-// walkforwardRawFold mirrors the fields cmd/walkforward writes per fold. Only
-// the fields the console contract needs are decoded; extras are ignored.
+// walkforwardRawFold mirrors the fields cmd/walkforward writes per fold
+// (research.FoldResult's JSON tags). Only the fields the console contract needs
+// are decoded; extras are ignored.
 type walkforwardRawFold struct {
-	Fold           int      `json:"fold"`
-	TrainStart     string   `json:"train_start"`
-	TrainEnd       string   `json:"train_end"`
-	TestStart      string   `json:"test_start"`
-	TestEnd        string   `json:"test_end"`
-	TrainPnL       float64  `json:"train_pnl"`
-	TestPnL        float64  `json:"test_pnl"`
-	DeflatedSharpe *float64 `json:"deflated_sharpe"`
+	Fold               int      `json:"fold"`
+	TrainStart         string   `json:"train_start"`
+	TrainEnd           string   `json:"train_end"`
+	TestStart          string   `json:"test_start"`
+	TestEnd            string   `json:"test_end"`
+	TrainPnL           float64  `json:"train_pnl"`
+	TestPnL            float64  `json:"test_pnl"`
+	FoldDeflatedSharpe *float64 `json:"fold_deflated_sharpe"`
 }
 
 // walkforwardFold is one fold in the console-contract response.
@@ -553,8 +558,12 @@ type walkforwardResults struct {
 	Folds              []walkforwardFold `json:"folds"`
 	OOSFoldsProfitable int               `json:"oosFoldsProfitable"`
 	TotalOOSPnL        float64           `json:"totalOOSPnL"`
-	PBO                float64           `json:"pbo"`
-	DeflatedSharpe     *float64          `json:"deflatedSharpe"`
+	// UnprofitableFoldShare is the share of folds with non-positive OOS PnL. It
+	// is not PBO (see validationHandler).
+	UnprofitableFoldShare float64 `json:"unprofitableFoldShare"`
+	// MeanFoldDeflatedSharpe is the mean of the artefact's per-fold
+	// fold_deflated_sharpe values, or null when no fold defines one.
+	MeanFoldDeflatedSharpe *float64 `json:"meanFoldDeflatedSharpe"`
 }
 
 func (s *Server) Start() error {
