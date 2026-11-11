@@ -32,17 +32,70 @@ const (
 	HaltStaleness HaltReason = "feature_staleness"
 )
 
+// Clock is the manager's source of the current time. It decides when the daily
+// loss window rolls over and how old the last feature is, so it has to match how
+// events reach the manager. A live feed uses WallClock. A replay of history
+// (research, walk-forward, backtests) uses an EventClock: a replay runs months
+// of events inside minutes of wall time, so a wall-clock daily window never
+// rolls and the daily loss limit becomes a cap on the whole replay.
+type Clock interface {
+	// Now returns the current time on this clock.
+	Now() time.Time
+	// Observe reports the event time of a feature event the manager has seen.
+	// The wall clock ignores it; an event clock advances to it.
+	Observe(eventTime time.Time)
+}
+
+// WallClock returns the host's clock, for trading on a live feed.
+func WallClock() Clock { return wallClock{} }
+
+type wallClock struct{}
+
+func (wallClock) Now() time.Time    { return time.Now() }
+func (wallClock) Observe(time.Time) {}
+
+// EventClock tells the time from the events being processed: Now is the latest
+// event time observed, or the zero time before the first event. It never runs
+// backwards, so a late event cannot reopen a day that has already closed.
+type EventClock struct {
+	mu     sync.Mutex
+	latest time.Time
+}
+
+// NewEventClock returns an event clock that has not observed an event yet.
+func NewEventClock() *EventClock { return &EventClock{} }
+
+// Now returns the latest event time observed so far.
+func (c *EventClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.latest
+}
+
+// Observe advances the clock to eventTime if it is later than any seen so far.
+func (c *EventClock) Observe(eventTime time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if eventTime.After(c.latest) {
+		c.latest = eventTime
+	}
+}
+
 // Manager is responsible for applying pre-trade risk controls.
 type Manager struct {
 	config      config.RiskConfig
 	initialCash float64
 
-	mu           sync.RWMutex
-	halted       bool
-	haltReason   HaltReason
-	peakValue    float64
-	recentPrices []float64
-	now          func() time.Time
+	mu         sync.RWMutex
+	halted     bool
+	haltReason HaltReason
+	peakValue  float64
+	// recentPrices holds each instrument's last fill prices, for the
+	// fill-price fallback of the vol-scaled position limit. Kept per instrument
+	// because one shared history reads the gap between two instruments' price
+	// levels as volatility.
+	recentPrices map[string][]float64
+	clock        Clock
 	// dayStart is the UTC midnight that defines the current daily-loss window.
 	dayStart             time.Time
 	dayStartRealizedPnL  float64
@@ -62,20 +115,20 @@ type Manager struct {
 	marketVolatility float64
 }
 
-// NewManager creates a new Risk Manager.
-func NewManager(cfg config.RiskConfig, initialCash float64) *Manager {
-	return newManagerWithClock(cfg, initialCash, time.Now)
-}
-
-// newManagerWithClock is the test seam — production callers use NewManager.
-func newManagerWithClock(cfg config.RiskConfig, initialCash float64, now func() time.Time) *Manager {
-	t := now()
+// NewManager creates a new Risk Manager on the given clock: WallClock() for a
+// live feed, NewEventClock() for a replay of history. There is deliberately no
+// default, because the wrong clock fails silently (see Clock).
+func NewManager(cfg config.RiskConfig, initialCash float64, clock Clock) *Manager {
+	if clock == nil {
+		panic("risk.NewManager: nil Clock; pass risk.WallClock() live or risk.NewEventClock() for a replay")
+	}
 	return &Manager{
-		config:      cfg,
-		initialCash: initialCash,
-		peakValue:   initialCash,
-		now:         now,
-		dayStart:    startOfUTCDay(t),
+		config:       cfg,
+		initialCash:  initialCash,
+		peakValue:    initialCash,
+		recentPrices: make(map[string][]float64),
+		clock:        clock,
+		dayStart:     startOfUTCDay(clock.Now()),
 	}
 }
 
@@ -100,7 +153,7 @@ func (m *Manager) Resume() {
 	defer m.mu.Unlock()
 	m.halted = false
 	m.haltReason = HaltNone
-	m.recentPrices = m.recentPrices[:0]
+	clear(m.recentPrices)
 	m.updateHaltGauges()
 	slog.Info("Manual Circuit Breaker Reset")
 }
@@ -130,7 +183,9 @@ func (m *Manager) UpdateLimits(positionLimit float64) {
 // OnFeatureSeen records that a fresh feature event was just observed. The
 // staleness watchdog and the auto-resume-from-staleness path both consult
 // this. Pass event time, not wall time — consistent with the rest of the
-// engine's event-time semantics.
+// engine's event-time semantics. The event time is also reported to the
+// manager's Clock, which is how an EventClock keeps time in a replay, so the
+// caller reports each event here before it evaluates that event's fills.
 //
 // marketVolatility is the market volatility feature carried by the event
 // (event.Values["volatility"], or 0 when absent). It is stored for the
@@ -140,7 +195,8 @@ func (m *Manager) UpdateLimits(positionLimit float64) {
 func (m *Manager) OnFeatureSeen(eventTime time.Time, marketVolatility float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := m.now()
+	m.clock.Observe(eventTime)
+	now := m.clock.Now()
 	m.lastFeatureSeenAt = now
 	m.lastFeatureEventTime = eventTime
 	if eventTime.After(now.Add(FutureEventTolerance)) {
@@ -155,7 +211,7 @@ func (m *Manager) OnFeatureSeen(eventTime time.Time, marketVolatility float64) {
 	if m.halted && m.haltReason == HaltStaleness && m.config.AutoResumeAfterStaleness {
 		m.halted = false
 		m.haltReason = HaltNone
-		m.recentPrices = m.recentPrices[:0]
+		clear(m.recentPrices)
 		m.updateHaltGauges()
 		slog.Info("Staleness halt auto-cleared by fresh feature event", "event_time", eventTime)
 	}
@@ -205,7 +261,7 @@ func (m *Manager) checkStalenessLocked() bool {
 	if m.config.StalenessTimeout <= 0 || m.lastFeatureSeenAt.IsZero() {
 		return false
 	}
-	gap := m.now().Sub(m.lastFeatureSeenAt)
+	gap := m.clock.Now().Sub(m.lastFeatureSeenAt)
 	if gap <= m.config.StalenessTimeout || (m.halted && m.haltReason == HaltStaleness) {
 		return false
 	}
@@ -259,9 +315,10 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 		return false
 	}
 
-	// 2. Daily Loss Limit (windowed on UTC day boundary).
-	// Roll the window forward if the day has changed.
-	today := startOfUTCDay(m.now())
+	// 2. Daily Loss Limit (windowed on UTC day boundary of the manager's clock).
+	// Roll the window forward if the day has changed. An event clock starts at
+	// the zero time, so its first roll opens the replay's first day.
+	today := startOfUTCDay(m.clock.Now())
 	if today.After(m.dayStart) {
 		slog.Info("Risk: daily loss window rolled",
 			"prev_day", m.dayStart,
@@ -290,15 +347,17 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 	//      captured via OnFeatureSeen) when present — a forward-looking, fill-
 	//      independent measure of regime risk.
 	//   b. Fallback: realized dispersion of the strategy's own recent fill
-	//      prices (the legacy behaviour) — only meaningful once ≥10 fills exist.
+	//      prices on this instrument (the legacy behaviour), only meaningful
+	//      once ≥10 fills on it exist.
 	//
 	// The scaling itself is unchanged: volScale = 1/(1 + 100*volPct), so the
 	// effective position limit shrinks as volatility rises (100 bps of vol
 	// halves the limit), clamped implicitly to (0,1].
-	m.recentPrices = append(m.recentPrices, fill.FillPrice)
-	if len(m.recentPrices) > 30 {
-		m.recentPrices = m.recentPrices[1:]
+	prices := append(m.recentPrices[fill.Instrument], fill.FillPrice)
+	if len(prices) > 30 {
+		prices = prices[1:]
 	}
+	m.recentPrices[fill.Instrument] = prices
 
 	var volPct float64
 	volSource := "none"
@@ -306,15 +365,15 @@ func (m *Manager) Evaluate(fill model.Fill, snap portfolio.Snapshot) bool {
 		volPct = m.marketVolatility
 		volSource = "market_feature"
 	} else {
-		n := len(m.recentPrices)
+		n := len(prices)
 		if n >= 10 {
 			sum := 0.0
-			for _, p := range m.recentPrices {
+			for _, p := range prices {
 				sum += p
 			}
 			mean := sum / float64(n)
 			varianceSum := 0.0
-			for _, p := range m.recentPrices {
+			for _, p := range prices {
 				diff := p - mean
 				varianceSum += diff * diff
 			}
@@ -508,6 +567,6 @@ func (m *Manager) RestoreState(data []byte) error {
 	// a first feature before it can fire: if none arrives within the timeout of
 	// this restore, halt. (Comparing against the persisted EventTime instead
 	// would halt on every restart that took longer than the timeout.)
-	m.lastFeatureSeenAt = m.now()
+	m.lastFeatureSeenAt = m.clock.Now()
 	return nil
 }

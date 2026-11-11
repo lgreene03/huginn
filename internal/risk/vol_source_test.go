@@ -20,7 +20,7 @@ func TestPositionLimit_UsesMarketVolatilityWhenPresent(t *testing.T) {
 	// Fill: qty 1500 * price 100 = 150_000 gross notional.
 	// With market vol 0.02: volScale = 1/(1+100*0.02) = 1/3 ≈ 0.333.
 	// effective limit = 200_000 * 0.333 ≈ 66_667 < 150_000 => rejected.
-	m := NewManager(cfg, 100_000)
+	m := NewManager(cfg, 100_000, WallClock())
 
 	// Observe a market volatility feature.
 	m.OnFeatureSeen(time.Now(), 0.02)
@@ -41,7 +41,7 @@ func TestPositionLimit_UsesMarketVolatilityWhenPresent(t *testing.T) {
 func TestPositionLimit_FallsBackToFillPricesWithoutMarketVol(t *testing.T) {
 	t.Parallel()
 	cfg := baseCfg()
-	m := NewManager(cfg, 100_000)
+	m := NewManager(cfg, 100_000, WallClock())
 
 	// No OnFeatureSeen with volatility => marketVolatility stays 0, and with a
 	// single fill price there is no dispersion-based scaling yet.
@@ -59,7 +59,7 @@ func TestPositionLimit_FallsBackToFillPricesWithoutMarketVol(t *testing.T) {
 // volatility feature does not wipe a previously observed value.
 func TestOnFeatureSeen_ZeroVolDoesNotClobber(t *testing.T) {
 	t.Parallel()
-	m := NewManager(baseCfg(), 100_000)
+	m := NewManager(baseCfg(), 100_000, WallClock())
 	m.OnFeatureSeen(time.Now(), 0.02)
 	m.OnFeatureSeen(time.Now(), 0) // missing feature on this event
 

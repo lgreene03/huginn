@@ -184,7 +184,7 @@ func runPoint(cfg *config.Config, dataPath string, txCostBps, hurdleK float64) (
 		return SweepPoint{}, jerr
 	}
 
-	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash)
+	riskManager := risk.NewManager(cfg.Risk, cfg.Capital.InitialCash, risk.NewEventClock())
 
 	exec := executor.New(activeStrategy, port, jWriter, riskManager, executor.Config{
 		TransactionCostBps:  txCostBps,

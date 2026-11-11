@@ -49,7 +49,7 @@ func buildEngine(t *testing.T) *Engine {
 		DailyLossLimit:    9_900,
 		PositionLimitHard: 100,
 		StalenessTimeout:  0, // disable staleness watchdog in tests
-	}, 10_000)
+	}, 10_000, risk.NewEventClock())
 	exec := executor.New(
 		&noopStrategy{}, port, nil, rm,
 		executor.Config{SlippageBps: 0, TransactionCostBps: 0},
@@ -118,7 +118,7 @@ func TestMultiStrategySharedPortfolio(t *testing.T) {
 		DailyLossLimit:    99_000,
 		PositionLimitHard: 1_000,
 		StalenessTimeout:  0,
-	}, initialCash)
+	}, initialCash, risk.NewEventClock())
 
 	// OBI strategy A: fires on events where obi >= 0.6
 	stratA := &thresholdSignalStrategy{threshold: 0.6, orderSize: 0.001}

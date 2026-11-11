@@ -40,7 +40,7 @@ func buildParityPair(t *testing.T) (engA *Engine, portA *portfolio.Portfolio, en
 			DailyLossLimit:    99_000,
 			PositionLimitHard: 100,
 			StalenessTimeout:  0,
-		}, 100_000)
+		}, 100_000, risk.NewEventClock())
 		s := strategy.NewOBIThreshold(0.5, 0.01, 10.0)
 		exec := executor.New(
 			s, port, nil, rm,

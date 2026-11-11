@@ -313,7 +313,7 @@ func runOne(stratName string, params map[string]string, events []model.FeatureEv
 	}
 
 	port := portfolio.New(initialCash)
-	rm := risk.NewManager(riskCfg, initialCash)
+	rm := risk.NewManager(riskCfg, initialCash, risk.NewEventClock())
 	exec := executor.New(strat, port, nil, rm, executor.Config{
 		TransactionCostBps: sweepTxCostBps,
 		SlippageBps:        sweepSlippageBps,
