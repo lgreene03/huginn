@@ -1421,7 +1421,7 @@
 <p>Compares the intraday realized PnL against a fixed limit. Rejects any order when:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(snap.RealizedPnL - day_start_realized_pnl) &lt; -daily_loss_limit
 </code></pre></div>
-<p>The daily window rolls at UTC midnight. <code>dayStartRealizedPnL</code> is reset to the current <code>RealizedPnL</code> on each day boundary. This prevents loss accumulation across calendar days.</p>
+<p>The daily window rolls at UTC midnight on the manager's clock, which every caller of <code>risk.NewManager</code> must choose. Live trading (<code>cmd/huginn</code>) passes <code>risk.WallClock()</code>, so the window rolls at the host's UTC midnight. Every replay of history (<code>cmd/backtest</code>, <code>cmd/walkforward</code>, <code>cmd/calibrate</code>, <code>cmd/costsweep</code> and the research gateway) passes <code>risk.NewEventClock()</code>, so the window rolls at each UTC midnight in the data. A replay runs months of events in minutes of wall time: on the wall clock its window never rolled and the daily limit capped the whole replay, which is why fold 4 of the 2026-09-10 six-month walk-forward stopped at -10,000. <code>dayStartRealizedPnL</code> is reset to the current <code>RealizedPnL</code> on each day boundary. This prevents loss accumulation across calendar days.</p>
 <p><strong>Survival across restarts.</strong> <code>dayStartRealizedPnL</code> is persisted alongside <code>peakValue</code> in the <code>_risk</code> journal key. On first boot or after <code>_risk</code> is absent, the <code>daily_pnl_snapshots</code> fallback provides the most recent UTC-day baseline.</p>
 <p><strong>Config.</strong></p>
 <table>
@@ -1437,12 +1437,12 @@
 <tr>
 <td><code>risk.daily_loss_limit</code></td>
 <td><code>RISK_DAILY_LOSS_LIMIT</code></td>
-<td>0 (disabled)</td>
+<td>10,000</td>
 <td>Maximum allowed intraday loss</td>
 </tr>
 </tbody>
 </table>
-<p>A <code>DailyLossLimit</code> of 0 disables the check.</p>
+<p><code>config.Load</code> replaces an unset or zero limit with 10,000, so the check cannot be switched off from config; set a large value to make it non-binding. <code>configs/default.yaml</code> has no <code>risk</code> block, so every run on it has the 10,000 limit.</p>
 <hr />
 <h3 id="3-gross-position-limit">3. Gross position limit<a class="headerlink" href="#3-gross-position-limit" title="Permanent link">&para;</a></h3>
 <p>Rejects any order that would cause the gross notional position to exceed the configured limit:</p>
@@ -1471,7 +1471,7 @@
 <p>A <code>PositionLimitHard</code> of 0 disables the check.</p>
 <hr />
 <h3 id="4-volatility-scaled-position-limit">4. Volatility-scaled position limit<a class="headerlink" href="#4-volatility-scaled-position-limit" title="Permanent link">&para;</a></h3>
-<p>Computes the coefficient of variation (CV) of the last 30 fill prices and scales the hard limit down when volatility is elevated:</p>
+<p>Computes the coefficient of variation (CV) of the last 30 fill prices on the same instrument and scales the hard limit down when volatility is elevated. The history is kept per instrument because one shared history would read the gap between two instruments' price levels as volatility:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>cv = std(last_30_fill_prices) / mean(last_30_fill_prices)
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>effective_limit = position_limit_hard / max(1, cv * volatility_scale_factor)
 </code></pre></div>
