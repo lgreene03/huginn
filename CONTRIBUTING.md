@@ -22,7 +22,7 @@ go mod download
 go test -race ./...
 ```
 
-Requires Go 1.23+. A running PostgreSQL instance is needed for Postgres-mode tests (see `internal/journal/`); set `DATABASE_URL` in your environment or use the bundled `docker-compose.yml`:
+Requires Go 1.26.11 or newer, the version `go.mod` declares. A running PostgreSQL instance is needed for Postgres-mode tests (see `internal/journal/`); set `DATABASE_URL` in your environment or use the bundled `docker-compose.yml`:
 
 ```bash
 docker-compose up -d postgres
