@@ -1,4 +1,7 @@
-FROM golang:1.25-alpine@sha256:c4ea15b4a7912716eb362a022e2b12317762eca387423760bc59c0f9ae69423c AS builder
+# Go 1.26.11, matching go.mod and Dockerfile. The official image sets
+# GOTOOLCHAIN=local, so a builder older than go.mod's go line cannot build the
+# module at all. The tag names the version; the digest pins the bytes.
+FROM golang:1.26.11-alpine@sha256:ae52b5bc6ed045a9ed26ab03dc19327a802a9cc9aa8b27ed57f5c6b60579b0bb AS builder
 WORKDIR /app
 
 RUN apk add --no-cache git

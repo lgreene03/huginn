@@ -20,9 +20,9 @@ jobs:
       uses: actions/setup-go@v7
       with:
         # go.mod is the single source of truth for the toolchain, so CI cannot
-        # drift from it. It pins 1.26.10, the first release with the fixes for
-        # GO-2026-6809 and GO-2026-6617; Go 1.25 is out of support and gets no
-        # security fixes at all.
+        # drift from it. It pins 1.26.11, the first release with the fix for
+        # GO-2026-6859, after 1.26.10 fixed GO-2026-6809 and GO-2026-6617; Go
+        # 1.25 is out of support and gets no security fixes at all.
         go-version-file: go.mod
 
     - name: Verify Dependencies
@@ -55,7 +55,7 @@ jobs:
       # Go than the one it was built with, so the lint gate silently depends on
       # whichever binary was released last; it has already broken once on a Go
       # upgrade (v1.64.x, built with Go 1.24, rejected Go 1.25 modules). v2.15.0
-      # is built with Go 1.27.0, so it lints this go1.26.10 module. Bump this
+      # is built with Go 1.27.0, so it lints this go1.26.11 module. Bump this
       # deliberately alongside go.mod.
       uses: golangci/golangci-lint-action@v9
       with:
@@ -74,7 +74,7 @@ jobs:
       # cannot pull a newer toolchain: when x/vuln v1.8.0 raised its floor to
       # go >= 1.26.0 this step began failing outright ("requires go >= 1.26.0
       # (running go 1.25.14; GOTOOLCHAIN=local)") before the scan even ran.
-      # v1.7.0 declares go 1.25.0, which the go.mod toolchain (1.26.10)
+      # v1.7.0 declares go 1.25.0, which the go.mod toolchain (1.26.11)
       # satisfies. Now that go.mod is on 1.26, v1.8.0's go >= 1.26.0 floor is
       # also met, so this pin can be raised; it is left at the verified v1.7.0
       # here to keep one change per pull request.
