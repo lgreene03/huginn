@@ -1451,7 +1451,8 @@ and it trades on the next event.</p>
 <li>the <strong>risk manager</strong> path (drawdown, daily loss, staleness),</li>
 <li>per-alpha <strong>Prometheus</strong> observability (<code>AlphaContribution{alpha=…}</code> and
   <code>CompositeScore</code>), and</li>
-<li>the <strong>walk-forward + PBO</strong> validation gate and Deflated Sharpe in research.</li>
+<li>the <strong>walk-forward</strong> validation in research, with its fold-level PBO proxy and
+  mean per-fold deflated Sharpe.</li>
 </ul>
 <p>So the marginal cost of a new signal is genuinely: one type, one weight. That is
 the point.</p>
