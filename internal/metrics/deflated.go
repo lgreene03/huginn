@@ -5,12 +5,21 @@ import (
 	"sort"
 )
 
-// This file implements two overfitting-aware statistics from Bailey & López de
-// Prado: the Deflated Sharpe Ratio (DSR) and the Probability of Backtest
-// Overfitting (PBO). Both exist to answer the same uncomfortable question that
-// the rest of this engine keeps raising — when a grid sweep picks the
-// best-in-sample config out of N trials, how much of that winning Sharpe is real
-// edge and how much is just the maximum of N noisy draws?
+// This file implements two fold-level overfitting indicators adapted from
+// Bailey & López de Prado for huginn's walk-forward tools: FoldDeflatedSharpe, a
+// deflated Sharpe applied to one fold's out-of-sample returns, and FoldPBOProxy,
+// a leave-one-fold-out proxy for the Probability of Backtest Overfitting. Both
+// exist to answer the same uncomfortable question that the rest of this engine
+// keeps raising: when a grid sweep picks the best-in-sample config out of N
+// trials, how much of that winning Sharpe is real edge and how much is just the
+// maximum of N noisy draws?
+//
+// Neither is the evaluation gate's statistic, and neither may be reported as
+// PBO or as a deflated Sharpe ratio without the fold qualifier. The Norse
+// evaluation gate (goal G1.3) computes the combinatorially symmetric
+// cross-validation PBO in norse-stack's research/norse_research/cscv.py and the
+// deflated Sharpe ratio on the joined daily out-of-sample returns, with N read
+// from the trial ledger, in research/norse_research/sharpe.py.
 //
 // References:
 //   - Bailey, D. & López de Prado, M. (2014), "The Deflated Sharpe Ratio:
@@ -98,10 +107,10 @@ func normalPPF(p float64) float64 {
 	return x
 }
 
-// ReturnMoments holds the per-observation statistics the Deflated Sharpe Ratio
+// ReturnMoments holds the per-observation statistics FoldDeflatedSharpe
 // consumes, derived from an equity curve. PerObsSharpe is the NON-annualized
 // Sharpe (mean/stddev of per-period returns), which is exactly the unit
-// DeflatedSharpeRatio expects — unlike CalculateSharpeRatio, which annualizes.
+// FoldDeflatedSharpe expects, unlike CalculateSharpeRatio, which annualizes.
 // NObs is the number of usable return observations (one fewer than the equity
 // points, minus any skipped non-positive-prior steps).
 type ReturnMoments struct {
@@ -113,7 +122,7 @@ type ReturnMoments struct {
 
 // EquityReturnMoments computes the per-observation Sharpe, skewness, and
 // (non-excess) kurtosis of the simple returns implied by an equity curve, plus
-// the usable observation count — everything DeflatedSharpeRatio needs.
+// the usable observation count: everything FoldDeflatedSharpe needs.
 //
 // It mirrors CalculateSharpeRatio's return construction exactly (same
 // prev<=0 skip) so the PerObsSharpe here is consistent with the engine's
@@ -166,12 +175,18 @@ func EquityReturnMoments(equity []float64) ReturnMoments {
 	}
 }
 
-// DeflatedSharpeRatio computes the Deflated Sharpe Ratio (DSR) of Bailey &
-// López de Prado (2014).
+// FoldDeflatedSharpe is a deflated Sharpe applied to one walk-forward fold's
+// out-of-sample returns: the Deflated Sharpe Ratio formula of Bailey & López de
+// Prado (2014) evaluated on a single fold's return series, with the cross-trial
+// variance replaced by the proxy 1/(nObs-1). It is NOT the evaluation gate's
+// deflated Sharpe ratio, which norse-stack computes in
+// research/norse_research/sharpe.py on the joined daily out-of-sample returns of
+// every fold with N read from the trial ledger. A mean of FoldDeflatedSharpe
+// values across folds is a different quantity again, and is labelled as such.
 //
-// The DSR is the probability that the observed (per-observation, NON-annualized)
-// Sharpe ratio exceeds a deflated benchmark SR_0 that accounts for (a) the
-// number of independent strategy configurations tried (nTrials), (b) the
+// The result is the probability that the observed (per-observation,
+// NON-annualized) Sharpe ratio exceeds a deflated benchmark SR_0 that accounts
+// for (a) the number of independent strategy configurations tried (nTrials), (b) the
 // non-normality of the return stream (skew and kurtosis), and (c) the sample
 // length (nObs). It is, equivalently, the estimated probability that the
 // strategy's TRUE Sharpe is greater than zero once selection bias has been
@@ -216,7 +231,7 @@ func EquityReturnMoments(equity []float64) ReturnMoments {
 // maximum of a single draw, i.e. Φ⁻¹(1 − 1/e)·√Var(SR) > 0; the DSR is then the
 // ordinary Probabilistic Sharpe Ratio against that mild benchmark. There is no
 // special-casing — the formula degrades smoothly.
-func DeflatedSharpeRatio(observedSharpe float64, nTrials int, skew, kurtosis, nObs float64) float64 {
+func FoldDeflatedSharpe(observedSharpe float64, nTrials int, skew, kurtosis, nObs float64) float64 {
 	if nObs < 2 || nTrials < 1 || math.IsNaN(observedSharpe) {
 		return math.NaN()
 	}
@@ -263,11 +278,12 @@ func expectedMaxSharpe(nTrials int, sqrtVarSR float64) float64 {
 	return sqrtVarSR * ((1.0-emConstant)*q1 + emConstant*q2)
 }
 
-// ImpliedPTrueSharpeNonPositive converts a Deflated Sharpe Ratio into the
-// implied probability that the strategy's TRUE Sharpe is ≤ 0. Since the DSR is
-// (by construction) the probability that the true Sharpe exceeds the deflated
-// zero-skill benchmark, the complementary probability 1 − DSR is the natural
-// "could be a false discovery" figure to report alongside it.
+// ImpliedPTrueSharpeNonPositive converts a FoldDeflatedSharpe value into the
+// implied probability that the strategy's TRUE Sharpe is ≤ 0 on that fold. Since
+// the fold deflated Sharpe is (by construction) the probability that the true
+// Sharpe exceeds the deflated zero-skill benchmark, the complementary
+// probability 1 - dsr is the natural "could be a false discovery" figure to
+// report alongside it.
 //
 // Returns NaN when dsr is NaN (undefined input propagates).
 func ImpliedPTrueSharpeNonPositive(dsr float64) float64 {
@@ -277,9 +293,12 @@ func ImpliedPTrueSharpeNonPositive(dsr float64) float64 {
 	return 1.0 - dsr
 }
 
-// ProbabilityBacktestOverfitting computes the Probability of Backtest
-// Overfitting (PBO) via the Combinatorially-Symmetric Cross-Validation (CSCV)
-// procedure of Bailey, Borwein, López de Prado & Zhu (2017).
+// FoldPBOProxy is a fold-level, leave-one-fold-out proxy for the Probability of
+// Backtest Overfitting of Bailey, Borwein, López de Prado & Zhu (2017). It is NOT
+// that paper's combinatorially symmetric cross-validation (CSCV) estimator, and
+// it is NOT the evaluation gate's PBO, which norse-stack computes in
+// research/norse_research/cscv.py over 16 blocks and all 12,870 balanced splits.
+// Report its output as a fold PBO proxy, never as PBO.
 //
 // Input — isOosFoldMatrix — is a per-fold performance matrix laid out as
 // [fold][config]: each row is one out-of-sample fold (or, in the simplest
@@ -287,30 +306,28 @@ func ImpliedPTrueSharpeNonPositive(dsr float64) float64 {
 // is one strategy configuration. The value is that config's performance score in
 // that fold (Sharpe, PnL, etc. — any "higher is better" metric).
 //
-// Method (the rank-logit estimator that this simplified form implements):
+// Method (the paper's rank-logit idea, applied to one IS/OOS split per fold):
 //
 //	For each fold f, treat fold f as the OUT-OF-SAMPLE slice and the average of
 //	all OTHER folds as the IN-SAMPLE slice. Pick the config n* that is best
 //	in-sample, then find its rank among all configs out-of-sample. Map that OOS
-//	rank to a relative rank ω ∈ (0,1) and a logit λ = ln(ω/(1−ω)). PBO is the
-//	fraction of folds whose IS-best config landed in the BOTTOM HALF out of
+//	rank to a relative rank ω ∈ (0,1) and a logit λ = ln(ω/(1−ω)). The proxy is
+//	the fraction of folds whose IS-best config landed in the BOTTOM HALF out of
 //	sample, i.e. P(λ ≤ 0) — the probability the in-sample optimum is no better
 //	than median out of sample, the operational definition of overfitting.
 //
-// This is a leave-one-fold-out / fold-level PBO proxy: it approximates the full
-// combinatorially-symmetric CSCV (which evaluates every balanced split of folds
-// into IS/OOS halves) but is NOT that estimator. It uses a single IS/OOS
-// partition per fold rather than the symmetric set of all balanced splits, so it
-// needs only the fold matrix the walk-forward harness already produces. It is a
-// directionally consistent overfitting indicator, not a drop-in for full CSCV;
-// adding folds does not make it converge to the combinatorial estimator.
+// Full CSCV evaluates every balanced split of blocks into IS/OOS halves; this
+// proxy uses a single IS/OOS partition per fold instead, so it needs only the
+// fold matrix the walk-forward harness already produces. It is a directionally
+// consistent overfitting indicator, not a drop-in for CSCV; adding folds does
+// not make it converge to the combinatorial estimator.
 //
 // Returns NaN (documented "undefined") when:
 //   - the matrix has fewer than 2 folds (no IS/OOS split is possible);
 //   - the matrix has fewer than 2 configurations (ranking is degenerate — with
 //     one config there is no selection to overfit);
 //   - rows are ragged (differing config counts) — the matrix is malformed.
-func ProbabilityBacktestOverfitting(isOosFoldMatrix [][]float64) float64 {
+func FoldPBOProxy(isOosFoldMatrix [][]float64) float64 {
 	nFolds := len(isOosFoldMatrix)
 	if nFolds < 2 {
 		return math.NaN()

@@ -1,9 +1,12 @@
 // Command research is the Huginn research / validation gateway: an HTTP service
-// that runs heavy walk-forward + PBO + Deflated-Sharpe backtests OUT of the
-// live trading process. Operators submit a run (strategy + threshold grid +
-// fold count), the gateway executes internal/research.Run asynchronously, and
-// the read-only research UI polls for the derived results
-// (oosFoldsProfitable / totalOOSPnL / pbo / deflatedSharpe).
+// that runs heavy walk-forward backtests, with huginn's fold-level overfitting
+// indicators (a leave-one-fold-out PBO proxy and the mean per-fold deflated
+// Sharpe), OUT of the live trading process. Operators submit a run (strategy +
+// threshold grid + fold count), the gateway executes internal/research.Run
+// asynchronously, and the read-only research UI polls for the derived results
+// (oosFoldsProfitable / totalOOSPnL / foldPboProxy / meanFoldDeflatedSharpe).
+// These are not the evaluation gate's statistics, which live in norse-stack's
+// research/norse_research (goal G1.3).
 //
 // It owns no Kafka/Postgres dependency: it replays a JSONL dataset on disk, so
 // it can run as a standalone sidecar. Finished runs are persisted to

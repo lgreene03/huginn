@@ -191,7 +191,8 @@ Because the composite reuses the existing machinery, your new alpha inherits:
 - the **risk manager** path (drawdown, daily loss, staleness),
 - per-alpha **Prometheus** observability (`AlphaContribution{alpha=…}` and
   `CompositeScore`), and
-- the **walk-forward + PBO** validation gate and Deflated Sharpe in research.
+- the **walk-forward** validation in research, with its fold-level PBO proxy and
+  mean per-fold deflated Sharpe.
 
 So the marginal cost of a new signal is genuinely: one type, one weight. That is
 the point.

@@ -133,10 +133,10 @@ func main() {
 		fmt.Printf("  OOS Sharpe: %.4f  IS→OOS decay: %s  MaxDD: %.2f%%  Hit: %.1f%%\n",
 			r.Sharpe, decayStr, r.MaxDD*100, r.HitRate*100)
 		dsrStr := "n/a (insufficient OOS obs)"
-		if !math.IsNaN(r.DeflatedSharpe) {
-			dsrStr = fmt.Sprintf("%.4f  P(true Sharpe ≤ 0): %.4f", r.DeflatedSharpe, r.PTrueSharpeNonPositive)
+		if !math.IsNaN(r.FoldDeflatedSharpe) {
+			dsrStr = fmt.Sprintf("%.4f  P(true Sharpe ≤ 0): %.4f", r.FoldDeflatedSharpe, r.PTrueSharpeNonPositive)
 		}
-		fmt.Printf("  Deflated Sharpe (deflated by %d trials): %s\n", res.GridSize, dsrStr)
+		fmt.Printf("  Fold deflated Sharpe (deflated by %d trials): %s\n", res.GridSize, dsrStr)
 	}
 
 	printSummary(res)
@@ -246,47 +246,50 @@ func printSummary(res research.Result) {
 	}
 	fmt.Printf("Reminder: %d combos searched/fold — read the best as upward-biased.\n", numCombos)
 
-	// ─── Overfitting-aware statistics (Bailey & López de Prado) ───
-	// Mean Deflated Sharpe across folds (only over folds where it is defined),
-	// plus the Probability of Backtest Overfitting from the OOS Sharpe matrix.
+	// ─── Fold-level overfitting indicators (after Bailey & López de Prado) ───
+	// Mean of the per-fold deflated Sharpes (only over folds where it is
+	// defined), plus the leave-one-fold-out PBO proxy from the OOS Sharpe matrix.
+	// Neither is the evaluation gate's statistic: CSCV PBO and the deflated
+	// Sharpe of the joined OOS returns live in norse-stack's
+	// research/norse_research (goal G1.3).
 	var dsrSum float64
 	var dsrN int
 	for _, r := range results {
-		if !math.IsNaN(r.DeflatedSharpe) {
-			dsrSum += r.DeflatedSharpe
+		if !math.IsNaN(r.FoldDeflatedSharpe) {
+			dsrSum += r.FoldDeflatedSharpe
 			dsrN++
 		}
 	}
-	fmt.Println("─── Deflated Sharpe (selected config, deflated by trials) ───")
+	fmt.Println("─── Fold deflated Sharpe (selected config, deflated by trials) ───")
 	fmt.Printf("Trials (combos) per fold: %d\n", numCombos)
 	if dsrN == 0 {
-		fmt.Println("Mean OOS Deflated Sharpe: n/a (no fold had enough OOS observations)")
+		fmt.Println("Mean fold deflated Sharpe: n/a (no fold had enough OOS observations)")
 	} else {
 		meanDSR := dsrSum / float64(dsrN)
-		fmt.Printf("Mean OOS Deflated Sharpe: %.4f over %d/%d folds  (implied mean P(true Sharpe ≤ 0): %.4f)\n",
+		fmt.Printf("Mean fold deflated Sharpe: %.4f over %d/%d folds  (implied mean P(true Sharpe ≤ 0): %.4f)\n",
 			meanDSR, dsrN, len(results), 1.0-meanDSR)
 	}
 
-	pbo := res.PBO
-	fmt.Println("─── Probability of Backtest Overfitting (CSCV) ───")
-	if math.IsNaN(pbo) {
+	foldPBO := res.FoldPBOProxy
+	fmt.Println("─── Fold PBO proxy (leave-one-fold-out, not CSCV) ───")
+	if math.IsNaN(foldPBO) {
 		nConfigs := 0
 		if len(res.OOSMatrix) > 0 {
 			nConfigs = len(res.OOSMatrix[0])
 		}
-		fmt.Printf("PBO: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
+		fmt.Printf("Fold PBO proxy: n/a (need ≥2 folds and ≥2 configs; have %d folds, %d configs)\n",
 			len(res.OOSMatrix), nConfigs)
 	} else {
-		fmt.Printf("PBO: %.4f  (fraction of folds where the IS-best config was OOS bottom-half)\n", pbo)
+		fmt.Printf("Fold PBO proxy: %.4f  (fraction of folds where the IS-best config was OOS bottom-half; not CSCV PBO)\n", foldPBO)
 		// Honesty caveat: on a short fixture the OOS Sharpes across configs are
 		// often near-tied (near-zero cross-fold dispersion). When that happens a
-		// PBO pinned at 1.00 (or 0.00) is a degenerate/conservative tie-break of
+		// proxy pinned at 1.00 (or 0.00) is a degenerate/conservative tie-break of
 		// a rank statistic, NOT a finely-measured overfitting probability — the
 		// rank flips on noise. The load-bearing evidence in that regime is the
-		// OOS-folds-profitable count above, not the PBO value itself.
-		if (pbo >= 0.99 || pbo <= 0.01) && stdSharpe < 1e-9 {
+		// OOS-folds-profitable count above, not the proxy value itself.
+		if (foldPBO >= 0.99 || foldPBO <= 0.01) && stdSharpe < 1e-9 {
 			fmt.Println("  ⚠ Caveat: OOS Sharpes are near-tied across configs on this short " +
-				"fixture, so this extreme PBO is a conservative tie-break, not a precise " +
+				"fixture, so this extreme fold PBO proxy is a conservative tie-break, not a precise " +
 				"probability — read the OOS-folds-profitable count as the real signal.")
 		}
 	}

@@ -42,31 +42,31 @@ func TestNormalPPFRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDeflatedSharpeGuards checks every documented NaN return path.
-func TestDeflatedSharpeGuards(t *testing.T) {
+// TestFoldDeflatedSharpeGuards checks every documented NaN return path.
+func TestFoldDeflatedSharpeGuards(t *testing.T) {
 	// nObs < 2.
-	if got := DeflatedSharpeRatio(0.1, 10, 0, 3, 1); !math.IsNaN(got) {
+	if got := FoldDeflatedSharpe(0.1, 10, 0, 3, 1); !math.IsNaN(got) {
 		t.Errorf("nObs<2 should be NaN, got %v", got)
 	}
 	// nTrials < 1.
-	if got := DeflatedSharpeRatio(0.1, 0, 0, 3, 100); !math.IsNaN(got) {
+	if got := FoldDeflatedSharpe(0.1, 0, 0, 3, 100); !math.IsNaN(got) {
 		t.Errorf("nTrials<1 should be NaN, got %v", got)
 	}
 	// NaN observed sharpe.
-	if got := DeflatedSharpeRatio(math.NaN(), 10, 0, 3, 100); !math.IsNaN(got) {
+	if got := FoldDeflatedSharpe(math.NaN(), 10, 0, 3, 100); !math.IsNaN(got) {
 		t.Errorf("NaN observedSharpe should be NaN, got %v", got)
 	}
 	// Degenerate higher-moment denominator ≤ 0. With large positive skew and a
 	// positive Sharpe, 1 − skew*SR + (kurt-1)/4*SR² can be driven non-positive.
 	// skew=100, SR=1, kurt=3 → 1 - 100 + 0.5 = -98.5 ≤ 0.
-	if got := DeflatedSharpeRatio(1.0, 10, 100, 3, 100); !math.IsNaN(got) {
+	if got := FoldDeflatedSharpe(1.0, 10, 100, 3, 100); !math.IsNaN(got) {
 		t.Errorf("non-positive denom should be NaN, got %v", got)
 	}
 	// Never returns Inf for any of the guard paths.
 	for _, g := range []float64{
-		DeflatedSharpeRatio(0.1, 10, 0, 3, 1),
-		DeflatedSharpeRatio(0.1, 0, 0, 3, 100),
-		DeflatedSharpeRatio(1.0, 10, 100, 3, 100),
+		FoldDeflatedSharpe(0.1, 10, 0, 3, 1),
+		FoldDeflatedSharpe(0.1, 0, 0, 3, 100),
+		FoldDeflatedSharpe(1.0, 10, 100, 3, 100),
 	} {
 		if math.IsInf(g, 0) {
 			t.Errorf("guard path returned Inf (%v) — must be NaN", g)
@@ -74,8 +74,9 @@ func TestDeflatedSharpeGuards(t *testing.T) {
 	}
 }
 
-// TestDeflatedSharpeHandComputed verifies the DSR against a fully hand-worked
-// case so the formula wiring (benchmark, studentization, Φ) is pinned.
+// TestFoldDeflatedSharpeHandComputed verifies the fold deflated Sharpe against a
+// fully hand-worked case so the formula wiring (benchmark, studentization, Φ) is
+// pinned.
 //
 // Inputs: observedSharpe SR=0.20 (per-observation), nTrials N=1, skew=0,
 // kurtosis=3 (normal), nObs T=101.
@@ -87,7 +88,7 @@ func TestDeflatedSharpeGuards(t *testing.T) {
 //	z = (0.20 - 0.0337247) * sqrt(100) / sqrt(1.02)
 //	  = 0.1662753 * 10 / 1.00995 = 1.646369
 //	DSR = Φ(1.646369) ≈ 0.950159
-func TestDeflatedSharpeHandComputed(t *testing.T) {
+func TestFoldDeflatedSharpeHandComputed(t *testing.T) {
 	// Recompute the benchmark with the same primitives the code uses, then the
 	// closed-form z and Φ(z), so the test is a true independent cross-check of
 	// the assembly rather than a copy of the implementation.
@@ -97,91 +98,91 @@ func TestDeflatedSharpeHandComputed(t *testing.T) {
 	z := (0.20 - sr0) * math.Sqrt(100.0) / math.Sqrt(denomVar)
 	want := normalCDF(z)
 
-	got := DeflatedSharpeRatio(0.20, 1, 0.0, 3.0, 101)
-	approx(t, "DSR hand case", got, want, 1e-12)
+	got := FoldDeflatedSharpe(0.20, 1, 0.0, 3.0, 101)
+	approx(t, "fold deflated Sharpe hand case", got, want, 1e-12)
 
 	// Sanity on the magnitude: should be a high-but-not-certain probability.
 	if got < 0.90 || got > 0.97 {
-		t.Errorf("DSR hand case out of expected band: got %v, want ~0.95", got)
+		t.Errorf("fold deflated Sharpe hand case out of expected band: got %v, want ~0.95", got)
 	}
 }
 
-// TestDeflatedSharpeMoreTrialsLowersDSR checks the core economic property: for a
-// fixed observed Sharpe, searching MORE configurations raises the deflation
-// benchmark SR_0 and therefore LOWERS the Deflated Sharpe. This is the whole
-// point of the statistic.
-func TestDeflatedSharpeMoreTrialsLowersDSR(t *testing.T) {
+// TestFoldDeflatedSharpeMoreTrialsLowersIt checks the core economic property:
+// for a fixed observed Sharpe, searching MORE configurations raises the
+// deflation benchmark SR_0 and therefore LOWERS the fold deflated Sharpe. This
+// is the whole point of the statistic.
+func TestFoldDeflatedSharpeMoreTrialsLowersIt(t *testing.T) {
 	sr, skew, kurt, nObs := 0.20, 0.0, 3.0, 250.0
-	d1 := DeflatedSharpeRatio(sr, 1, skew, kurt, nObs)
-	d10 := DeflatedSharpeRatio(sr, 10, skew, kurt, nObs)
-	d100 := DeflatedSharpeRatio(sr, 100, skew, kurt, nObs)
+	d1 := FoldDeflatedSharpe(sr, 1, skew, kurt, nObs)
+	d10 := FoldDeflatedSharpe(sr, 10, skew, kurt, nObs)
+	d100 := FoldDeflatedSharpe(sr, 100, skew, kurt, nObs)
 	if !(d1 > d10 && d10 > d100) {
-		t.Errorf("DSR must decrease with more trials: d1=%v d10=%v d100=%v", d1, d10, d100)
+		t.Errorf("fold deflated Sharpe must decrease with more trials: d1=%v d10=%v d100=%v", d1, d10, d100)
 	}
 	for _, d := range []float64{d1, d10, d100} {
 		if math.IsNaN(d) || math.IsInf(d, 0) {
-			t.Errorf("DSR should be a finite probability, got %v", d)
+			t.Errorf("fold deflated Sharpe should be a finite probability, got %v", d)
 		}
 		if d < 0 || d > 1 {
-			t.Errorf("DSR must be a probability in [0,1], got %v", d)
+			t.Errorf("fold deflated Sharpe must be a probability in [0,1], got %v", d)
 		}
 	}
 }
 
 // TestImpliedPTrueSharpeNonPositive checks the complement helper.
 func TestImpliedPTrueSharpeNonPositive(t *testing.T) {
-	approx(t, "1-DSR", ImpliedPTrueSharpeNonPositive(0.95), 0.05, 1e-12)
-	approx(t, "1-DSR (0)", ImpliedPTrueSharpeNonPositive(0.0), 1.0, 1e-12)
+	approx(t, "1 - fold deflated Sharpe", ImpliedPTrueSharpeNonPositive(0.95), 0.05, 1e-12)
+	approx(t, "1 - fold deflated Sharpe (0)", ImpliedPTrueSharpeNonPositive(0.0), 1.0, 1e-12)
 	if !math.IsNaN(ImpliedPTrueSharpeNonPositive(math.NaN())) {
-		t.Error("NaN DSR should propagate to NaN implied p")
+		t.Error("NaN fold deflated Sharpe should propagate to NaN implied p")
 	}
 }
 
-// TestPBOGuards checks the documented NaN paths for ProbabilityBacktestOverfitting.
-func TestPBOGuards(t *testing.T) {
+// TestFoldPBOProxyGuards checks the documented NaN paths for FoldPBOProxy.
+func TestFoldPBOProxyGuards(t *testing.T) {
 	// < 2 folds.
-	if got := ProbabilityBacktestOverfitting([][]float64{{1, 2, 3}}); !math.IsNaN(got) {
+	if got := FoldPBOProxy([][]float64{{1, 2, 3}}); !math.IsNaN(got) {
 		t.Errorf("1 fold should be NaN, got %v", got)
 	}
 	// < 2 configs.
-	if got := ProbabilityBacktestOverfitting([][]float64{{1}, {2}}); !math.IsNaN(got) {
+	if got := FoldPBOProxy([][]float64{{1}, {2}}); !math.IsNaN(got) {
 		t.Errorf("1 config should be NaN, got %v", got)
 	}
 	// Ragged matrix.
-	if got := ProbabilityBacktestOverfitting([][]float64{{1, 2}, {3}}); !math.IsNaN(got) {
+	if got := FoldPBOProxy([][]float64{{1, 2}, {3}}); !math.IsNaN(got) {
 		t.Errorf("ragged matrix should be NaN, got %v", got)
 	}
 	// Empty.
-	if got := ProbabilityBacktestOverfitting(nil); !math.IsNaN(got) {
+	if got := FoldPBOProxy(nil); !math.IsNaN(got) {
 		t.Errorf("nil matrix should be NaN, got %v", got)
 	}
 }
 
-// TestPBONoOverfit: a config that is consistently best both in-sample and
-// out-of-sample should produce PBO = 0 (the IS-best is always OOS-best, never in
-// the bottom half).
+// TestFoldPBOProxyNoOverfit: a config that is consistently best both in-sample
+// and out-of-sample should produce a fold PBO proxy of 0 (the IS-best is always
+// OOS-best, never in the bottom half).
 //
 // Matrix [fold][config]: config 0 is always the strongest, config 2 the weakest.
-func TestPBONoOverfit(t *testing.T) {
+func TestFoldPBOProxyNoOverfit(t *testing.T) {
 	m := [][]float64{
 		{3.0, 2.0, 1.0},
 		{3.1, 2.1, 0.9},
 		{2.9, 1.9, 1.1},
 		{3.2, 2.2, 1.0},
 	}
-	got := ProbabilityBacktestOverfitting(m)
-	approx(t, "PBO no-overfit", got, 0.0, 1e-12)
+	got := FoldPBOProxy(m)
+	approx(t, "fold PBO proxy no-overfit", got, 0.0, 1e-12)
 }
 
-// TestPBOFullOverfit: a config that is best in-sample but WORST out-of-sample in
-// every fold yields PBO = 1.0. We construct this by making each fold's OOS
-// ranking the reverse of the pooled IS ranking.
+// TestFoldPBOProxyFullOverfit: a config that is best in-sample but WORST
+// out-of-sample in every fold yields a fold PBO proxy of 1.0. We construct this
+// by making each fold's OOS ranking the reverse of the pooled IS ranking.
 //
 // Two configs, 4 folds. Across folds, config 0 has the higher AVERAGE (so it is
 // IS-best when any fold is left out), but in every individual fold the OTHER
 // config scores higher OOS — so the IS-best config is always OOS-worst (bottom
 // half), giving overfitting on every fold.
-func TestPBOFullOverfit(t *testing.T) {
+func TestFoldPBOProxyFullOverfit(t *testing.T) {
 	// Config 0 mean is higher overall, but in each fold config 1 beats config 0.
 	// To make config 0 IS-best on leave-one-out while config 1 wins each fold
 	// individually requires config 0 to win by a lot in the OTHER folds. Use a
@@ -196,16 +197,17 @@ func TestPBOFullOverfit(t *testing.T) {
 	// Here both configs are tied in IS mean (10 vs 11 → config 1 is IS-best),
 	// and config 1 is also OOS-best each fold ⇒ NOT overfit. So this is the
 	// no-overfit twin; assert it.
-	approx(t, "PBO tied/consistent", ProbabilityBacktestOverfitting(m), 0.0, 1e-12)
+	approx(t, "fold PBO proxy tied/consistent", FoldPBOProxy(m), 0.0, 1e-12)
 }
 
-// TestPBOHalfOverfit constructs a matrix where the IS-best config lands in the
-// bottom half OOS in exactly some folds, to exercise a fractional PBO and the
-// rank/logit mechanics directly.
-func TestPBOFractional(t *testing.T) {
+// TestFoldPBOProxyFractional constructs a matrix where the IS-best config lands
+// in the bottom half OOS in exactly some folds, to exercise a fractional fold
+// PBO proxy and the rank/logit mechanics directly.
+func TestFoldPBOProxyFractional(t *testing.T) {
 	// 4 configs, 4 folds. Config 0 is engineered to be IS-best on most leave-one
 	// -out splits but its OOS rank in fold f alternates between top-half and
-	// bottom-half across folds, producing a PBO strictly between 0 and 1.
+	// bottom-half across folds, producing a fold PBO proxy strictly between 0
+	// and 1.
 	m := [][]float64{
 		// fold 0: config 0 is OOS-worst (rank 1 of 4 → bottom half → overfit)
 		{0.0, 5.0, 6.0, 7.0},
@@ -216,14 +218,14 @@ func TestPBOFractional(t *testing.T) {
 		// fold 3: config 0 is OOS-best again (not overfit)
 		{9.5, 1.0, 2.0, 3.0},
 	}
-	got := ProbabilityBacktestOverfitting(m)
+	got := FoldPBOProxy(m)
 	if math.IsNaN(got) || got <= 0 || got >= 1 {
-		t.Fatalf("expected a fractional PBO in (0,1), got %v", got)
+		t.Fatalf("expected a fractional fold PBO proxy in (0,1), got %v", got)
 	}
 	// Config 0's leave-one-out IS mean dominates (driven by the 9.0/9.5 folds),
 	// so it is the IS-best each fold; it is OOS bottom-half in folds 0 and 2 →
-	// PBO = 2/4 = 0.5.
-	approx(t, "PBO fractional", got, 0.5, 1e-12)
+	// fold PBO proxy = 2/4 = 0.5.
+	approx(t, "fold PBO proxy fractional", got, 0.5, 1e-12)
 }
 
 // TestEquityReturnMoments checks moments against a hand-computed return series

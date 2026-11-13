@@ -150,8 +150,8 @@ func TestValidationHandler_EmptyFile(t *testing.T) {
 func TestValidationHandler_PresentArtifact(t *testing.T) {
 	// Raw artifact shape == what cmd/walkforward writes: a JSON array of folds.
 	artifact := `[
-		{"fold":1,"train_start":"t0","train_end":"t1","test_start":"t1","test_end":"t2","train_pnl":10.0,"test_pnl":5.0,"deflated_sharpe":0.8},
-		{"fold":2,"train_start":"t1","train_end":"t2","test_start":"t2","test_end":"t3","train_pnl":8.0,"test_pnl":-3.0,"deflated_sharpe":0.2}
+		{"fold":1,"train_start":"t0","train_end":"t1","test_start":"t1","test_end":"t2","train_pnl":10.0,"test_pnl":5.0,"fold_deflated_sharpe":0.8},
+		{"fold":2,"train_start":"t1","train_end":"t2","test_start":"t2","test_end":"t3","train_pnl":8.0,"test_pnl":-3.0,"fold_deflated_sharpe":0.2}
 	]`
 	path := filepath.Join(t.TempDir(), "walkforward_results.json")
 	if err := os.WriteFile(path, []byte(artifact), 0o644); err != nil {
@@ -186,22 +186,67 @@ func TestValidationHandler_PresentArtifact(t *testing.T) {
 	if got.OOSFoldsProfitable != 1 {
 		t.Errorf("oosFoldsProfitable = %d, want 1", got.OOSFoldsProfitable)
 	}
-	if got.PBO != 0.5 { // 1 of 2 folds non-positive OOS
-		t.Errorf("pbo = %v, want 0.5", got.PBO)
+	if got.UnprofitableFoldShare != 0.5 { // 1 of 2 folds non-positive OOS
+		t.Errorf("unprofitableFoldShare = %v, want 0.5", got.UnprofitableFoldShare)
 	}
-	if got.DeflatedSharpe == nil || *got.DeflatedSharpe != 0.5 { // mean(0.8, 0.2)
-		t.Errorf("deflatedSharpe = %v, want 0.5", got.DeflatedSharpe)
+	if got.MeanFoldDeflatedSharpe == nil || *got.MeanFoldDeflatedSharpe != 0.5 { // mean(0.8, 0.2)
+		t.Errorf("meanFoldDeflatedSharpe = %v, want 0.5", got.MeanFoldDeflatedSharpe)
 	}
 }
 
-// TestValidationHandler_NullDeflatedSharpe asserts that when every fold's
-// deflated_sharpe is null (undefined on a too-short OOS window — exactly what
-// cmd/walkforward now writes), the derived deflatedSharpe is null rather than a
-// misleading averaged 0. The other fields still derive from the real PnLs.
-func TestValidationHandler_NullDeflatedSharpe(t *testing.T) {
+// TestValidationHandler_JSONUsesFoldQualifiedKeys pins the wire names of the
+// /api/validation response and of the per-fold artefact field it reads. The
+// share of folds with non-positive OOS PnL is not PBO and the mean of per-fold
+// deflated Sharpes is not the evaluation gate's deflated Sharpe (norse-stack
+// research/norse_research, goal G1.3), so the response must carry
+// unprofitableFoldShare and meanFoldDeflatedSharpe, must never carry the
+// unqualified pbo or deflatedSharpe keys, and the mean must be read from the
+// artefact's fold_deflated_sharpe, which is what cmd/walkforward writes.
+func TestValidationHandler_JSONUsesFoldQualifiedKeys(t *testing.T) {
 	artifact := `[
-		{"fold":1,"train_start":"t0","train_end":"t1","test_start":"t1","test_end":"t2","train_pnl":10.0,"test_pnl":-5.0,"deflated_sharpe":null},
-		{"fold":2,"train_start":"t1","train_end":"t2","test_start":"t2","test_end":"t3","train_pnl":8.0,"test_pnl":-3.0,"deflated_sharpe":null}
+		{"fold":1,"train_start":"t0","train_end":"t1","test_start":"t1","test_end":"t2","train_pnl":10.0,"test_pnl":5.0,"fold_deflated_sharpe":0.8},
+		{"fold":2,"train_start":"t1","train_end":"t2","test_start":"t2","test_end":"t3","train_pnl":8.0,"test_pnl":-3.0,"fold_deflated_sharpe":0.2}
+	]`
+	path := filepath.Join(t.TempDir(), "walkforward_results.json")
+	if err := os.WriteFile(path, []byte(artifact), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("WALKFORWARD_RESULTS_PATH", path)
+	srv := New(":0", portfolio.New(0), nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/validation", nil)
+	rec := httptest.NewRecorder()
+	srv.validationHandler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v; body=%s", err, rec.Body.String())
+	}
+	if v, ok := got["unprofitableFoldShare"].(float64); !ok || v != 0.5 { // 1 of 2 folds non-positive OOS
+		t.Errorf("unprofitableFoldShare = %v, want 0.5", got["unprofitableFoldShare"])
+	}
+	if v, ok := got["meanFoldDeflatedSharpe"].(float64); !ok || v != 0.5 { // mean(0.8, 0.2)
+		t.Errorf("meanFoldDeflatedSharpe = %v, want 0.5", got["meanFoldDeflatedSharpe"])
+	}
+	for _, stale := range []string{"pbo", "deflatedSharpe"} {
+		if _, present := got[stale]; present {
+			t.Errorf("response carries the unqualified key %q; it must not", stale)
+		}
+	}
+}
+
+// TestValidationHandler_NullFoldDeflatedSharpe asserts that when every fold's
+// fold_deflated_sharpe is null (undefined on a too-short OOS window, exactly
+// what cmd/walkforward writes), the derived meanFoldDeflatedSharpe is null
+// rather than a misleading averaged 0. The other fields still derive from the
+// real PnLs.
+func TestValidationHandler_NullFoldDeflatedSharpe(t *testing.T) {
+	artifact := `[
+		{"fold":1,"train_start":"t0","train_end":"t1","test_start":"t1","test_end":"t2","train_pnl":10.0,"test_pnl":-5.0,"fold_deflated_sharpe":null},
+		{"fold":2,"train_start":"t1","train_end":"t2","test_start":"t2","test_end":"t3","train_pnl":8.0,"test_pnl":-3.0,"fold_deflated_sharpe":null}
 	]`
 	path := filepath.Join(t.TempDir(), "walkforward_results.json")
 	if err := os.WriteFile(path, []byte(artifact), 0o644); err != nil {
@@ -221,10 +266,10 @@ func TestValidationHandler_NullDeflatedSharpe(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v; body=%s", err, rec.Body.String())
 	}
-	if got.DeflatedSharpe != nil {
-		t.Errorf("deflatedSharpe = %v, want null (no fold defines it)", *got.DeflatedSharpe)
+	if got.MeanFoldDeflatedSharpe != nil {
+		t.Errorf("meanFoldDeflatedSharpe = %v, want null (no fold defines it)", *got.MeanFoldDeflatedSharpe)
 	}
-	if got.OOSFoldsProfitable != 0 || got.PBO != 1.0 {
-		t.Errorf("oosProfitable=%d pbo=%v, want 0 and 1.0", got.OOSFoldsProfitable, got.PBO)
+	if got.OOSFoldsProfitable != 0 || got.UnprofitableFoldShare != 1.0 {
+		t.Errorf("oosProfitable=%d unprofitableFoldShare=%v, want 0 and 1.0", got.OOSFoldsProfitable, got.UnprofitableFoldShare)
 	}
 }

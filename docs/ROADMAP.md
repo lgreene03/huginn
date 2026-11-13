@@ -260,15 +260,15 @@ _Retired on 2026-11-10 under Norse decision D6._ The web app this phase built (`
 
 ## Phase 9 — Research / validation gateway ✅
 
-**Goal.** Run heavy walk-forward validation (walk-forward + PBO + Deflated-Sharpe) on demand from a UI, **out of the live trading process**, so a validation sweep never competes with the hot path for CPU and never risks the trading process.
+**Goal.** Run heavy walk-forward validation (walk-forward with the fold-level PBO proxy and mean per-fold deflated Sharpe) on demand from a UI, **out of the live trading process**, so a validation sweep never competes with the hot path for CPU and never risks the trading process.
 
 **Deliverables.**
-- ✅ **Standalone HTTP gateway** (`cmd/research`). Port `8094` (`RESEARCH_PORT`). `POST /api/research/runs` submits a `{strategy, thresholds, folds}` job and returns `202 {id, status:"running"}`; the run executes asynchronously. `GET /api/research/runs` lists newest-first summaries; `GET /api/research/runs/{id}` returns the full record (`oosFoldsProfitable`, `totalOOSPnL`, `pbo`, `deflatedSharpe`); `GET /healthz` for liveness.
+- ✅ **Standalone HTTP gateway** (`cmd/research`). Port `8094` (`RESEARCH_PORT`). `POST /api/research/runs` submits a `{strategy, thresholds, folds}` job and returns `202 {id, status:"running"}`; the run executes asynchronously. `GET /api/research/runs` lists newest-first summaries; `GET /api/research/runs/{id}` returns the full record (`oosFoldsProfitable`, `totalOOSPnL`, `foldPboProxy`, `meanFoldDeflatedSharpe`, named `pbo` and `deflatedSharpe` before G1.3); `GET /healthz` for liveness.
 - ✅ **Same engine as the CLI.** The gateway reuses `internal/research` — the exact engine `cmd/walkforward` drives — so a gateway run reproduces the CLI's numbers. It builds a self-contained config (no YAML-on-disk dependency) whose risk/executor defaults mirror `config.Load`, so PnL is cost-consistent with `go run ./cmd/walkforward`.
 - ✅ **No live dependencies.** Owns no Kafka/Postgres. It replays a JSONL dataset on disk (`RESEARCH_DATA_PATH`, default `data/btc_test.jsonl` — the committed fixture), so it runs as a sidecar. Finished runs persist to `RESEARCH_RESULTS_DIR` (default `data/research/`) and reload on startup, surviving a restart.
 - ✅ **Container image** (`Dockerfile.research`): multi-stage, digest-pinned base, unprivileged `research` user, `EXPOSE 8094`. The research/mimir/forseti compose wiring lives in [norse-stack](https://github.com/lgreene03/norse-stack), not here.
 
-**Exit criteria.** ✅ `go run ./cmd/research` answers `/healthz`, accepts a run against the bundled fixture with no Kafka/Postgres, and the derived PBO/Deflated-Sharpe match a `cmd/walkforward` run of the same grid.
+**Exit criteria.** ✅ `go run ./cmd/research` answers `/healthz`, accepts a run against the bundled fixture with no Kafka/Postgres, and the derived fold-level PBO proxy and mean per-fold deflated Sharpe match a `cmd/walkforward` run of the same grid.
 
 **Risks.** Gateway/CLI drift — mitigated by sharing `internal/research` rather than reimplementing the sweep.
 
