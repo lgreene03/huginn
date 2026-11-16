@@ -60,20 +60,19 @@ The signal layer is **pluggable**: a new signal is one small type implementing t
 
 ## Research gateway
 
-`cmd/research` is a standalone HTTP service that runs heavy walk-forward validation, with huginn's fold-level PBO proxy and mean per-fold deflated Sharpe, **out of the live trading process**. It reuses the same `internal/research` engine as `cmd/walkforward`, so a gateway run reproduces the CLI's result, but executes as a separate sidecar that owns no Kafka or Postgres dependency: it just replays a JSONL dataset on disk. These two figures are fold-level diagnostics, not the evaluation gate's statistics: the CSCV probability of backtest overfitting and the deflated Sharpe ratio of the joined daily out-of-sample returns live in norse-stack's `research/norse_research` (goal G1.3).
+`cmd/research` is a small HTTP service that no longer runs anything. It used to run walk-forward validation on request; under Norse goal G1.2 run submission is disabled, because H1 and H2 trials run only through norse-stack's `research/norse_research` harness (`harness.run`), which writes every run to the hash-chained trial ledger. A run started anywhere else would be an unledgered trial. `POST /api/research/runs` therefore answers `405` with a JSON error saying so, whatever the token or body, and no flag or environment variable turns it back on. The code that ran a walk-forward has been removed; walk-forward itself is still available offline through `cmd/walkforward`.
 
-- **Port:** `8094` (override with `RESEARCH_PORT`).
-- **Submit a run:** `POST /api/research/runs` with `{"strategy":"obi|ou|composite","thresholds":[...],"folds":N}`. Returns `202 {id, status:"running"}` and runs the walk-forward asynchronously.
-- **Poll results:** `GET /api/research/runs` (newest-first summaries) and `GET /api/research/runs/{id}` (full record with `oosFoldsProfitable`, `totalOOSPnL`, `foldPboProxy`, `meanFoldDeflatedSharpe`; the last two were `pbo` and `deflatedSharpe` before G1.3). `GET /healthz` for liveness.
-- **Data:** replays `RESEARCH_DATA_PATH` (default `data/btc_test.jsonl`, the committed fixture). Finished runs persist to `RESEARCH_RESULTS_DIR` (default `data/research/`) and reload on restart.
+What remains serves, read-only, the runs earlier versions persisted to `RESEARCH_RESULTS_DIR` (default `data/research/`): `GET /api/research/runs` lists newest-first summaries and `GET /api/research/runs/{id}` returns the full record (`oosFoldsProfitable`, `totalOOSPnL`, `foldPboProxy`, `meanFoldDeflatedSharpe`). Those last two are fold-level diagnostics, not the evaluation gate's statistics, which live in `research/norse_research` (goal G1.3). `GET /healthz` reports liveness on port `8094` (override with `RESEARCH_PORT`).
+
+Every route except `/healthz` requires `Authorization: Bearer <token>`, compared in constant time. The token is read at startup from the file whose path is in `HUGINN_RESEARCH_TOKEN_FILE`, never from a flag or a plain environment value; surrounding whitespace is trimmed. With no token configured, or a file that cannot be read, every API route answers `503`, as huginn's control plane does with an empty `HUGINN_API_TOKEN`; a missing or wrong token gets `401`. CORS is sent only to the origin in `RESEARCH_CONSOLE_ORIGIN` (default `http://localhost:8090`, the Norse console), with `Vary: Origin`, and never `*`.
 
 ```bash
-# Run the gateway against the bundled fixture (no Kafka/Postgres needed)
-go run ./cmd/research
+umask 077
+openssl rand -hex 32 > /tmp/research_token
+HUGINN_RESEARCH_TOKEN_FILE=/tmp/research_token go run ./cmd/research
 # In another shell:
 curl -s localhost:8094/healthz
-curl -s -X POST localhost:8094/api/research/runs \
-  -d '{"strategy":"obi","thresholds":[0.5,0.6,0.7],"folds":4}'
+curl -s -H "Authorization: Bearer $(cat /tmp/research_token)" localhost:8094/api/research/runs
 ```
 
 Build the container image from `Dockerfile.research`. The compose wiring for the research/mimir/forseti services lives in [norse-stack](https://github.com/lgreene03/norse-stack).

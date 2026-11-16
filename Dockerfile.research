@@ -34,13 +34,14 @@ RUN addgroup -S research && adduser -S -G research -H -h /app research
 
 COPY --from=builder --chown=research:research /app/research .
 
-# The historical dataset (RESEARCH_DATA_PATH, default data/btc_test.jsonl) and
-# the persisted-runs dir (RESEARCH_RESULTS_DIR, default data/research) both live
-# under /app/data, which is .dockerignored from the build context — so it is NOT
-# baked into the image. Mount ./data as a volume at runtime; the research service
-# compose block lives in the norse-stack repo
-# (https://github.com/lgreene03/norse-stack). Pre-create + own the dir so the
-# unprivileged user can write run artifacts even on an empty mount.
+# The persisted-runs dir (RESEARCH_RESULTS_DIR, default data/research) lives
+# under /app/data, which is .dockerignored from the build context, so it is NOT
+# baked into the image. The gateway now runs nothing and only reads earlier runs
+# from it (Norse goal G1.2). Mount ./data as a volume at runtime, and the bearer
+# token as a read-only file named by HUGINN_RESEARCH_TOKEN_FILE; the research
+# service compose block lives in the norse-stack repo
+# (https://github.com/lgreene03/norse-stack). The dir is pre-created and owned
+# so an empty mount still has it.
 RUN mkdir -p /app/data/research && chown -R research:research /app/data
 
 USER research

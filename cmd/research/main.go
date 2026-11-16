@@ -1,22 +1,21 @@
-// Command research is the Huginn research / validation gateway: an HTTP service
-// that runs heavy walk-forward backtests, with huginn's fold-level overfitting
-// indicators (a leave-one-fold-out PBO proxy and the mean per-fold deflated
-// Sharpe), OUT of the live trading process. Operators submit a run (strategy +
-// threshold grid + fold count), the gateway executes internal/research.Run
-// asynchronously, and the read-only research UI polls for the derived results
-// (oosFoldsProfitable / totalOOSPnL / foldPboProxy / meanFoldDeflatedSharpe).
-// These are not the evaluation gate's statistics, which live in norse-stack's
-// research/norse_research (goal G1.3).
+// Command research is the Huginn research gateway. It runs nothing. Under Norse
+// goal G1.2 every run submission (POST /api/research/runs) is refused, with or
+// without a valid token, because H1 and H2 trials run only through norse-stack's
+// research/norse_research harness, which writes every run to the hash-chained
+// trial ledger. What remains serves the runs earlier versions persisted to
+// RESEARCH_RESULTS_DIR, read-only. Walk-forward itself is still available
+// offline through cmd/walkforward.
 //
-// It owns no Kafka/Postgres dependency: it replays a JSONL dataset on disk, so
-// it can run as a standalone sidecar. Finished runs are persisted to
-// RESEARCH_RESULTS_DIR and reloaded on startup so results survive a restart.
+// Every route except /healthz requires "Authorization: Bearer <token>". The
+// token is read from the file whose path is in HUGINN_RESEARCH_TOKEN_FILE, never
+// from a flag or a plain environment value; with no token configured, or an
+// unreadable file, the API routes answer 503. CORS is sent only to
+// RESEARCH_CONSOLE_ORIGIN (default http://localhost:8090, the Norse console).
 package main
 
 import (
 	"context"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,13 +37,22 @@ func main() {
 	if resultsDir == "" {
 		resultsDir = defaultResultsDir
 	}
-	dataPath := os.Getenv("RESEARCH_DATA_PATH")
-	if dataPath == "" {
-		dataPath = defaultDataPath
+	consoleOrigin := os.Getenv("RESEARCH_CONSOLE_ORIGIN")
+	if consoleOrigin == "" {
+		consoleOrigin = defaultConsoleOrigin
+	}
+
+	// Fail closed rather than refuse to start: an unreadable or absent token
+	// leaves /healthz up and every API route answering 503.
+	token, err := loadToken(os.Getenv(tokenFileEnv))
+	if err != nil {
+		slog.Error("Research token unreadable; API routes will answer 503", "env", tokenFileEnv, "error", err)
+	} else if token == "" {
+		slog.Warn("No research token configured; API routes will answer 503", "env", tokenFileEnv)
 	}
 
 	addr := ":" + port
-	s := NewServer(addr, resultsDir, dataPath)
+	s := NewServer(addr, resultsDir, token, consoleOrigin)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -54,9 +62,9 @@ func main() {
 
 	go func() {
 		v := version.Get()
-		slog.Info("Starting research gateway",
-			"addr", addr, "results_dir", resultsDir, "data", dataPath,
-			"version", v.Version, "git_sha", v.GitSHA)
+		slog.Info("Starting research gateway (read-only; run submission disabled)",
+			"addr", addr, "results_dir", resultsDir, "console_origin", consoleOrigin,
+			"token_configured", token != "", "version", v.Version, "git_sha", v.GitSHA)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server failed", "error", err)
 			os.Exit(1)
@@ -73,11 +81,4 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("Graceful shutdown failed", "error", err)
 	}
-}
-
-// randSeq returns a small random integer to disambiguate run ids minted within
-// the same nanosecond.
-func randSeq() int {
-	//nolint:gosec // G404: non-cryptographic run-id disambiguator, math/rand is intentional.
-	return rand.Intn(10000)
 }
