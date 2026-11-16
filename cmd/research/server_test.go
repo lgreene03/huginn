@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,29 +18,48 @@ import (
 // (G1.2 table) keep that name exactly: the threat model treats the names as a
 // contract.
 
-const testToken = "test-token-0123456789abcdef"
+// testToken meets loadToken's rule (at least 32 printable, non-space ASCII).
+const testToken = "test-token-0123456789abcdef0123456789abcdef"
 
 const foreignOrigin = "http://evil.example"
 
-// newTestServer builds a gateway with the test token, the default console
-// origin and the given results dir (an empty temp dir when dir is "").
+// consoleOrigin is the origin the opt-in CORS tests configure.
+const consoleOrigin = "http://localhost:8090"
+
+// allowedHost is the Host header serve sends unless a test sets another.
+const allowedHost = "127.0.0.1:8094"
+
+// testConfig is the configuration newTestServer uses: the test token, no CORS
+// origin (the default) and the default host allowlist for port 8094.
+func testConfig(dir string) Config {
+	return Config{ResultsDir: dir, Token: testToken, AllowedHosts: defaultAllowedHosts("8094")}
+}
+
+// newTestServer builds a gateway from testConfig and the given results dir (an
+// empty temp dir when dir is "").
 func newTestServer(t *testing.T, dir string) *Server {
 	t.Helper()
 	if dir == "" {
 		dir = t.TempDir()
 	}
-	return NewServer(":0", dir, testToken, defaultConsoleOrigin)
+	return NewServer(":0", testConfig(dir))
 }
 
-// serve sends one request through the real mux, so the middleware order (CORS,
-// then token, then handler) is what is tested. auth is the whole Authorization
-// header value, or "" for none; headers are extra request headers.
+// serve sends one request through the real mux, so the middleware order (Host,
+// CORS, token, handler) is what is tested. auth is the whole Authorization
+// header value, or "" for none; headers are extra request headers, where "Host"
+// sets the request's Host (allowedHost otherwise).
 func serve(s *Server, method, path, body, auth string, headers map[string]string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Host = allowedHost
 	if auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 	for k, v := range headers {
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 	rec := httptest.NewRecorder()
@@ -195,7 +215,9 @@ func TestResultsRequireToken(t *testing.T) {
 func TestNoTokenConfiguredAnswers503(t *testing.T) {
 	dir := t.TempDir()
 	writePersistedRun(t, dir, run{ID: "run-1", Status: "done", SubmittedAt: time.Now().UTC()})
-	s := NewServer(":0", dir, "", defaultConsoleOrigin)
+	cfg := testConfig(dir)
+	cfg.Token = ""
+	s := NewServer(":0", cfg)
 
 	cases := []struct {
 		method, path string
@@ -218,31 +240,71 @@ func TestNoTokenConfiguredAnswers503(t *testing.T) {
 	}
 }
 
-func TestLoadToken(t *testing.T) {
-	dir := t.TempDir()
+// writeTokenFile writes content to a fresh file and returns its path.
+func writeTokenFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
+func TestLoadToken(t *testing.T) {
 	if tok, err := loadToken(""); err != nil || tok != "" {
 		t.Errorf("loadToken(\"\") = %q, %v; want empty token and no error", tok, err)
 	}
 
-	path := filepath.Join(dir, "token")
-	if err := os.WriteFile(path, []byte("  "+testToken+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if tok, err := loadToken(path); err != nil || tok != testToken {
-		t.Errorf("loadToken(file) = %q, %v; want the trimmed token", tok, err)
-	}
-
-	blank := filepath.Join(dir, "blank")
-	if err := os.WriteFile(blank, []byte("\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if tok, err := loadToken(blank); err != nil || tok != "" {
-		t.Errorf("loadToken(blank file) = %q, %v; want empty token (so the API answers 503)", tok, err)
+	hex64 := strings.Repeat("0123456789abcdef", 4)
+	for name, content := range map[string]string{
+		"openssl rand -hex 32 output": hex64 + "\n",
+		"no trailing newline":         hex64,
+		"exactly 32 characters":       hex64[:32] + "\n",
+		"printable punctuation":       "!~" + hex64[:30],
+	} {
+		want := strings.TrimSuffix(content, "\n")
+		if tok, err := loadToken(writeTokenFile(t, content)); err != nil || tok != want {
+			t.Errorf("%s: loadToken = %q, %v; want the token with one trailing newline removed", name, tok, err)
+		}
 	}
 
-	if tok, err := loadToken(filepath.Join(dir, "absent")); err == nil || tok != "" {
+	if tok, err := loadToken(filepath.Join(t.TempDir(), "absent")); err == nil || tok != "" {
 		t.Errorf("loadToken(missing file) = %q, %v; want empty token and an error", tok, err)
+	}
+}
+
+// A weak or malformed token file is rejected (so the API answers 503) with an
+// error naming the cause and never the file's content.
+func TestLoadTokenRejectsWeakOrMalformedTokens(t *testing.T) {
+	hex64 := strings.Repeat("0123456789abcdef", 4)
+	cases := []struct {
+		name, content string
+		want          error
+	}{
+		{"empty file", "", errTokenTooShort},
+		{"only a newline", "\n", errTokenTooShort},
+		{"one character", "a\n", errTokenTooShort},
+		{"31 characters", hex64[:31] + "\n", errTokenTooShort},
+		{"two lines from >>", hex64 + "\n" + hex64 + "\n", errTokenBadChar},
+		{"two trailing newlines", hex64 + "\n\n", errTokenBadChar},
+		{"CRLF ending", hex64 + "\r\n", errTokenBadChar},
+		{"leading space", " " + hex64, errTokenBadChar},
+		{"internal space", hex64[:20] + " " + hex64[20:], errTokenBadChar},
+		{"tab", hex64 + "\t", errTokenBadChar},
+		{"control character", hex64 + "\x1f", errTokenBadChar},
+		{"DEL", hex64 + "\x7f", errTokenBadChar},
+		{"non-ASCII", hex64 + "é", errTokenBadChar},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tok, err := loadToken(writeTokenFile(t, tc.content))
+			if tok != "" || !errors.Is(err, tc.want) {
+				t.Fatalf("loadToken = %q, %v; want empty token and %v", tok, err, tc.want)
+			}
+			if strings.Contains(err.Error(), "0123456789") {
+				t.Errorf("error %q carries the file's content", err)
+			}
+		})
 	}
 }
 
@@ -375,10 +437,15 @@ func TestRunResultJSONUsesFoldQualifiedKeys(t *testing.T) {
 	}
 }
 
-// CORS is sent to the console's own origin and to no other; "*" is never sent,
-// Vary: Origin always is, and a preflight is answered (204) without a token.
+// By default no origin is trusted and no response carries
+// Access-Control-Allow-Origin. With RESEARCH_CONSOLE_ORIGIN set, only that exact
+// origin is echoed. "*" is never sent, Vary: Origin always is, and a preflight
+// is answered (204) without a token.
 func TestCorsAllowsOnlyTheConsoleOrigin(t *testing.T) {
-	s := newTestServer(t, "")
+	byDefault := newTestServer(t, "")
+	cfg := testConfig(t.TempDir())
+	cfg.ConsoleOrigin = consoleOrigin
+	optedIn := NewServer(":0", cfg)
 
 	type want struct {
 		status int
@@ -386,24 +453,32 @@ func TestCorsAllowsOnlyTheConsoleOrigin(t *testing.T) {
 	}
 	cases := []struct {
 		name   string
+		s      *Server
 		method string
 		path   string
 		origin string
 		auth   string
 		want   want
 	}{
-		{"preflight from the console", http.MethodOptions, "/api/research/runs", defaultConsoleOrigin, "", want{http.StatusNoContent, defaultConsoleOrigin}},
-		{"preflight by id from the console", http.MethodOptions, "/api/research/runs/run-1", defaultConsoleOrigin, "", want{http.StatusNoContent, defaultConsoleOrigin}},
-		{"preflight from a foreign origin", http.MethodOptions, "/api/research/runs", foreignOrigin, "", want{http.StatusNoContent, ""}},
-		{"preflight from the console on another port", http.MethodOptions, "/api/research/runs", "http://localhost:8091", "", want{http.StatusNoContent, ""}},
-		{"preflight from a null origin", http.MethodOptions, "/api/research/runs", "null", "", want{http.StatusNoContent, ""}},
-		{"preflight with no origin", http.MethodOptions, "/api/research/runs", "", "", want{http.StatusNoContent, ""}},
-		{"GET from the console", http.MethodGet, "/api/research/runs", defaultConsoleOrigin, bearer(testToken), want{http.StatusOK, defaultConsoleOrigin}},
-		{"GET from a foreign origin with the token", http.MethodGet, "/api/research/runs", foreignOrigin, bearer(testToken), want{http.StatusOK, ""}},
-		{"GET from a foreign origin without the token", http.MethodGet, "/api/research/runs", foreignOrigin, "", want{http.StatusUnauthorized, ""}},
+		{"default: preflight from the console", byDefault, http.MethodOptions, "/api/research/runs", consoleOrigin, "", want{http.StatusNoContent, ""}},
+		{"default: preflight from a foreign origin", byDefault, http.MethodOptions, "/api/research/runs", foreignOrigin, "", want{http.StatusNoContent, ""}},
+		{"default: preflight with no origin", byDefault, http.MethodOptions, "/api/research/runs", "", "", want{http.StatusNoContent, ""}},
+		{"default: GET from the console", byDefault, http.MethodGet, "/api/research/runs", consoleOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"default: GET from a foreign origin", byDefault, http.MethodGet, "/api/research/runs", foreignOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"opt-in: preflight from the console", optedIn, http.MethodOptions, "/api/research/runs", consoleOrigin, "", want{http.StatusNoContent, consoleOrigin}},
+		{"opt-in: preflight by id from the console", optedIn, http.MethodOptions, "/api/research/runs/run-1", consoleOrigin, "", want{http.StatusNoContent, consoleOrigin}},
+		{"opt-in: preflight from a foreign origin", optedIn, http.MethodOptions, "/api/research/runs", foreignOrigin, "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from the console on another port", optedIn, http.MethodOptions, "/api/research/runs", "http://localhost:8091", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from a lookalike origin", optedIn, http.MethodOptions, "/api/research/runs", consoleOrigin + ".evil.example", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from a null origin", optedIn, http.MethodOptions, "/api/research/runs", "null", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight with no origin", optedIn, http.MethodOptions, "/api/research/runs", "", "", want{http.StatusNoContent, ""}},
+		{"opt-in: GET from the console", optedIn, http.MethodGet, "/api/research/runs", consoleOrigin, bearer(testToken), want{http.StatusOK, consoleOrigin}},
+		{"opt-in: GET from a foreign origin with the token", optedIn, http.MethodGet, "/api/research/runs", foreignOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"opt-in: GET from a foreign origin without the token", optedIn, http.MethodGet, "/api/research/runs", foreignOrigin, "", want{http.StatusUnauthorized, ""}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			s := tc.s
 			headers := map[string]string{"Access-Control-Request-Method": http.MethodGet}
 			if tc.origin != "" {
 				headers["Origin"] = tc.origin
@@ -434,14 +509,88 @@ func TestCorsAllowsOnlyTheConsoleOrigin(t *testing.T) {
 // (RESEARCH_CONSOLE_ORIGIN), not a hard-coded value.
 func TestCorsOriginIsConfigurable(t *testing.T) {
 	const custom = "http://127.0.0.1:9000"
-	s := NewServer(":0", t.TempDir(), testToken, custom)
+	cfg := testConfig(t.TempDir())
+	cfg.ConsoleOrigin = custom
+	s := NewServer(":0", cfg)
 
 	rec := serve(s, http.MethodOptions, "/api/research/runs", "", "", map[string]string{"Origin": custom})
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != custom {
 		t.Errorf("configured origin: Access-Control-Allow-Origin = %q, want %q", got, custom)
 	}
-	rec = serve(s, http.MethodOptions, "/api/research/runs", "", "", map[string]string{"Origin": defaultConsoleOrigin})
+	rec = serve(s, http.MethodOptions, "/api/research/runs", "", "", map[string]string{"Origin": consoleOrigin})
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("default origin when another is configured: Access-Control-Allow-Origin = %q, want none", got)
+		t.Errorf("another origin when one is configured: Access-Control-Allow-Origin = %q, want none", got)
+	}
+}
+
+// A Host header outside the allowlist is refused with 403 on every route and
+// method, token or not, before CORS or the token check, so a DNS-rebinding page
+// gets nothing (threat model T26). The allowed names pass, case-insensitively.
+func TestForeignHostHeaderIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	writePersistedRun(t, dir, run{ID: "run-1", Status: "done", SubmittedAt: time.Now().UTC()})
+	s := newTestServer(t, dir)
+
+	foreign := []string{
+		"rebind.attacker.example", "rebind.attacker.example:8094", "evil.example:8094",
+		"localhost", "localhost:8095", "127.0.0.1:8094.evil.example", "127.0.0.2:8094", "",
+	}
+	routes := []struct{ method, path, auth string }{
+		{http.MethodGet, "/api/research/runs", bearer(testToken)},
+		{http.MethodGet, "/api/research/runs/run-1", bearer(testToken)},
+		{http.MethodGet, "/healthz", ""},
+		{http.MethodPost, "/api/research/runs", bearer(testToken)},
+		{http.MethodOptions, "/api/research/runs", ""},
+	}
+	for _, host := range foreign {
+		for _, rt := range routes {
+			rec := serve(s, rt.method, rt.path, runBody, rt.auth,
+				map[string]string{"Host": host, "Origin": consoleOrigin})
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("%s %s with Host %q: status = %d, want 403", rt.method, rt.path, host, rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "run-1") {
+				t.Errorf("%s %s with Host %q leaked a run id: %s", rt.method, rt.path, host, rec.Body.String())
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Errorf("%s %s with Host %q: Access-Control-Allow-Origin = %q, want none", rt.method, rt.path, host, got)
+			}
+		}
+	}
+
+	for _, host := range []string{"127.0.0.1:8094", "localhost:8094", "research:8094", "LOCALHOST:8094"} {
+		rec := serve(s, http.MethodGet, "/api/research/runs/run-1", "", bearer(testToken), map[string]string{"Host": host})
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET with allowed Host %q: status = %d, want 200", host, rec.Code)
+		}
+	}
+}
+
+// RESEARCH_ALLOWED_HOSTS replaces the default allowlist; unset or blank gives
+// 127.0.0.1, localhost and research on the listen port.
+func TestAllowedHostsFromEnv(t *testing.T) {
+	cases := []struct {
+		env, port string
+		want      []string
+	}{
+		{"", "8094", []string{"127.0.0.1:8094", "localhost:8094", "research:8094"}},
+		{"  ", "9000", []string{"127.0.0.1:9000", "localhost:9000", "research:9000"}},
+		{" Gateway.internal:8094 , 10.0.0.5:8094 ,", "8094", []string{"gateway.internal:8094", "10.0.0.5:8094"}},
+	}
+	for _, tc := range cases {
+		got := parseAllowedHosts(tc.env, tc.port)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("parseAllowedHosts(%q, %q) = %v, want %v", tc.env, tc.port, got, tc.want)
+		}
+	}
+
+	cfg := testConfig(t.TempDir())
+	cfg.AllowedHosts = parseAllowedHosts("gateway.internal:8094", "8094")
+	s := NewServer(":0", cfg)
+	if rec := serve(s, http.MethodGet, "/healthz", "", "", map[string]string{"Host": "gateway.internal:8094"}); rec.Code != http.StatusOK {
+		t.Errorf("configured host: status = %d, want 200", rec.Code)
+	}
+	if rec := serve(s, http.MethodGet, "/healthz", "", "", map[string]string{"Host": "127.0.0.1:8094"}); rec.Code != http.StatusForbidden {
+		t.Errorf("default host when the list is replaced: status = %d, want 403", rec.Code)
 	}
 }

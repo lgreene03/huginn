@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,17 +21,60 @@ import (
 // (one JSON file per run) are read from when RESEARCH_RESULTS_DIR is unset.
 const defaultResultsDir = "data/research"
 
-// defaultConsoleOrigin is the one browser origin CORS is sent to when
-// RESEARCH_CONSOLE_ORIGIN is unset: the Norse console's own origin, which
-// norse-stack's console/serve.py serves on port 8090 and announces as
-// http://localhost:8090. The console proxies the gateway same-origin, so a
-// browser never needs CORS from here; anything else gets none.
-const defaultConsoleOrigin = "http://localhost:8090"
-
 // tokenFileEnv names the environment variable that holds the PATH of the file
 // containing the bearer token. The token itself is never read from a flag or a
 // plain environment value (Norse goal G0.4, credentials by file).
 const tokenFileEnv = "HUGINN_RESEARCH_TOKEN_FILE"
+
+// minTokenLen is the shortest token the gateway accepts. `openssl rand -hex 32`
+// gives 64 characters.
+const minTokenLen = 32
+
+// errTokenTooShort and errTokenBadChar name why a token file was rejected. They
+// never carry the file's content.
+var (
+	errTokenTooShort = fmt.Errorf("token file holds fewer than %d characters", minTokenLen)
+	errTokenBadChar  = errors.New("token file holds whitespace, a control character or a non-ASCII byte")
+)
+
+// Config is the gateway's configuration.
+type Config struct {
+	// ResultsDir holds the runs earlier versions persisted.
+	ResultsDir string
+	// Token is the bearer token. Empty means none is configured, and every API
+	// route answers 503.
+	Token string
+	// ConsoleOrigin is the one browser origin sent Access-Control-Allow-Origin,
+	// as an exact match. Empty, the default, sends no CORS headers to anyone:
+	// the Norse console proxies the gateway same-origin and never needs them.
+	ConsoleOrigin string
+	// AllowedHosts are the Host header values served, compared case-insensitively.
+	// Anything else is refused with 403, which stops a DNS-rebinding page
+	// (threat model T26).
+	AllowedHosts []string
+}
+
+// defaultAllowedHosts are the names the gateway is reached by: 127.0.0.1 is
+// what norse-stack's console uses, localhost what the compose healthcheck uses,
+// and research the compose service name.
+func defaultAllowedHosts(port string) []string {
+	return []string{"127.0.0.1:" + port, "localhost:" + port, "research:" + port}
+}
+
+// parseAllowedHosts reads RESEARCH_ALLOWED_HOSTS, a comma-separated list of
+// host:port values. Empty or unset gives defaultAllowedHosts(port).
+func parseAllowedHosts(env, port string) []string {
+	if strings.TrimSpace(env) == "" {
+		return defaultAllowedHosts(port)
+	}
+	var hosts []string
+	for _, h := range strings.Split(env, ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
 
 // runsDisabledMessage is the error every POST /api/research/runs receives (Norse
 // goal G1.2). Trials are counted only when the hash-chained trial ledger records
@@ -92,20 +136,26 @@ type Server struct {
 	addr          string
 	resultsDir    string
 	token         string // empty means no token configured: API routes answer 503
-	consoleOrigin string // the only origin Access-Control-Allow-Origin is sent to
+	consoleOrigin string // the only origin Access-Control-Allow-Origin is sent to; empty sends none
+	allowedHosts  map[string]bool
 
 	mu   sync.Mutex
 	runs map[string]*run
 }
 
-// NewServer constructs the gateway, loading any persisted runs from resultsDir.
-// An empty token leaves every API route answering 503.
-func NewServer(addr, resultsDir, token, consoleOrigin string) *Server {
+// NewServer constructs the gateway, loading any persisted runs from
+// cfg.ResultsDir. An empty cfg.Token leaves every API route answering 503.
+func NewServer(addr string, cfg Config) *Server {
+	hosts := make(map[string]bool, len(cfg.AllowedHosts))
+	for _, h := range cfg.AllowedHosts {
+		hosts[strings.ToLower(h)] = true
+	}
 	s := &Server{
 		addr:          addr,
-		resultsDir:    resultsDir,
-		token:         token,
-		consoleOrigin: consoleOrigin,
+		resultsDir:    cfg.ResultsDir,
+		token:         cfg.Token,
+		consoleOrigin: cfg.ConsoleOrigin,
+		allowedHosts:  hosts,
 		runs:          make(map[string]*run),
 	}
 	s.loadPersisted()
@@ -114,8 +164,14 @@ func NewServer(addr, resultsDir, token, consoleOrigin string) *Server {
 
 // loadToken reads the bearer token from the file at path. An empty path means
 // no token is configured, which is not an error: the API then answers 503.
-// Surrounding whitespace is trimmed, so the trailing newline left by
-// `openssl rand -hex 32 > file` is not part of the token.
+//
+// Exactly one trailing "\n" is removed, the newline `openssl rand -hex 32 >
+// file` leaves; nothing else is trimmed. The rest must be at least minTokenLen
+// printable, non-space ASCII characters (0x21 to 0x7E), so a two-line file left
+// by `>>`, a "\r\n" ending or a short guessable token is rejected rather than
+// loaded. norse-stack's console/serve.py applies the identical rule. A rejected
+// file returns an error naming the cause, never the content; the caller treats
+// it as no token.
 func loadToken(path string) (string, error) {
 	if path == "" {
 		return "", nil
@@ -125,7 +181,16 @@ func loadToken(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read token file: %w", err)
 	}
-	return strings.TrimSpace(string(data)), nil
+	token := strings.TrimSuffix(string(data), "\n")
+	if len(token) < minTokenLen {
+		return "", errTokenTooShort
+	}
+	for i := 0; i < len(token); i++ {
+		if c := token[i]; c < 0x21 || c > 0x7e {
+			return "", errTokenBadChar
+		}
+	}
+	return token, nil
 }
 
 // loadPersisted reads every *.json file in resultsDir into the runs map.
@@ -156,17 +221,32 @@ func (s *Server) loadPersisted() {
 	slog.Info("Loaded persisted research runs", "count", len(s.runs))
 }
 
-// corsMiddleware sends CORS headers to the Norse console's own origin and to
-// no other. Access-Control-Allow-Origin echoes the request's Origin only when it
-// equals s.consoleOrigin, and is never "*". Vary: Origin is always set so a
-// cache cannot serve one origin's response to another. A preflight (OPTIONS) is
-// answered here with 204 and never reaches the token check, because browsers
-// send no credentials on a preflight; without the allowed origin it carries no
-// Access-Control-Allow-Origin, so the browser blocks the real request.
+// hostMiddleware refuses, with 403, any request whose Host header is not in
+// s.allowedHosts. A DNS-rebinding page reaches the gateway under its own name,
+// so its requests carry a foreign Host and stop here (threat model T26). It runs
+// before CORS and the token check, on every route.
+func (s *Server) hostMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowedHosts[strings.ToLower(r.Host)] {
+			writeJSONError(w, http.StatusForbidden, "host not allowed")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// corsMiddleware sends CORS headers only when an origin is configured, and then
+// only to that exact origin. By default s.consoleOrigin is empty and no request
+// ever gets Access-Control-Allow-Origin: the Norse console proxies the gateway
+// same-origin, so no browser needs it. It is never "*". Vary: Origin is always
+// set so a cache cannot serve one origin's response to another. A preflight
+// (OPTIONS) is answered here with 204 and never reaches the token check, because
+// browsers send no credentials on a preflight; without the allowed origin it
+// carries no Access-Control-Allow-Origin, so the browser blocks the request.
 func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Origin")
-		if origin := r.Header.Get("Origin"); origin != "" && origin == s.consoleOrigin {
+		if origin := r.Header.Get("Origin"); s.consoleOrigin != "" && origin == s.consoleOrigin {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization")
@@ -190,8 +270,9 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.token == "" {
-			writeJSONError(w, http.StatusServiceUnavailable,
-				"research gateway locked: no token configured (set "+tokenFileEnv+" to the token file's path)")
+			writeJSONError(w, http.StatusServiceUnavailable, fmt.Sprintf(
+				"research gateway locked: no valid token configured (%s must name a file holding at least %d printable, non-space ASCII characters)",
+				tokenFileEnv, minTokenLen))
 			return
 		}
 		if !bearerTokenValid(r, s.token) {
@@ -310,16 +391,17 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(summaries)
 }
 
-// routes builds the mux. /healthz is the only route without the token, so
-// container healthchecks need no credential. /api/research/runs handles list
-// (and refuses submission); the trailing slash route handles GET-by-id (Go's
-// ServeMux longest-prefix match routes /api/research/runs/{id} there while
-// /api/research/runs hits the exact handler). CORS wraps the token check so a
-// preflight is answered before credentials are demanded.
+// routes builds the mux. Every route checks the Host header first. /healthz is
+// the only route without the token, so container healthchecks need no
+// credential. /api/research/runs handles list (and refuses submission); the
+// trailing slash route handles GET-by-id (Go's ServeMux longest-prefix match
+// routes /api/research/runs/{id} there while /api/research/runs hits the exact
+// handler). CORS wraps the token check so a preflight is answered before
+// credentials are demanded.
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", s.corsMiddleware(s.healthzHandler))
-	mux.HandleFunc("/api/research/runs", s.corsMiddleware(s.requireToken(s.runsHandler)))
-	mux.HandleFunc("/api/research/runs/", s.corsMiddleware(s.requireToken(s.getRunHandler)))
+	mux.HandleFunc("/healthz", s.hostMiddleware(s.corsMiddleware(s.healthzHandler)))
+	mux.HandleFunc("/api/research/runs", s.hostMiddleware(s.corsMiddleware(s.requireToken(s.runsHandler))))
+	mux.HandleFunc("/api/research/runs/", s.hostMiddleware(s.corsMiddleware(s.requireToken(s.getRunHandler))))
 	return mux
 }

@@ -64,15 +64,18 @@ The signal layer is **pluggable**: a new signal is one small type implementing t
 
 What remains serves, read-only, the runs earlier versions persisted to `RESEARCH_RESULTS_DIR` (default `data/research/`): `GET /api/research/runs` lists newest-first summaries and `GET /api/research/runs/{id}` returns the full record (`oosFoldsProfitable`, `totalOOSPnL`, `foldPboProxy`, `meanFoldDeflatedSharpe`). Those last two are fold-level diagnostics, not the evaluation gate's statistics, which live in `research/norse_research` (goal G1.3). `GET /healthz` reports liveness on port `8094` (override with `RESEARCH_PORT`).
 
-Every route except `/healthz` requires `Authorization: Bearer <token>`, compared in constant time. The token is read at startup from the file whose path is in `HUGINN_RESEARCH_TOKEN_FILE`, never from a flag or a plain environment value; surrounding whitespace is trimmed. With no token configured, or a file that cannot be read, every API route answers `503`, as huginn's control plane does with an empty `HUGINN_API_TOKEN`; a missing or wrong token gets `401`. CORS is sent only to the origin in `RESEARCH_CONSOLE_ORIGIN` (default `http://localhost:8090`, the Norse console), with `Vary: Origin`, and never `*`.
+Every route except `/healthz` requires `Authorization: Bearer <token>`, compared in constant time. The token is read at startup from the file whose path is in `HUGINN_RESEARCH_TOKEN_FILE`, never from a flag or a plain environment value. Exactly one trailing newline is removed, and what remains must be at least 32 printable, non-space ASCII characters, so a short token, a two-line file or a `\r\n` ending is rejected. With no token configured, or a file that cannot be read or fails that rule, every API route answers `503` and one log line names the cause (never the token), as huginn's control plane fails closed with an empty `HUGINN_API_TOKEN`; a missing or wrong token gets `401`.
+
+Every route also refuses, with `403`, a `Host` header outside `RESEARCH_ALLOWED_HOSTS` (comma-separated; by default `127.0.0.1`, `localhost` and `research` on the listen port), which stops a DNS-rebinding page. No CORS headers are sent by default, since the Norse console proxies the gateway same-origin; `RESEARCH_CONSOLE_ORIGIN` opts one exact origin in. `Vary: Origin` is always set and `*` is never sent.
 
 ```bash
-umask 077
-openssl rand -hex 32 > /tmp/research_token
-HUGINN_RESEARCH_TOKEN_FILE=/tmp/research_token go run ./cmd/research
-# In another shell:
+tok="$(mktemp)"   # created mode 600
+openssl rand -hex 32 > "$tok"
+HUGINN_RESEARCH_TOKEN_FILE="$tok" go run ./cmd/research
+# In another shell, with tok set to the same path. printf is a shell builtin,
+# so the token never appears in any process's arguments:
 curl -s localhost:8094/healthz
-curl -s -H "Authorization: Bearer $(cat /tmp/research_token)" localhost:8094/api/research/runs
+curl -s -H @<(printf 'Authorization: Bearer %s\n' "$(cat "$tok")") localhost:8094/api/research/runs
 ```
 
 Build the container image from `Dockerfile.research`. The compose wiring for the research/mimir/forseti services lives in [norse-stack](https://github.com/lgreene03/norse-stack).

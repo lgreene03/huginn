@@ -8,9 +8,12 @@
 //
 // Every route except /healthz requires "Authorization: Bearer <token>". The
 // token is read from the file whose path is in HUGINN_RESEARCH_TOKEN_FILE, never
-// from a flag or a plain environment value; with no token configured, or an
-// unreadable file, the API routes answer 503. CORS is sent only to
-// RESEARCH_CONSOLE_ORIGIN (default http://localhost:8090, the Norse console).
+// from a flag or a plain environment value; it must be at least 32 printable,
+// non-space ASCII characters after one trailing newline. With no token
+// configured, or a file that is unreadable or fails that rule, the API routes
+// answer 503. Every route refuses a Host header outside RESEARCH_ALLOWED_HOSTS
+// (default 127.0.0.1, localhost and research, on the listen port). No CORS
+// headers are sent unless RESEARCH_CONSOLE_ORIGIN names one exact origin.
 package main
 
 import (
@@ -37,22 +40,27 @@ func main() {
 	if resultsDir == "" {
 		resultsDir = defaultResultsDir
 	}
+	// Opt-in, exact match. Unset sends no CORS headers at all.
 	consoleOrigin := os.Getenv("RESEARCH_CONSOLE_ORIGIN")
-	if consoleOrigin == "" {
-		consoleOrigin = defaultConsoleOrigin
-	}
+	allowedHosts := parseAllowedHosts(os.Getenv("RESEARCH_ALLOWED_HOSTS"), port)
 
-	// Fail closed rather than refuse to start: an unreadable or absent token
-	// leaves /healthz up and every API route answering 503.
+	// Fail closed rather than refuse to start: an absent, unreadable or invalid
+	// token leaves /healthz up and every API route answering 503. The one log
+	// line names the cause and never the token.
 	token, err := loadToken(os.Getenv(tokenFileEnv))
 	if err != nil {
-		slog.Error("Research token unreadable; API routes will answer 503", "env", tokenFileEnv, "error", err)
+		slog.Error("Research token rejected; API routes will answer 503", "env", tokenFileEnv, "cause", err.Error())
 	} else if token == "" {
 		slog.Warn("No research token configured; API routes will answer 503", "env", tokenFileEnv)
 	}
 
 	addr := ":" + port
-	s := NewServer(addr, resultsDir, token, consoleOrigin)
+	s := NewServer(addr, Config{
+		ResultsDir:    resultsDir,
+		Token:         token,
+		ConsoleOrigin: consoleOrigin,
+		AllowedHosts:  allowedHosts,
+	})
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -63,8 +71,9 @@ func main() {
 	go func() {
 		v := version.Get()
 		slog.Info("Starting research gateway (read-only; run submission disabled)",
-			"addr", addr, "results_dir", resultsDir, "console_origin", consoleOrigin,
-			"token_configured", token != "", "version", v.Version, "git_sha", v.GitSHA)
+			"addr", addr, "results_dir", resultsDir, "cors_origin", consoleOrigin,
+			"allowed_hosts", allowedHosts, "token_configured", token != "",
+			"version", v.Version, "git_sha", v.GitSHA)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server failed", "error", err)
 			os.Exit(1)

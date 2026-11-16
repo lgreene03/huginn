@@ -272,7 +272,7 @@ _Retired on 2026-11-10 under Norse decision D6._ The web app this phase built (`
 
 **Risks.** Gateway/CLI drift — mitigated by sharing `internal/research` rather than reimplementing the sweep.
 
-**Withdrawn under Norse goal G1.2 (2026-11).** Run submission has since been removed: H1 and H2 trials run only through norse-stack's ledgered `research/norse_research` harness, so the gateway refuses `POST /api/research/runs` unconditionally and serves earlier runs read-only behind a bearer token, with CORS limited to the console's origin. The deliverables above describe Phase 9 as built, not the gateway today; see the "Research gateway" section of the README.
+**Withdrawn under Norse goal G1.2 (2026-11).** Run submission has since been removed: H1 and H2 trials run only through norse-stack's ledgered `research/norse_research` harness, so the gateway refuses `POST /api/research/runs` unconditionally and serves earlier runs read-only behind a bearer token and a Host allowlist, with no CORS unless one origin is opted in. The deliverables above describe Phase 9 as built, not the gateway today; see the "Research gateway" section of the README.
 
 ---
 
