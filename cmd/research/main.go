@@ -1,22 +1,24 @@
-// Command research is the Huginn research / validation gateway: an HTTP service
-// that runs heavy walk-forward backtests, with huginn's fold-level overfitting
-// indicators (a leave-one-fold-out PBO proxy and the mean per-fold deflated
-// Sharpe), OUT of the live trading process. Operators submit a run (strategy +
-// threshold grid + fold count), the gateway executes internal/research.Run
-// asynchronously, and the read-only research UI polls for the derived results
-// (oosFoldsProfitable / totalOOSPnL / foldPboProxy / meanFoldDeflatedSharpe).
-// These are not the evaluation gate's statistics, which live in norse-stack's
-// research/norse_research (goal G1.3).
+// Command research is the Huginn research gateway. It runs nothing. Under Norse
+// goal G1.2 every run submission (POST /api/research/runs) is refused, with or
+// without a valid token, because H1 and H2 trials run only through norse-stack's
+// research/norse_research harness, which writes every run to the hash-chained
+// trial ledger. What remains serves the runs earlier versions persisted to
+// RESEARCH_RESULTS_DIR, read-only. Walk-forward itself is still available
+// offline through cmd/walkforward.
 //
-// It owns no Kafka/Postgres dependency: it replays a JSONL dataset on disk, so
-// it can run as a standalone sidecar. Finished runs are persisted to
-// RESEARCH_RESULTS_DIR and reloaded on startup so results survive a restart.
+// Every route except /healthz requires "Authorization: Bearer <token>". The
+// token is read from the file whose path is in HUGINN_RESEARCH_TOKEN_FILE, never
+// from a flag or a plain environment value; it must be at least 32 printable,
+// non-space ASCII characters after one trailing newline. With no token
+// configured, or a file that is unreadable or fails that rule, the API routes
+// answer 503. Every route refuses a Host header outside RESEARCH_ALLOWED_HOSTS
+// (default 127.0.0.1, localhost and research, on the listen port). No CORS
+// headers are sent unless RESEARCH_CONSOLE_ORIGIN names one exact origin.
 package main
 
 import (
 	"context"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,13 +40,27 @@ func main() {
 	if resultsDir == "" {
 		resultsDir = defaultResultsDir
 	}
-	dataPath := os.Getenv("RESEARCH_DATA_PATH")
-	if dataPath == "" {
-		dataPath = defaultDataPath
+	// Opt-in, exact match. Unset sends no CORS headers at all.
+	consoleOrigin := os.Getenv("RESEARCH_CONSOLE_ORIGIN")
+	allowedHosts := parseAllowedHosts(os.Getenv("RESEARCH_ALLOWED_HOSTS"), port)
+
+	// Fail closed rather than refuse to start: an absent, unreadable or invalid
+	// token leaves /healthz up and every API route answering 503. The one log
+	// line names the cause and never the token.
+	token, err := loadToken(os.Getenv(tokenFileEnv))
+	if err != nil {
+		slog.Error("Research token rejected; API routes will answer 503", "env", tokenFileEnv, "cause", err.Error())
+	} else if token == "" {
+		slog.Warn("No research token configured; API routes will answer 503", "env", tokenFileEnv)
 	}
 
 	addr := ":" + port
-	s := NewServer(addr, resultsDir, dataPath)
+	s := NewServer(addr, Config{
+		ResultsDir:    resultsDir,
+		Token:         token,
+		ConsoleOrigin: consoleOrigin,
+		AllowedHosts:  allowedHosts,
+	})
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -54,8 +70,9 @@ func main() {
 
 	go func() {
 		v := version.Get()
-		slog.Info("Starting research gateway",
-			"addr", addr, "results_dir", resultsDir, "data", dataPath,
+		slog.Info("Starting research gateway (read-only; run submission disabled)",
+			"addr", addr, "results_dir", resultsDir, "cors_origin", consoleOrigin,
+			"allowed_hosts", allowedHosts, "token_configured", token != "",
 			"version", v.Version, "git_sha", v.GitSHA)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server failed", "error", err)
@@ -73,11 +90,4 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("Graceful shutdown failed", "error", err)
 	}
-}
-
-// randSeq returns a small random integer to disambiguate run ids minted within
-// the same nanosecond.
-func randSeq() int {
-	//nolint:gosec // G404: non-cryptographic run-id disambiguator, math/rand is intentional.
-	return rand.Intn(10000)
 }

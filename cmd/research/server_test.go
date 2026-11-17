@@ -1,142 +1,402 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/lgreene03/huginn/internal/research"
 )
 
-// newTestServer builds a gateway with an isolated (empty) results dir and a fast
-// stub walk-forward so handler tests don't replay a real dataset. The stub
-// returns a fixed, recognisable result.
-func newTestServer(t *testing.T) *Server {
-	t.Helper()
-	s := NewServer(":0", t.TempDir(), defaultDataPath)
-	foldPBO := 0.25
-	meanDSR := 1.5
-	s.runWalkforward = func(req runRequest) (*runResult, error) {
-		return &runResult{
-			Folds: []research.FoldResult{
-				{Fold: 1, TestPnL: 12.5},
-				{Fold: 2, TestPnL: -3.0},
-			},
-			OOSFoldsProfitable:     1,
-			TotalOOSPnL:            9.5,
-			FoldPBOProxy:           &foldPBO,
-			MeanFoldDeflatedSharpe: &meanDSR,
-		}, nil
-	}
-	return s
+// The tests that carry a name from norse-stack's docs/research/ledger-threat-model.md
+// (G1.2 table) keep that name exactly: the threat model treats the names as a
+// contract.
+
+// testToken meets loadToken's rule (at least 32 printable, non-space ASCII).
+const testToken = "test-token-0123456789abcdef0123456789abcdef"
+
+const foreignOrigin = "http://evil.example"
+
+// consoleOrigin is the origin the opt-in CORS tests configure.
+const consoleOrigin = "http://localhost:8090"
+
+// allowedHost is the Host header serve sends unless a test sets another.
+const allowedHost = "127.0.0.1:8094"
+
+// testConfig is the configuration newTestServer uses: the test token, no CORS
+// origin (the default) and the default host allowlist for port 8094.
+func testConfig(dir string) Config {
+	return Config{ResultsDir: dir, Token: testToken, AllowedHosts: defaultAllowedHosts("8094")}
 }
 
-// submit posts a run and returns the decoded {id,status} body.
-func submit(t *testing.T, s *Server, body string) map[string]string {
+// newTestServer builds a gateway from testConfig and the given results dir (an
+// empty temp dir when dir is "").
+func newTestServer(t *testing.T, dir string) *Server {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/research/runs", bytes.NewReader([]byte(body)))
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.runsHandler)(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("submit status = %d, want 202; body=%s", rec.Code, rec.Body.String())
+	if dir == "" {
+		dir = t.TempDir()
 	}
-	var out map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode submit: %v; body=%s", err, rec.Body.String())
-	}
-	return out
+	return NewServer(":0", testConfig(dir))
 }
 
-// getRun fetches a run by id and returns the recorder.
-func getRun(t *testing.T, s *Server, id string) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/research/runs/"+id, nil)
+// serve sends one request through the real mux, so the middleware order (Host,
+// CORS, token, handler) is what is tested. auth is the whole Authorization
+// header value, or "" for none; headers are extra request headers, where "Host"
+// sets the request's Host (allowedHost otherwise).
+func serve(s *Server, method, path, body, auth string, headers map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Host = allowedHost
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	for k, v := range headers {
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.getRunHandler)(rec, req)
+	s.routes().ServeHTTP(rec, req)
 	return rec
 }
 
-func TestSubmitPollUntilDone(t *testing.T) {
-	s := newTestServer(t)
+func bearer(token string) string { return "Bearer " + token }
 
-	resp := submit(t, s, `{"strategy":"obi","thresholds":[0.5,0.7],"folds":3}`)
-	id := resp["id"]
-	if id == "" {
-		t.Fatal("empty id in submit response")
+// writePersistedRun writes r to dir/<id>.json as an earlier gateway version did.
+func writePersistedRun(t *testing.T, dir string, r run) {
+	t.Helper()
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal run: %v", err)
 	}
-	if resp["status"] != "running" {
-		t.Errorf("submit status field = %q, want running", resp["status"])
-	}
-
-	// Poll until done (stub is fast; bound the wait so a hang fails loudly).
-	var got run
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		rec := getRun(t, s, id)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("get status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-		}
-		got = run{}
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatalf("decode run: %v; body=%s", err, rec.Body.String())
-		}
-		if got.Status != "running" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("run did not finish before deadline")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	if got.Status != "done" {
-		t.Fatalf("final status = %q, want done; error=%q", got.Status, got.Error)
-	}
-	if got.FinishedAt == nil {
-		t.Error("finishedAt is nil on a done run")
-	}
-	if got.Request.Strategy != "obi" {
-		t.Errorf("request.strategy = %q, want obi", got.Request.Strategy)
-	}
-	if got.Result == nil {
-		t.Fatal("result is nil on a done run")
-	}
-	if len(got.Result.Folds) != 2 {
-		t.Errorf("result.folds len = %d, want 2", len(got.Result.Folds))
-	}
-	if got.Result.OOSFoldsProfitable != 1 {
-		t.Errorf("oosFoldsProfitable = %d, want 1", got.Result.OOSFoldsProfitable)
-	}
-	if got.Result.TotalOOSPnL != 9.5 {
-		t.Errorf("totalOOSPnL = %v, want 9.5", got.Result.TotalOOSPnL)
-	}
-	if got.Result.FoldPBOProxy == nil || *got.Result.FoldPBOProxy != 0.25 {
-		t.Errorf("foldPboProxy = %v, want 0.25", got.Result.FoldPBOProxy)
-	}
-	if got.Result.MeanFoldDeflatedSharpe == nil || *got.Result.MeanFoldDeflatedSharpe != 1.5 {
-		t.Errorf("meanFoldDeflatedSharpe = %v, want 1.5", got.Result.MeanFoldDeflatedSharpe)
+	if err := os.WriteFile(filepath.Join(dir, r.ID+".json"), data, 0o600); err != nil {
+		t.Fatalf("write run: %v", err)
 	}
 }
 
-// TestRunResultJSONUsesFoldQualifiedKeys pins the wire names of the gateway's
-// run result. huginn's figures are a leave-one-fold-out PBO proxy and a mean of
+// assertNothingScheduledOrWritten checks a refused submission left no trace:
+// no run in memory and no file in the results dir.
+func assertNothingScheduledOrWritten(t *testing.T, s *Server, dir string) {
+	t.Helper()
+	if n := len(s.runs); n != 0 {
+		t.Errorf("runs in memory = %d, want 0", n)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read results dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("results dir holds %d entries, want 0", len(entries))
+	}
+}
+
+const runBody = `{"strategy":"obi","thresholds":[0.5,0.7],"folds":3}`
+
+func TestRunWithoutTokenIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServer(t, dir)
+
+	rec := serve(s, http.MethodPost, "/api/research/runs", runBody, "",
+		map[string]string{"Content-Type": "application/json"})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); !strings.HasPrefix(got, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q, want a Bearer challenge", got)
+	}
+	assertNothingScheduledOrWritten(t, s, dir)
+}
+
+func TestRunWithWrongTokenIsRefused(t *testing.T) {
+	cases := []struct {
+		name string
+		auth string
+	}{
+		{"wrong token same length", bearer("x" + testToken[1:])},
+		{"wrong token shorter", bearer("nope")},
+		{"wrong token longer", bearer(testToken + "-extra")},
+		{"token without bearer prefix", testToken},
+		{"prefix only", "Bearer "},
+		{"case-mismatched scheme", "bearer " + testToken},
+		{"basic scheme", "Basic " + testToken},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newTestServer(t, dir)
+			rec := serve(s, http.MethodPost, "/api/research/runs", runBody, tc.auth,
+				map[string]string{"Content-Type": "application/json"})
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+			}
+			assertNothingScheduledOrWritten(t, s, dir)
+		})
+	}
+}
+
+// A cross-site "simple" POST (text/plain, no preflight) from a foreign page
+// carries no token, so it is refused, and the response is not readable by that
+// page because no Access-Control-Allow-Origin is sent.
+func TestSimpleTextPlainPostWithoutTokenIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	s := newTestServer(t, dir)
+
+	rec := serve(s, http.MethodPost, "/api/research/runs", runBody, "",
+		map[string]string{"Content-Type": "text/plain", "Origin": foreignOrigin})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want none for a foreign origin", got)
+	}
+	assertNothingScheduledOrWritten(t, s, dir)
+}
+
+// The run endpoint is disabled outright: a valid token and a well-formed body
+// still get a JSON refusal pointing at the ledgered harness, and nothing runs.
+func TestRunIsRefusedWithAValidToken(t *testing.T) {
+	for _, ctype := range []string{"application/json", "text/plain"} {
+		t.Run(ctype, func(t *testing.T) {
+			dir := t.TempDir()
+			s := newTestServer(t, dir)
+
+			rec := serve(s, http.MethodPost, "/api/research/runs", runBody, bearer(testToken),
+				map[string]string{"Content-Type": ctype})
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want 405; body=%s", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Allow"); got != "GET, OPTIONS" {
+				t.Errorf("Allow = %q, want GET, OPTIONS", got)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("Content-Type = %q, want application/json", got)
+			}
+			var body map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("refusal is not JSON: %v; body=%s", err, rec.Body.String())
+			}
+			for _, want := range []string{"disabled", "norse_research", "ledger"} {
+				if !strings.Contains(body["error"], want) {
+					t.Errorf("error = %q, want it to mention %q", body["error"], want)
+				}
+			}
+			assertNothingScheduledOrWritten(t, s, dir)
+		})
+	}
+}
+
+func TestResultsRequireToken(t *testing.T) {
+	dir := t.TempDir()
+	writePersistedRun(t, dir, run{ID: "run-1", Status: "done", SubmittedAt: time.Now().UTC()})
+	s := newTestServer(t, dir)
+
+	for _, path := range []string{"/api/research/runs", "/api/research/runs/run-1", "/api/research/runs/run-missing"} {
+		for _, auth := range []string{"", bearer("wrong")} {
+			rec := serve(s, http.MethodGet, path, "", auth, nil)
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("GET %s with auth %q: status = %d, want 401", path, auth, rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "run-1") {
+				t.Errorf("GET %s with auth %q leaked a run id: %s", path, auth, rec.Body.String())
+			}
+		}
+	}
+}
+
+// With no token configured every API route fails closed with 503, whatever the
+// request carries, including an "Authorization: Bearer " with an empty token.
+func TestNoTokenConfiguredAnswers503(t *testing.T) {
+	dir := t.TempDir()
+	writePersistedRun(t, dir, run{ID: "run-1", Status: "done", SubmittedAt: time.Now().UTC()})
+	cfg := testConfig(dir)
+	cfg.Token = ""
+	s := NewServer(":0", cfg)
+
+	cases := []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/research/runs"},
+		{http.MethodGet, "/api/research/runs/run-1"},
+		{http.MethodPost, "/api/research/runs"},
+	}
+	for _, tc := range cases {
+		for _, auth := range []string{"", "Bearer ", bearer(testToken)} {
+			rec := serve(s, tc.method, tc.path, runBody, auth, nil)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Errorf("%s %s with auth %q: status = %d, want 503", tc.method, tc.path, auth, rec.Code)
+			}
+		}
+	}
+
+	if rec := serve(s, http.MethodGet, "/healthz", "", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("healthz with no token configured: status = %d, want 200", rec.Code)
+	}
+}
+
+// writeTokenFile writes content to a fresh file and returns its path.
+func writeTokenFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestLoadToken(t *testing.T) {
+	if tok, err := loadToken(""); err != nil || tok != "" {
+		t.Errorf("loadToken(\"\") = %q, %v; want empty token and no error", tok, err)
+	}
+
+	hex64 := strings.Repeat("0123456789abcdef", 4)
+	for name, content := range map[string]string{
+		"openssl rand -hex 32 output": hex64 + "\n",
+		"no trailing newline":         hex64,
+		"exactly 32 characters":       hex64[:32] + "\n",
+		"printable punctuation":       "!~" + hex64[:30],
+	} {
+		want := strings.TrimSuffix(content, "\n")
+		if tok, err := loadToken(writeTokenFile(t, content)); err != nil || tok != want {
+			t.Errorf("%s: loadToken = %q, %v; want the token with one trailing newline removed", name, tok, err)
+		}
+	}
+
+	if tok, err := loadToken(filepath.Join(t.TempDir(), "absent")); err == nil || tok != "" {
+		t.Errorf("loadToken(missing file) = %q, %v; want empty token and an error", tok, err)
+	}
+}
+
+// A weak or malformed token file is rejected (so the API answers 503) with an
+// error naming the cause and never the file's content.
+func TestLoadTokenRejectsWeakOrMalformedTokens(t *testing.T) {
+	hex64 := strings.Repeat("0123456789abcdef", 4)
+	cases := []struct {
+		name, content string
+		want          error
+	}{
+		{"empty file", "", errTokenTooShort},
+		{"only a newline", "\n", errTokenTooShort},
+		{"one character", "a\n", errTokenTooShort},
+		{"31 characters", hex64[:31] + "\n", errTokenTooShort},
+		{"two lines from >>", hex64 + "\n" + hex64 + "\n", errTokenBadChar},
+		{"two trailing newlines", hex64 + "\n\n", errTokenBadChar},
+		{"CRLF ending", hex64 + "\r\n", errTokenBadChar},
+		{"leading space", " " + hex64, errTokenBadChar},
+		{"internal space", hex64[:20] + " " + hex64[20:], errTokenBadChar},
+		{"tab", hex64 + "\t", errTokenBadChar},
+		{"control character", hex64 + "\x1f", errTokenBadChar},
+		{"DEL", hex64 + "\x7f", errTokenBadChar},
+		{"non-ASCII", hex64 + "é", errTokenBadChar},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tok, err := loadToken(writeTokenFile(t, tc.content))
+			if tok != "" || !errors.Is(err, tc.want) {
+				t.Fatalf("loadToken = %q, %v; want empty token and %v", tok, err, tc.want)
+			}
+			if strings.Contains(err.Error(), "0123456789") {
+				t.Errorf("error %q carries the file's content", err)
+			}
+		})
+	}
+}
+
+func TestHealthzIsOpen(t *testing.T) {
+	s := newTestServer(t, "")
+	rec := serve(s, http.MethodGet, "/healthz", "", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("healthz status = %d, want 200 with no token", rec.Code)
+	}
+}
+
+// Earlier gateway versions persisted runs to the results dir; with a valid token
+// they are listed newest first and served by id.
+func TestPersistedRunsAreServedWithAValidToken(t *testing.T) {
+	dir := t.TempDir()
+	older := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	meanDSR := 2.0
+	writePersistedRun(t, dir, run{
+		ID: "run-old", Status: "done", SubmittedAt: older,
+		Request: runRequest{Strategy: "obi", Thresholds: []float64{0.5}, Folds: 2},
+		Result:  &runResult{OOSFoldsProfitable: 3, TotalOOSPnL: 42.0, MeanFoldDeflatedSharpe: &meanDSR},
+	})
+	writePersistedRun(t, dir, run{
+		ID: "run-new", Status: "error", SubmittedAt: newer, Error: "boom",
+		Request: runRequest{Strategy: "ou", Thresholds: []float64{1.0}, Folds: 2},
+	})
+	s := newTestServer(t, dir)
+
+	rec := serve(s, http.MethodGet, "/api/research/runs", "", bearer(testToken), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var list []runSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v; body=%s", err, rec.Body.String())
+	}
+	if len(list) != 2 {
+		t.Fatalf("list len = %d, want 2", len(list))
+	}
+	if list[0].ID != "run-new" || list[1].ID != "run-old" {
+		t.Errorf("order = [%s,%s], want [run-new,run-old] (newest first)", list[0].ID, list[1].ID)
+	}
+	if list[0].Strategy != "ou" {
+		t.Errorf("list[0].Strategy = %q, want ou", list[0].Strategy)
+	}
+
+	rec = serve(s, http.MethodGet, "/api/research/runs/run-old", "", bearer(testToken), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var got run
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode run: %v", err)
+	}
+	if got.Status != "done" || got.Result == nil || got.Result.TotalOOSPnL != 42.0 {
+		t.Errorf("run = %+v, want done with totalOOSPnL 42.0", got)
+	}
+}
+
+func TestGetUnknownRun404(t *testing.T) {
+	s := newTestServer(t, "")
+	rec := serve(s, http.MethodGet, "/api/research/runs/run-does-not-exist", "", bearer(testToken), nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestRunResultJSONUsesFoldQualifiedKeys pins the wire names of a served run's
+// result. huginn's figures are a leave-one-fold-out PBO proxy and a mean of
 // per-fold deflated Sharpes, not the evaluation gate's CSCV PBO or deflated
 // Sharpe (norse-stack research/norse_research, goal G1.3), so the encoded run
 // must carry foldPboProxy and meanFoldDeflatedSharpe and must never carry the
 // unqualified pbo or deflatedSharpe keys. The per-fold records must likewise use
 // fold_deflated_sharpe rather than deflated_sharpe.
 func TestRunResultJSONUsesFoldQualifiedKeys(t *testing.T) {
-	s := newTestServer(t)
+	s := newTestServer(t, "")
+	foldPBO := 0.25
+	meanDSR := 1.5
 	const id = "run-json-keys"
-	s.runs[id] = &run{ID: id, Status: "running", SubmittedAt: time.Now().UTC()}
-	s.execute(id, runRequest{Strategy: "obi", Thresholds: []float64{0.5}, Folds: 2})
+	s.runs[id] = &run{
+		ID: id, Status: "done", SubmittedAt: time.Now().UTC(),
+		Result: &runResult{
+			Folds:                  []research.FoldResult{{Fold: 1, TestPnL: 12.5}, {Fold: 2, TestPnL: -3.0}},
+			OOSFoldsProfitable:     1,
+			TotalOOSPnL:            9.5,
+			FoldPBOProxy:           &foldPBO,
+			MeanFoldDeflatedSharpe: &meanDSR,
+		},
+	}
 
-	rec := getRun(t, s, id)
+	rec := serve(s, http.MethodGet, "/api/research/runs/"+id, "", bearer(testToken), nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
@@ -177,232 +437,160 @@ func TestRunResultJSONUsesFoldQualifiedKeys(t *testing.T) {
 	}
 }
 
-// TestConcurrentGetWhileRunning hammers GET /api/research/runs/{id} from many
-// goroutines while the worker is finishing the run, so `go test -race` flags any
-// unsynchronized read of the run's mutable fields (status/result/error/
-// finishedAt) against the worker's write. The walk-forward stub blocks on a
-// release channel so the readers overlap the worker's in-flight write window.
-func TestConcurrentGetWhileRunning(t *testing.T) {
-	s := newTestServer(t)
-	release := make(chan struct{})
-	s.runWalkforward = func(req runRequest) (*runResult, error) {
-		<-release // hold the worker until readers are spinning
-		return &runResult{OOSFoldsProfitable: 1, TotalOOSPnL: 1.0}, nil
+// By default no origin is trusted and no response carries
+// Access-Control-Allow-Origin. With RESEARCH_CONSOLE_ORIGIN set, only that exact
+// origin is echoed. "*" is never sent, Vary: Origin always is, and a preflight
+// is answered (204) without a token.
+func TestCorsAllowsOnlyTheConsoleOrigin(t *testing.T) {
+	byDefault := newTestServer(t, "")
+	cfg := testConfig(t.TempDir())
+	cfg.ConsoleOrigin = consoleOrigin
+	optedIn := NewServer(":0", cfg)
+
+	type want struct {
+		status int
+		acao   string
 	}
-
-	id := submit(t, s, `{"strategy":"obi","thresholds":[0.5],"folds":2}`)["id"]
-
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					rec := getRun(t, s, id)
-					if rec.Code != http.StatusOK {
-						t.Errorf("get status = %d, want 200", rec.Code)
-						return
-					}
-				}
+	cases := []struct {
+		name   string
+		s      *Server
+		method string
+		path   string
+		origin string
+		auth   string
+		want   want
+	}{
+		{"default: preflight from the console", byDefault, http.MethodOptions, "/api/research/runs", consoleOrigin, "", want{http.StatusNoContent, ""}},
+		{"default: preflight from a foreign origin", byDefault, http.MethodOptions, "/api/research/runs", foreignOrigin, "", want{http.StatusNoContent, ""}},
+		{"default: preflight with no origin", byDefault, http.MethodOptions, "/api/research/runs", "", "", want{http.StatusNoContent, ""}},
+		{"default: GET from the console", byDefault, http.MethodGet, "/api/research/runs", consoleOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"default: GET from a foreign origin", byDefault, http.MethodGet, "/api/research/runs", foreignOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"opt-in: preflight from the console", optedIn, http.MethodOptions, "/api/research/runs", consoleOrigin, "", want{http.StatusNoContent, consoleOrigin}},
+		{"opt-in: preflight by id from the console", optedIn, http.MethodOptions, "/api/research/runs/run-1", consoleOrigin, "", want{http.StatusNoContent, consoleOrigin}},
+		{"opt-in: preflight from a foreign origin", optedIn, http.MethodOptions, "/api/research/runs", foreignOrigin, "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from the console on another port", optedIn, http.MethodOptions, "/api/research/runs", "http://localhost:8091", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from a lookalike origin", optedIn, http.MethodOptions, "/api/research/runs", consoleOrigin + ".evil.example", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight from a null origin", optedIn, http.MethodOptions, "/api/research/runs", "null", "", want{http.StatusNoContent, ""}},
+		{"opt-in: preflight with no origin", optedIn, http.MethodOptions, "/api/research/runs", "", "", want{http.StatusNoContent, ""}},
+		{"opt-in: GET from the console", optedIn, http.MethodGet, "/api/research/runs", consoleOrigin, bearer(testToken), want{http.StatusOK, consoleOrigin}},
+		{"opt-in: GET from a foreign origin with the token", optedIn, http.MethodGet, "/api/research/runs", foreignOrigin, bearer(testToken), want{http.StatusOK, ""}},
+		{"opt-in: GET from a foreign origin without the token", optedIn, http.MethodGet, "/api/research/runs", foreignOrigin, "", want{http.StatusUnauthorized, ""}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.s
+			headers := map[string]string{"Access-Control-Request-Method": http.MethodGet}
+			if tc.origin != "" {
+				headers["Origin"] = tc.origin
 			}
-		}()
-	}
-
-	// Let readers spin against the still-running run, then release the worker so
-	// its write races against the concurrent reads if locking is wrong.
-	time.Sleep(20 * time.Millisecond)
-	close(release)
-	time.Sleep(20 * time.Millisecond)
-	close(stop)
-	wg.Wait()
-
-	rec := getRun(t, s, id)
-	var got run
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode run: %v", err)
-	}
-	if got.Status != "done" {
-		t.Fatalf("final status = %q, want done", got.Status)
-	}
-}
-
-func TestListRunsNewestFirst(t *testing.T) {
-	s := newTestServer(t)
-	id1 := submit(t, s, `{"strategy":"obi","thresholds":[0.5],"folds":2}`)["id"]
-	time.Sleep(2 * time.Millisecond)
-	id2 := submit(t, s, `{"strategy":"ou","thresholds":[1.0],"folds":2}`)["id"]
-
-	req := httptest.NewRequest(http.MethodGet, "/api/research/runs", nil)
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.runsHandler)(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list status = %d, want 200", rec.Code)
-	}
-	var list []runSummary
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("decode list: %v; body=%s", err, rec.Body.String())
-	}
-	if len(list) != 2 {
-		t.Fatalf("list len = %d, want 2", len(list))
-	}
-	// Newest-first: id2 submitted last must be first.
-	if list[0].ID != id2 || list[1].ID != id1 {
-		t.Errorf("order = [%s,%s], want [%s,%s] (newest first)", list[0].ID, list[1].ID, id2, id1)
-	}
-	if list[0].Strategy != "ou" {
-		t.Errorf("list[0].Strategy = %q, want ou", list[0].Strategy)
+			rec := serve(s, tc.method, tc.path, "", tc.auth, headers)
+			if rec.Code != tc.want.status {
+				t.Errorf("status = %d, want %d", rec.Code, tc.want.status)
+			}
+			got := rec.Header().Get("Access-Control-Allow-Origin")
+			if got == "*" {
+				t.Fatal("Access-Control-Allow-Origin is *; it must never be")
+			}
+			if got != tc.want.acao {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, tc.want.acao)
+			}
+			if !strings.Contains(rec.Header().Get("Vary"), "Origin") {
+				t.Errorf("Vary = %q, want it to include Origin", rec.Header().Get("Vary"))
+			}
+			if tc.want.acao != "" && strings.Contains(rec.Header().Get("Access-Control-Allow-Methods"), http.MethodPost) {
+				t.Errorf("Access-Control-Allow-Methods = %q; POST is disabled and must not be offered",
+					rec.Header().Get("Access-Control-Allow-Methods"))
+			}
+		})
 	}
 }
 
-func TestGetUnknownRun404(t *testing.T) {
-	s := newTestServer(t)
-	rec := getRun(t, s, "run-does-not-exist")
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
+// The allowed origin is whatever the gateway is configured with
+// (RESEARCH_CONSOLE_ORIGIN), not a hard-coded value.
+func TestCorsOriginIsConfigurable(t *testing.T) {
+	const custom = "http://127.0.0.1:9000"
+	cfg := testConfig(t.TempDir())
+	cfg.ConsoleOrigin = custom
+	s := NewServer(":0", cfg)
+
+	rec := serve(s, http.MethodOptions, "/api/research/runs", "", "", map[string]string{"Origin": custom})
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != custom {
+		t.Errorf("configured origin: Access-Control-Allow-Origin = %q, want %q", got, custom)
+	}
+	rec = serve(s, http.MethodOptions, "/api/research/runs", "", "", map[string]string{"Origin": consoleOrigin})
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("another origin when one is configured: Access-Control-Allow-Origin = %q, want none", got)
 	}
 }
 
-func TestSubmitBadStrategy400(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/research/runs",
-		bytes.NewReader([]byte(`{"strategy":"nope","thresholds":[0.5],"folds":2}`)))
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.runsHandler)(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "unknown strategy") {
-		t.Errorf("body = %q, want it to mention unknown strategy", rec.Body.String())
-	}
-}
-
-func TestSubmitBadFolds400(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/research/runs",
-		bytes.NewReader([]byte(`{"strategy":"obi","thresholds":[0.5],"folds":0}`)))
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.runsHandler)(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHealthz(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.healthzHandler)(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("healthz status = %d, want 200", rec.Code)
-	}
-}
-
-func TestCORSAllowsAllOrigins(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodOptions, "/api/research/runs", nil)
-	rec := httptest.NewRecorder()
-	s.corsMiddleware(s.runsHandler)(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("preflight status = %d, want 200", rec.Code)
-	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Errorf("Access-Control-Allow-Origin = %q, want *", got)
-	}
-}
-
-// TestRealWalkforwardEndToEnd exercises the REAL runWalkforwardReal path (no
-// stub) against the committed btc_test.jsonl dataset: submit → poll → assert the
-// finished run carries a fold array and the console-contract aggregates. No
-// Kafka/Postgres involved — it only replays the on-disk JSONL.
-func TestRealWalkforwardEndToEnd(t *testing.T) {
-	s := NewServer(":0", t.TempDir(), "../../data/btc_test.jsonl")
-
-	id := submit(t, s, `{"strategy":"obi","thresholds":[0.5,0.7],"folds":4}`)["id"]
-	deadline := time.Now().Add(15 * time.Second)
-	var got run
-	for {
-		rec := getRun(t, s, id)
-		got = run{}
-		_ = json.Unmarshal(rec.Body.Bytes(), &got)
-		if got.Status != "running" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("real walk-forward did not finish in time")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if got.Status != "done" {
-		t.Fatalf("status = %q, want done; error=%q", got.Status, got.Error)
-	}
-	if got.Result == nil || len(got.Result.Folds) == 0 {
-		t.Fatalf("result missing folds: %+v", got.Result)
-	}
-	if got.Result.OOSFoldsProfitable < 0 || got.Result.OOSFoldsProfitable > len(got.Result.Folds) {
-		t.Errorf("oosFoldsProfitable = %d, out of range for %d folds",
-			got.Result.OOSFoldsProfitable, len(got.Result.Folds))
-	}
-}
-
-// TestRunPersistedAndReloaded asserts a finished run is written to the results
-// dir and re-loaded by a fresh Server (results survive restart).
-func TestRunPersistedAndReloaded(t *testing.T) {
+// A Host header outside the allowlist is refused with 403 on every route and
+// method, token or not, before CORS or the token check, so a DNS-rebinding page
+// gets nothing (threat model T26). The allowed names pass, case-insensitively.
+func TestForeignHostHeaderIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	s := NewServer(":0", dir, defaultDataPath)
-	meanDSR := 2.0
-	s.runWalkforward = func(req runRequest) (*runResult, error) {
-		return &runResult{OOSFoldsProfitable: 3, TotalOOSPnL: 42.0, MeanFoldDeflatedSharpe: &meanDSR}, nil
+	writePersistedRun(t, dir, run{ID: "run-1", Status: "done", SubmittedAt: time.Now().UTC()})
+	s := newTestServer(t, dir)
+
+	foreign := []string{
+		"rebind.attacker.example", "rebind.attacker.example:8094", "evil.example:8094",
+		"localhost", "localhost:8095", "127.0.0.1:8094.evil.example", "127.0.0.2:8094", "",
+	}
+	routes := []struct{ method, path, auth string }{
+		{http.MethodGet, "/api/research/runs", bearer(testToken)},
+		{http.MethodGet, "/api/research/runs/run-1", bearer(testToken)},
+		{http.MethodGet, "/healthz", ""},
+		{http.MethodPost, "/api/research/runs", bearer(testToken)},
+		{http.MethodOptions, "/api/research/runs", ""},
+	}
+	for _, host := range foreign {
+		for _, rt := range routes {
+			rec := serve(s, rt.method, rt.path, runBody, rt.auth,
+				map[string]string{"Host": host, "Origin": consoleOrigin})
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("%s %s with Host %q: status = %d, want 403", rt.method, rt.path, host, rec.Code)
+			}
+			if strings.Contains(rec.Body.String(), "run-1") {
+				t.Errorf("%s %s with Host %q leaked a run id: %s", rt.method, rt.path, host, rec.Body.String())
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Errorf("%s %s with Host %q: Access-Control-Allow-Origin = %q, want none", rt.method, rt.path, host, got)
+			}
+		}
 	}
 
-	id := submit(t, s, `{"strategy":"composite","thresholds":[0.5],"folds":2}`)["id"]
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		rec := getRun(t, s, id)
-		var r run
-		_ = json.Unmarshal(rec.Body.Bytes(), &r)
-		if r.Status == "done" {
-			break
+	for _, host := range []string{"127.0.0.1:8094", "localhost:8094", "research:8094", "LOCALHOST:8094"} {
+		rec := serve(s, http.MethodGet, "/api/research/runs/run-1", "", bearer(testToken), map[string]string{"Host": host})
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET with allowed Host %q: status = %d, want 200", host, rec.Code)
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("run did not finish")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	// Fresh server over the same dir must reload the finished run.
-	s2 := NewServer(":0", dir, defaultDataPath)
-	rec := getRun(t, s2, id)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("reloaded get status = %d, want 200; body=%s", rec.Code, rec.Body.String())
-	}
-	var got run
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode reloaded run: %v", err)
-	}
-	if got.Status != "done" || got.Result == nil || got.Result.TotalOOSPnL != 42.0 {
-		t.Errorf("reloaded run = %+v, want done with totalOOSPnL 42.0", got)
 	}
 }
 
-// TestBaseConfigEnablesTrading pins the load-bearing risk/executor defaults on
-// baseConfig. The risk manager treats PositionLimitHard==0 as a zero-notional
-// cap that rejects EVERY fill, so a missing default silently turns every
-// walk-forward run into 0 trades / 0 PnL (regression: the gateway reported a
-// flat 0 result while the equivalent CLI run produced the real -146 PnL).
-func TestBaseConfigEnablesTrading(t *testing.T) {
-	cfg := baseConfig("obi")
-	if cfg.Risk.PositionLimitHard <= 0 {
-		t.Errorf("Risk.PositionLimitHard = %v, want > 0 (a zero hard limit rejects every fill → 0 trades)", cfg.Risk.PositionLimitHard)
+// RESEARCH_ALLOWED_HOSTS replaces the default allowlist; unset or blank gives
+// 127.0.0.1, localhost and research on the listen port.
+func TestAllowedHostsFromEnv(t *testing.T) {
+	cases := []struct {
+		env, port string
+		want      []string
+	}{
+		{"", "8094", []string{"127.0.0.1:8094", "localhost:8094", "research:8094"}},
+		{"  ", "9000", []string{"127.0.0.1:9000", "localhost:9000", "research:9000"}},
+		{" Gateway.internal:8094 , 10.0.0.5:8094 ,", "8094", []string{"gateway.internal:8094", "10.0.0.5:8094"}},
 	}
-	if cfg.Risk.MaxDrawdownPct <= 0 || cfg.Risk.DailyLossLimit <= 0 {
-		t.Errorf("Risk drawdown/daily-loss = %v/%v, want > 0 to match config.Load fallbacks", cfg.Risk.MaxDrawdownPct, cfg.Risk.DailyLossLimit)
+	for _, tc := range cases {
+		got := parseAllowedHosts(tc.env, tc.port)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("parseAllowedHosts(%q, %q) = %v, want %v", tc.env, tc.port, got, tc.want)
+		}
 	}
-	if cfg.Executor.TransactionCostBps <= 0 || cfg.Executor.SlippageBps <= 0 {
-		t.Errorf("Executor tx/slippage bps = %v/%v, want > 0 to match configs/default.yaml so PnL is cost-consistent with the CLI", cfg.Executor.TransactionCostBps, cfg.Executor.SlippageBps)
+
+	cfg := testConfig(t.TempDir())
+	cfg.AllowedHosts = parseAllowedHosts("gateway.internal:8094", "8094")
+	s := NewServer(":0", cfg)
+	if rec := serve(s, http.MethodGet, "/healthz", "", "", map[string]string{"Host": "gateway.internal:8094"}); rec.Code != http.StatusOK {
+		t.Errorf("configured host: status = %d, want 200", rec.Code)
+	}
+	if rec := serve(s, http.MethodGet, "/healthz", "", "", map[string]string{"Host": "127.0.0.1:8094"}); rec.Code != http.StatusForbidden {
+		t.Errorf("default host when the list is replaced: status = %d, want 403", rec.Code)
 	}
 }

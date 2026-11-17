@@ -1,10 +1,11 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,28 +14,78 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lgreene03/huginn/internal/config"
 	"github.com/lgreene03/huginn/internal/research"
 )
 
-// defaultDataPath is the historical FeatureEvent JSONL used when a run request
-// omits the data field. Mirrors cmd/walkforward's default dataset.
-const defaultDataPath = "data/btc_test.jsonl"
-
-// defaultResultsDir is where finished runs are persisted (one JSON file per
-// run) when RESEARCH_RESULTS_DIR is unset, so results survive a restart.
+// defaultResultsDir is where runs persisted by earlier versions of the gateway
+// (one JSON file per run) are read from when RESEARCH_RESULTS_DIR is unset.
 const defaultResultsDir = "data/research"
 
-// supportedStrategies is the set of strategy names the gateway accepts. Mirrors
-// the names cmd/huginn / internal/research understand; the gateway intentionally
-// exposes the three the research UI drives (obi mean-reversion, OU, composite).
-var supportedStrategies = map[string]bool{
-	"obi":       true,
-	"ou":        true,
-	"composite": true,
+// tokenFileEnv names the environment variable that holds the PATH of the file
+// containing the bearer token. The token itself is never read from a flag or a
+// plain environment value (Norse goal G0.4, credentials by file).
+const tokenFileEnv = "HUGINN_RESEARCH_TOKEN_FILE"
+
+// minTokenLen is the shortest token the gateway accepts. `openssl rand -hex 32`
+// gives 64 characters.
+const minTokenLen = 32
+
+// errTokenTooShort and errTokenBadChar name why a token file was rejected. They
+// never carry the file's content.
+var (
+	errTokenTooShort = fmt.Errorf("token file holds fewer than %d characters", minTokenLen)
+	errTokenBadChar  = errors.New("token file holds whitespace, a control character or a non-ASCII byte")
+)
+
+// Config is the gateway's configuration.
+type Config struct {
+	// ResultsDir holds the runs earlier versions persisted.
+	ResultsDir string
+	// Token is the bearer token. Empty means none is configured, and every API
+	// route answers 503.
+	Token string
+	// ConsoleOrigin is the one browser origin sent Access-Control-Allow-Origin,
+	// as an exact match. Empty, the default, sends no CORS headers to anyone:
+	// the Norse console proxies the gateway same-origin and never needs them.
+	ConsoleOrigin string
+	// AllowedHosts are the Host header values served, compared case-insensitively.
+	// Anything else is refused with 403, which stops a DNS-rebinding page
+	// (threat model T26).
+	AllowedHosts []string
 }
 
-// runRequest is the POST /api/research/runs body.
+// defaultAllowedHosts are the names the gateway is reached by: 127.0.0.1 is
+// what norse-stack's console uses, localhost what the compose healthcheck uses,
+// and research the compose service name.
+func defaultAllowedHosts(port string) []string {
+	return []string{"127.0.0.1:" + port, "localhost:" + port, "research:" + port}
+}
+
+// parseAllowedHosts reads RESEARCH_ALLOWED_HOSTS, a comma-separated list of
+// host:port values. Empty or unset gives defaultAllowedHosts(port).
+func parseAllowedHosts(env, port string) []string {
+	if strings.TrimSpace(env) == "" {
+		return defaultAllowedHosts(port)
+	}
+	var hosts []string
+	for _, h := range strings.Split(env, ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	return hosts
+}
+
+// runsDisabledMessage is the error every POST /api/research/runs receives (Norse
+// goal G1.2). Trials are counted only when the hash-chained trial ledger records
+// them, and only norse-stack's harness writes that ledger, so a run started here
+// would be an unledgered trial.
+const runsDisabledMessage = "run submission is disabled: H1 and H2 trials run only through " +
+	"norse-stack's research/norse_research harness (harness.run), which writes every run to the " +
+	"hash-chained trial ledger; this gateway serves earlier runs read-only"
+
+// runRequest is the request recorded with a run persisted by an earlier version
+// of the gateway. Nothing submits one any more; it is kept so those runs decode.
 type runRequest struct {
 	Strategy   string    `json:"strategy"`
 	Thresholds []float64 `json:"thresholds"`
@@ -48,7 +99,7 @@ type runRequest struct {
 // meanFoldDeflatedSharpe a *float64 so an undefined mean stays null rather than
 // 0. Where validationHandler can only report unprofitableFoldShare, this carries
 // foldPboProxy, the rank-based leave-one-fold-out proxy, because a gateway run
-// has the per-config OOS matrix. Neither figure is the evaluation gate's PBO or
+// had the per-config OOS matrix. Neither figure is the evaluation gate's PBO or
 // deflated Sharpe (norse-stack research/norse_research, goal G1.3).
 type runResult struct {
 	Folds                  []research.FoldResult `json:"folds"`
@@ -58,8 +109,8 @@ type runResult struct {
 	MeanFoldDeflatedSharpe *float64              `json:"meanFoldDeflatedSharpe"`
 }
 
-// run is one research job. Guarded by Server.mu when read/written through the
-// runs map; the JSON tags define the GET-by-id response shape.
+// run is one persisted research job; the JSON tags define the GET-by-id
+// response shape and the on-disk format.
 type run struct {
 	ID          string     `json:"id"`
 	Status      string     `json:"status"` // running | done | error
@@ -78,39 +129,73 @@ type runSummary struct {
 	SubmittedAt time.Time `json:"submittedAt"`
 }
 
-// Server is the research gateway. It keeps finished + in-flight runs in an
-// in-memory map guarded by a mutex, persists finished runs to resultsDir, and
-// loads any existing persisted runs on construction.
+// Server is the research gateway. It runs nothing: it loads the runs earlier
+// versions persisted to resultsDir and serves them, read-only, to callers that
+// present the bearer token.
 type Server struct {
-	addr       string
-	resultsDir string
-	dataPath   string
+	addr          string
+	resultsDir    string
+	token         string // empty means no token configured: API routes answer 503
+	consoleOrigin string // the only origin Access-Control-Allow-Origin is sent to; empty sends none
+	allowedHosts  map[string]bool
 
 	mu   sync.Mutex
 	runs map[string]*run
-
-	// runWalkforward executes the walk-forward. A field (not a direct call) so
-	// tests can inject a fast synthetic implementation instead of replaying a
-	// real dataset. Defaults to runWalkforwardReal.
-	runWalkforward func(req runRequest) (*runResult, error)
 }
 
-// NewServer constructs the gateway, loading any persisted runs from resultsDir.
-func NewServer(addr, resultsDir, dataPath string) *Server {
-	s := &Server{
-		addr:       addr,
-		resultsDir: resultsDir,
-		dataPath:   dataPath,
-		runs:       make(map[string]*run),
+// NewServer constructs the gateway, loading any persisted runs from
+// cfg.ResultsDir. An empty cfg.Token leaves every API route answering 503.
+func NewServer(addr string, cfg Config) *Server {
+	hosts := make(map[string]bool, len(cfg.AllowedHosts))
+	for _, h := range cfg.AllowedHosts {
+		hosts[strings.ToLower(h)] = true
 	}
-	s.runWalkforward = s.runWalkforwardReal
+	s := &Server{
+		addr:          addr,
+		resultsDir:    cfg.ResultsDir,
+		token:         cfg.Token,
+		consoleOrigin: cfg.ConsoleOrigin,
+		allowedHosts:  hosts,
+		runs:          make(map[string]*run),
+	}
 	s.loadPersisted()
 	return s
 }
 
-// loadPersisted reads every *.json file in resultsDir into the runs map so
-// finished results survive a restart. Unreadable/corrupt files are skipped with
-// a warning rather than failing startup.
+// loadToken reads the bearer token from the file at path. An empty path means
+// no token is configured, which is not an error: the API then answers 503.
+//
+// Exactly one trailing "\n" is removed, the newline `openssl rand -hex 32 >
+// file` leaves; nothing else is trimmed. The rest must be at least minTokenLen
+// printable, non-space ASCII characters (0x21 to 0x7E), so a two-line file left
+// by `>>`, a "\r\n" ending or a short guessable token is rejected rather than
+// loaded. norse-stack's console/serve.py applies the identical rule. A rejected
+// file returns an error naming the cause, never the content; the caller treats
+// it as no token.
+func loadToken(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	//nolint:gosec // G703: path is the operator-configured HUGINN_RESEARCH_TOKEN_FILE env var, not request input.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read token file: %w", err)
+	}
+	token := strings.TrimSuffix(string(data), "\n")
+	if len(token) < minTokenLen {
+		return "", errTokenTooShort
+	}
+	for i := 0; i < len(token); i++ {
+		if c := token[i]; c < 0x21 || c > 0x7e {
+			return "", errTokenBadChar
+		}
+	}
+	return token, nil
+}
+
+// loadPersisted reads every *.json file in resultsDir into the runs map.
+// Unreadable/corrupt files are skipped with a warning rather than failing
+// startup.
 func (s *Server) loadPersisted() {
 	entries, err := os.ReadDir(s.resultsDir)
 	if err != nil {
@@ -136,35 +221,39 @@ func (s *Server) loadPersisted() {
 	slog.Info("Loaded persisted research runs", "count", len(s.runs))
 }
 
-// persist writes an already-marshalled finished run to resultsDir/<id>.json.
-// The caller marshals the run under s.mu (see execute) so this function never
-// touches the run's mutable fields concurrently with the worker. Best-effort: a
-// write failure is logged but does not change the in-memory result.
-func (s *Server) persist(id string, data []byte) {
-	if err := os.MkdirAll(s.resultsDir, 0o750); err != nil {
-		slog.Error("Failed to create results dir", "dir", s.resultsDir, "error", err)
-		return
-	}
-	path := filepath.Join(s.resultsDir, id+".json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		slog.Error("Failed to persist run", "id", id, "path", path, "error", err)
+// hostMiddleware refuses, with 403, any request whose Host header is not in
+// s.allowedHosts. A DNS-rebinding page reaches the gateway under its own name,
+// so its requests carry a foreign Host and stop here (threat model T26). It runs
+// before CORS and the token check, on every route.
+func (s *Server) hostMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowedHosts[strings.ToLower(r.Host)] {
+			writeJSONError(w, http.StatusForbidden, "host not allowed")
+			return
+		}
+		next(w, r)
 	}
 }
 
-// corsMiddleware adds permissive CORS headers. Unlike internal/server's
-// dashboard-scoped middleware, the research gateway is read-only (no mutating
-// control endpoints) so it allows all origins ("*"), matching the open-CORS
-// intent for a read-only research UI. Same OPTIONS-preflight short-circuit
-// pattern as internal/server/http.go corsMiddleware.
+// corsMiddleware sends CORS headers only when an origin is configured, and then
+// only to that exact origin. By default s.consoleOrigin is empty and no request
+// ever gets Access-Control-Allow-Origin: the Norse console proxies the gateway
+// same-origin, so no browser needs it. It is never "*". Vary: Origin is always
+// set so a cache cannot serve one origin's response to another. A preflight
+// (OPTIONS) is answered here with 204 and never reaches the token check, because
+// browsers send no credentials on a preflight; without the allowed origin it
+// carries no Access-Control-Allow-Origin, so the browser blocks the request.
 func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Add("Vary", "Origin")
+		if origin := r.Header.Get("Origin"); s.consoleOrigin != "" && origin == s.consoleOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization")
+		}
 
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -172,171 +261,73 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// requireToken enforces the bearer token on an API route. It FAILS CLOSED, as
+// huginn's control plane does with an empty HUGINN_API_TOKEN: with no token
+// configured every request is refused with 503 rather than let through. With a
+// token configured, a missing or wrong Authorization header gets 401. Reading
+// results needs the token too, because viewing a result is what makes a trial
+// (docs/research/ledger-threat-model.md in norse-stack, T26).
+func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.token == "" {
+			writeJSONError(w, http.StatusServiceUnavailable, fmt.Sprintf(
+				"research gateway locked: no valid token configured (%s must name a file holding at least %d printable, non-space ASCII characters)",
+				tokenFileEnv, minTokenLen))
+			return
+		}
+		if !bearerTokenValid(r, s.token) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="huginn-research"`)
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized: send Authorization: Bearer <token>")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// bearerTokenValid reports whether the request carries exactly
+// "Authorization: Bearer <token>". The comparison is constant-time
+// (crypto/subtle), as in internal/server, so the token cannot be recovered byte
+// by byte from response times; ConstantTimeCompare returns 0 on a length
+// mismatch. The caller must already have refused an empty token.
+func bearerTokenValid(r *http.Request, token string) bool {
+	expected := "Bearer " + token
+	provided := r.Header.Get("Authorization")
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
+}
+
+// writeJSONError writes {"error": msg} with the given status.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 func (s *Server) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
 }
 
-// runsHandler dispatches GET (list) and POST (submit) on /api/research/runs.
+// runsHandler dispatches GET (list) and POST (refused) on /api/research/runs.
 func (s *Server) runsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.listRuns(w, r)
 	case http.MethodPost:
-		s.submitRun(w, r)
+		refuseRun(w)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// submitRun validates the request, registers a running job, kicks off the
-// walk-forward in a goroutine, and returns 202 {id, status:"running"}.
-func (s *Server) submitRun(w http.ResponseWriter, r *http.Request) {
-	var req runRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	req.Strategy = strings.TrimSpace(req.Strategy)
-	if !supportedStrategies[req.Strategy] {
-		http.Error(w, fmt.Sprintf("unknown strategy %q (want obi|ou|composite)", req.Strategy), http.StatusBadRequest)
-		return
-	}
-	if req.Folds <= 0 {
-		http.Error(w, "folds must be > 0", http.StatusBadRequest)
-		return
-	}
-	if req.Data == "" {
-		req.Data = s.dataPath
-	}
-
-	id := newRunID()
-	r0 := &run{
-		ID:          id,
-		Status:      "running",
-		Request:     req,
-		SubmittedAt: time.Now().UTC(),
-	}
-
-	s.mu.Lock()
-	s.runs[id] = r0
-	s.mu.Unlock()
-
-	go s.execute(id, req)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "status": "running"})
-}
-
-// execute runs the walk-forward for a submitted job and records the outcome,
-// then persists the finished run.
-func (s *Server) execute(id string, req runRequest) {
-	res, err := s.runWalkforward(req)
-
-	now := time.Now().UTC()
-	s.mu.Lock()
-	r := s.runs[id]
-	var data []byte
-	if r != nil {
-		r.FinishedAt = &now
-		if err != nil {
-			r.Status = "error"
-			r.Error = err.Error()
-		} else {
-			r.Status = "done"
-			r.Result = res
-		}
-		// Marshal under the lock so the finished run's mutable fields are read
-		// for persistence while no other goroutine can be writing them.
-		var merr error
-		if data, merr = json.MarshalIndent(r, "", "  "); merr != nil {
-			slog.Error("Failed to marshal run for persistence", "id", id, "error", merr)
-			data = nil
-		}
-	}
-	s.mu.Unlock()
-
-	if data != nil {
-		s.persist(id, data)
-	}
-}
-
-// runWalkforwardReal builds a base config, overrides the strategy, constructs
-// the grid from the request thresholds, loads the dataset, and runs
-// internal/research.Run. It maps research.Result into the console-contract
-// runResult (meanFoldDeflatedSharpe / foldPboProxy stay null when undefined).
-func (s *Server) runWalkforwardReal(req runRequest) (*runResult, error) {
-	cfg := baseConfig(req.Strategy)
-
-	events, err := research.LoadEvents(req.Data)
-	if err != nil {
-		return nil, fmt.Errorf("load events: %w", err)
-	}
-	if len(events) < 100 {
-		return nil, fmt.Errorf("not enough events for walk-forward: %d (need ≥100)", len(events))
-	}
-
-	grid := research.BuildGrid(cfg, req.Thresholds, nil)
-
-	res, err := research.Run(research.Options{
-		Config:  cfg,
-		Events:  events,
-		Folds:   req.Folds,
-		TestPct: 0.2,
-		Grid:    grid,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return toRunResult(res), nil
-}
-
-// toRunResult maps a research.Result into the console-contract response. The
-// fold PBO proxy is surfaced as *float64 so a NaN (too few folds/configs)
-// becomes null instead of failing the JSON encode.
-func toRunResult(res research.Result) *runResult {
-	out := &runResult{
-		Folds:                  res.Folds,
-		OOSFoldsProfitable:     res.OOSFoldsProfitable,
-		TotalOOSPnL:            res.TotalOOSPnL,
-		MeanFoldDeflatedSharpe: res.MeanFoldDeflatedSharpe,
-	}
-	if !math.IsNaN(res.FoldPBOProxy) && !math.IsInf(res.FoldPBOProxy, 0) {
-		proxy := res.FoldPBOProxy
-		out.FoldPBOProxy = &proxy
-	}
-	return out
-}
-
-// baseConfig returns a self-contained config (no YAML file dependency, so tests
-// need no configs/ on disk) with the given strategy name and sane defaults that
-// match config.Load's fallbacks.
-//
-// The Risk and Executor defaults are LOAD-BEARING and must mirror config.Load:
-// the risk manager treats PositionLimitHard==0 as a hard cap of zero notional,
-// so omitting it rejects EVERY fill and the walk-forward reports 0 trades / 0
-// PnL. The executor cost/slippage match configs/default.yaml so a gateway run
-// reproduces the same net result as `go run ./cmd/walkforward`.
-func baseConfig(strategyName string) *config.Config {
-	cfg := &config.Config{}
-	cfg.Strategy.Name = strategyName
-	cfg.Strategy.Threshold = 0.5
-	cfg.Strategy.OrderSize = 0.01
-	cfg.Strategy.FastPeriod = 10
-	cfg.Strategy.SlowPeriod = 30
-	cfg.Capital.InitialCash = 100_000.0
-	// Executor: match configs/default.yaml so PnL is cost-consistent with the CLI.
-	cfg.Executor.TransactionCostBps = 5.0
-	cfg.Executor.SlippageBps = 2.0
-	// Risk: match config.Load's post-parse fallbacks (config.go). Without a
-	// non-zero PositionLimitHard the risk manager throttles every order to a
-	// zero-notional cap → no fills.
-	cfg.Risk.MaxDrawdownPct = 0.20
-	cfg.Risk.DailyLossLimit = 10000.0
-	cfg.Risk.PositionLimitHard = 500000.0
-	return cfg
+// refuseRun answers every run submission with 405 and runsDisabledMessage,
+// whatever the token or body. The body is never read and nothing is scheduled
+// or written. There is deliberately no flag or environment variable that turns
+// submission back on: the code that ran a walk-forward has been removed, so
+// re-enabling runs means writing the ledgered path G1.2 describes (datasets by
+// manifest hash, refusal when the ledger entry cannot be written).
+func refuseRun(w http.ResponseWriter) {
+	w.Header().Set("Allow", "GET, OPTIONS")
+	writeJSONError(w, http.StatusMethodNotAllowed, runsDisabledMessage)
 }
 
 // getRunHandler serves GET /api/research/runs/{id}: the full run record, or 404.
@@ -351,10 +342,8 @@ func (s *Server) getRunHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Marshal the run UNDER the lock: the worker goroutine (execute) mutates
-	// status/result/error/finishedAt while holding s.mu, so reading those
-	// fields here without the lock is a data race. Serializing inside the
-	// critical section guarantees no field is read mid-write.
+	// Marshal the run under the lock, so its fields are read in one critical
+	// section with every other access to the runs map.
 	s.mu.Lock()
 	r0 := s.runs[id]
 	var data []byte
@@ -402,18 +391,17 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(summaries)
 }
 
-// routes builds the mux. /api/research/runs handles list+submit; the trailing
-// slash route handles GET-by-id (Go's ServeMux longest-prefix match routes
-// /api/research/runs/{id} here while /api/research/runs hits the exact handler).
+// routes builds the mux. Every route checks the Host header first. /healthz is
+// the only route without the token, so container healthchecks need no
+// credential. /api/research/runs handles list (and refuses submission); the
+// trailing slash route handles GET-by-id (Go's ServeMux longest-prefix match
+// routes /api/research/runs/{id} there while /api/research/runs hits the exact
+// handler). CORS wraps the token check so a preflight is answered before
+// credentials are demanded.
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", s.corsMiddleware(s.healthzHandler))
-	mux.HandleFunc("/api/research/runs", s.corsMiddleware(s.runsHandler))
-	mux.HandleFunc("/api/research/runs/", s.corsMiddleware(s.getRunHandler))
+	mux.HandleFunc("/healthz", s.hostMiddleware(s.corsMiddleware(s.healthzHandler)))
+	mux.HandleFunc("/api/research/runs", s.hostMiddleware(s.corsMiddleware(s.requireToken(s.runsHandler))))
+	mux.HandleFunc("/api/research/runs/", s.hostMiddleware(s.corsMiddleware(s.requireToken(s.getRunHandler))))
 	return mux
-}
-
-// newRunID returns a time-ordered, collision-resistant run id.
-func newRunID() string {
-	return fmt.Sprintf("run-%d-%04d", time.Now().UnixNano(), randSeq())
 }

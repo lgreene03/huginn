@@ -38,9 +38,10 @@ import (
 // searched is reported so the best in-sample pick can be read with the
 // appropriate multiple-testing scepticism.
 //
-// The walk-forward compute itself lives in internal/research so heavy backtests
-// can also run out of the live process (cmd/research). This command owns only
-// CLI parsing, console presentation, and the artifact write.
+// The walk-forward compute itself lives in internal/research. The research
+// gateway (cmd/research) once ran it too, but no longer runs anything (Norse goal
+// G1.2). This command owns only CLI parsing, console presentation, and the
+// artifact write.
 
 func main() {
 	configPath := flag.String("config", "configs/default.yaml", "YAML config")
