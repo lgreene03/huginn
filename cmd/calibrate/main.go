@@ -68,8 +68,10 @@ import (
 // is evaluated under; they're named so the net-of-cost gate (quant-alpha-1) can
 // reuse the identical numbers — the gate's cost estimate must match the cost the
 // simulated fills actually incur, or a swept cost_hurdle_k would be miscalibrated.
+// They are configs/default.yaml's: 10 bps fee plus 2 bps slippage a fill, as section
+// 5 of norse-stack's docs/PREREGISTRATION.md fixes them (G1.9).
 const (
-	sweepTxCostBps   = 5.0
+	sweepTxCostBps   = 10.0
 	sweepSlippageBps = 2.0
 )
 

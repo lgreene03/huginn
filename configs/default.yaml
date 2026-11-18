@@ -19,8 +19,12 @@ strategy:
   threshold: 0.7
   order_size: 0.01
 
+# Costs per fill, as section 5 of norse-stack's docs/PREREGISTRATION.md fixes them
+# (G1.9): a 10 bps fee on the notional at the execution price (Binance's retail taker
+# fee) plus 2 bps slippage moving that price against the order, so 24 bps a round
+# trip. The impact term stays off (slippage_impact_k unset).
 executor:
-  transaction_cost_bps: 5.0
+  transaction_cost_bps: 10.0
   slippage_bps: 2.0
 
 server:
