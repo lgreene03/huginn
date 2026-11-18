@@ -22,6 +22,13 @@ EXPECT_OOS="0/4"
 EXPECT_PNL="-146.1090"
 EXPECT_FOLD_PBO_PROXY="1.0000"
 CMD_ARGS="--data ${DATA} --folds 4 --thresholds 0.5,0.6,0.7,0.8"
+# The verdict was published under the costs configs/default.yaml held then, 5 bps
+# transaction cost plus 2 bps slippage per fill, the basis norse-stack's
+# docs/RESULTS.md states. The defaults are now 10 plus 2 (G1.9, section 5 of
+# norse-stack's docs/PREREGISTRATION.md), so the guard pins the published basis
+# instead of rewriting a published result.
+PUBLISHED_TX_COST_BPS="5"
+PUBLISHED_SLIPPAGE_BPS="2"
 
 if [ ! -f "${DATA}" ]; then
   echo "reproduce: fixture ${DATA} not found (run from the huginn repo root)." >&2
@@ -32,11 +39,12 @@ if ! command -v go >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "Reproducing the walk-forward verdict:"
-echo "  go run ./cmd/walkforward ${CMD_ARGS}"
+echo "Reproducing the walk-forward verdict, at its published costs:"
+echo "  EXECUTOR_TX_COST_BPS=${PUBLISHED_TX_COST_BPS} EXECUTOR_SLIPPAGE_BPS=${PUBLISHED_SLIPPAGE_BPS} go run ./cmd/walkforward ${CMD_ARGS}"
 echo
 
-OUT="$(go run ./cmd/walkforward ${CMD_ARGS} 2>&1)"
+OUT="$(EXECUTOR_TX_COST_BPS="${PUBLISHED_TX_COST_BPS}" EXECUTOR_SLIPPAGE_BPS="${PUBLISHED_SLIPPAGE_BPS}" \
+  go run ./cmd/walkforward ${CMD_ARGS} 2>&1)"
 status=$?
 if [ ${status} -ne 0 ]; then
   echo "${OUT}"

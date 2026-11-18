@@ -204,3 +204,38 @@ func TestValidateAggregatesMultiple(t *testing.T) {
 		}
 	}
 }
+
+// TestShippedConfigsChargeSection5Costs holds every shipped config to the per-fill
+// costs section 5 of norse-stack's docs/PREREGISTRATION.md fixes (G1.9): a 10 bps fee,
+// and in configs/default.yaml, which every command loads by default, 2 bps slippage
+// with the impact term off. conservative.yaml and aggressive.yaml keep their
+// deliberately lower and higher slippage.
+func TestShippedConfigsChargeSection5Costs(t *testing.T) {
+	for _, key := range []string{"EXECUTOR_TX_COST_BPS", "EXECUTOR_SLIPPAGE_BPS", "EXECUTOR_SLIPPAGE_IMPACT_K"} {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths, err := filepath.Glob(filepath.Join("..", "..", "configs", "*.yaml"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no shipped configs found: %v", err)
+	}
+	for _, path := range paths {
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if cfg.Executor.TransactionCostBps != 10 {
+			t.Errorf("%s: transaction_cost_bps = %v, want 10", path, cfg.Executor.TransactionCostBps)
+		}
+	}
+	cfg, err := Load(filepath.Join("..", "..", "configs", "default.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Executor.SlippageBps != 2 || cfg.Executor.SlippageImpactK != 0 {
+		t.Errorf("default.yaml: slippage_bps = %v, slippage_impact_k = %v, want 2 and 0",
+			cfg.Executor.SlippageBps, cfg.Executor.SlippageImpactK)
+	}
+}

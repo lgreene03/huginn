@@ -86,12 +86,15 @@ type EdgeModel interface {
 // strength to expected reversion in basis points, used when OBI_EDGE_BPS_PER_UNIT
 // is not configured. It is intentionally conservative.
 //
-// Rationale for the default: with a round-trip cost on the order of ~14 bps
-// (2 * (TransactionCostBps≈5 + SlippageBps≈2)) and OBI signal strengths typically
+// Rationale for the default: it was set when the default round-trip cost was ~14 bps
+// (2 * (TransactionCostBps 5 + SlippageBps 2)). With OBI signal strengths typically
 // in the 0.05–0.35 range above threshold, a coefficient of 60 bps/unit means a
 // signal strength of ~0.23 produces ~14 bps of expected edge — i.e. only clearly
 // above-threshold OBI prints clear a K=1 hurdle, which is the intended
-// over-trading suppression. This is a defensible default, not a fitted constant;
+// over-trading suppression. The default costs are now 10 plus 2 bps a fill (24 bps a
+// round trip, configs/default.yaml), at which a K=1 hurdle needs a signal strength of
+// ~0.40; the coefficient was not re-derived for them. This is a defensible default,
+// not a fitted constant;
 // the offline obi→bps regression that would refine it lives in muninn-py, and the
 // swept COST_HURDLE_K absorbs residual miscalibration. See docs note in the
 // quant-alpha-1 report.

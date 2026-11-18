@@ -13,7 +13,8 @@ import (
 // under. configs/default.yaml has no risk block, so config.Load applied the
 // defaults in internal/config/config.go: a 10,000 daily loss limit, a 20%
 // trailing drawdown and a 500,000 hard position limit, on 100,000 initial cash,
-// with the default.yaml costs of 5 bps fees and 2 bps slippage.
+// with the costs default.yaml then held, 5 bps fees and 2 bps slippage (it now holds
+// 10 and 2, G1.9). This test reproduces that run, so it keeps the old costs.
 func sixMonthRiskConfig() *config.Config {
 	c := testConfig()
 	c.Risk.MaxDrawdownPct = 0.20
